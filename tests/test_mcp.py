@@ -101,27 +101,50 @@ def test_unknown_status_name_is_a_clear_error(mcp_env) -> None:  # type: ignore[
     assert "Unknown use-case status" in result["errors"][0]["error"]
 
 
-def test_http_transport_requires_bearer_auth(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The HTTP transport is gated by POCT_MCP_AUTH_TOKEN — missing/wrong tokens
-    get 401, the correct one passes through to the MCP handshake."""
-    from app import mcp_server
+_INIT = {
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+               "clientInfo": {"name": "gw", "version": "1"}},
+}
+_ACCEPT = {"Accept": "application/json, text/event-stream"}
 
-    # Allow the TestClient's Host header past DNS-rebinding protection.
-    monkeypatch.setenv("POCT_MCP_ALLOWED_HOSTS", "testserver,testserver:*")
-    app = mcp_server.build_http_app("streamable-http", "gateway-secret")
-    init = {
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
-                   "clientInfo": {"name": "gw", "version": "1"}},
-    }
-    accept = {"Accept": "application/json, text/event-stream"}
+
+def test_http_gateway_auth_lifecycle(client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Inbound access control read live from the UI-managed config:
+
+    unconfigured → 503, missing/wrong bearer → 401, correct → 200, and a Host
+    not in a configured allow-list → 403. (One app/client because the streamable
+    session manager can only start once per process; the middleware reads live.)
+    """
+    from app import mcp_server
+    from app.services import mcp_gateway
+
+    monkeypatch.delenv("POCT_MCP_AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("POCT_MCP_ALLOWED_HOSTS", raising=False)
+
+    app = mcp_server.build_http_app("streamable-http")
     with TestClient(app) as c:
-        assert c.post("/mcp", json=init, headers=accept).status_code == 401
-        assert c.post("/mcp", json=init,
-                      headers={**accept, "Authorization": "Bearer nope"}).status_code == 401
-        ok = c.post("/mcp", json=init,
-                    headers={**accept, "Authorization": "Bearer gateway-secret"})
-        assert ok.status_code == 200  # auth + host check passed → MCP handshake
+        def post(token: str | None) -> int:
+            h = dict(_ACCEPT)
+            if token is not None:
+                h["Authorization"] = f"Bearer {token}"
+            return c.post("/mcp", json=_INIT, headers=h).status_code
+
+        # Deploy-time state: nothing configured → rejected.
+        assert post("anything") == 503
+
+        # Generate the gateway token in the UI (here, the service it calls).
+        token = mcp_gateway.rotate_gateway_token()
+        assert post(None) == 401
+        assert post("nope") == 401
+        assert post(token) == 200
+
+        # A configured allow-list that excludes the request Host → 403.
+        mcp_gateway.set_allowed_hosts("only.example.com")
+        assert post(token) == 403
+        # Clearing it (empty = any host) opens it back up.
+        mcp_gateway.set_allowed_hosts("")
+        assert post(token) == 200
 
 
 def test_token_rotation_is_read_live(client, monkeypatch) -> None:  # type: ignore[no-untyped-def]

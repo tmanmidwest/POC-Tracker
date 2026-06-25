@@ -202,6 +202,30 @@ def test_mcp_token_settings_page_and_rotate(ui: TestClient) -> None:
     assert read_token() is None
 
 
+def test_mcp_gateway_token_and_allowed_hosts(ui: TestClient) -> None:
+    from app.services import mcp_gateway
+
+    assert ui.get("/ui/settings/mcp").status_code == 200
+    assert mcp_gateway.read_gateway_token() is None
+
+    # Generate the inbound gateway token.
+    r = ui.post("/ui/settings/mcp/gateway/rotate", follow_redirects=False)
+    assert r.status_code == 303
+    assert "poctgw_" in ui.get("/ui/settings/mcp").text  # one-time reveal
+    assert mcp_gateway.read_gateway_token() is not None
+
+    # Save allowed hosts, then clear them.
+    ui.post("/ui/settings/mcp/allowed-hosts",
+            data={"allowed_hosts": "mcp.example.com, 10.0.0.5:*"}, follow_redirects=False)
+    assert mcp_gateway.read_allowed_hosts() == ["mcp.example.com", "10.0.0.5:*"]
+    ui.post("/ui/settings/mcp/allowed-hosts", data={"allowed_hosts": ""}, follow_redirects=False)
+    assert mcp_gateway.read_allowed_hosts() == []
+
+    # Clearing the gateway token leaves the endpoint locked down.
+    ui.post("/ui/settings/mcp/gateway/clear", follow_redirects=False)
+    assert mcp_gateway.read_gateway_token() is None
+
+
 def test_mcp_key_flagged_and_protected_in_api_keys_list(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.services import mcp_token

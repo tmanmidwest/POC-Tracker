@@ -20,10 +20,14 @@ require a bearer token — the server refuses to start an open endpoint):
     POCT_MCP_TRANSPORT     stdio (default) | streamable-http (/mcp) | sse (/sse)
     POCT_MCP_HOST          bind host for HTTP transports (default 127.0.0.1)
     POCT_MCP_PORT          bind port for HTTP transports (default 8011)
-    POCT_MCP_AUTH_TOKEN    REQUIRED for HTTP transports — secret a client must
-                           send as `Authorization: Bearer <token>`
-    POCT_MCP_ALLOWED_HOSTS comma-separated Host headers to allow past the SDK's
-                           DNS-rebinding protection (e.g. "mcp.example.com:8011")
+
+The HTTP transports are gated by a gateway bearer token + optional Host allow-list
+that are managed in the app UI (Settings → MCP) and read live from the data volume,
+so the server needs no secrets at deploy time. These env vars OVERRIDE the
+UI-managed files (useful for a remote MCP host that can't see the volume):
+
+    POCT_MCP_AUTH_TOKEN    gateway bearer token override
+    POCT_MCP_ALLOWED_HOSTS comma-separated Host allow-list override
 
 Run it:
 
@@ -55,10 +59,11 @@ API_KEY = os.environ.get("POCT_MCP_API_KEY", "")
 MCP_TRANSPORT = os.environ.get("POCT_MCP_TRANSPORT", "stdio")
 MCP_HOST = os.environ.get("POCT_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("POCT_MCP_PORT", "8011"))
-# Inbound access control for the HTTP transports: the secret a client/gateway
-# must present as `Authorization: Bearer <token>`. Required for HTTP transports —
-# we refuse to start an unauthenticated network endpoint. (stdio is local-only.)
-MCP_AUTH_TOKEN = os.environ.get("POCT_MCP_AUTH_TOKEN", "")
+# Inbound access control for the HTTP transports (the bearer token a gateway must
+# present, and the optional Host allow-list) is managed in the app UI and read
+# live from the data volume — see app.services.mcp_gateway and
+# GatewayAuthMiddleware below. POCT_MCP_AUTH_TOKEN / POCT_MCP_ALLOWED_HOSTS still
+# override the UI-managed files for remote MCP hosts that can't see the volume.
 
 mcp = FastMCP("poc-tracker", host=MCP_HOST, port=MCP_PORT)
 
@@ -500,78 +505,99 @@ def project_report(project_id: int) -> str:
     return "\n".join(out)
 
 
-class BearerAuthMiddleware:
-    """ASGI middleware that requires `Authorization: Bearer <token>` on HTTP
-    requests. Non-HTTP scopes (lifespan, websocket) pass through untouched."""
+def _send_json(send: Any, status: int, body: bytes, extra_headers: list | None = None):
+    headers = [(b"content-type", b"application/json"), *(extra_headers or [])]
 
-    def __init__(self, app: Any, token: str) -> None:
+    async def _do() -> None:
+        await send({"type": "http.response.start", "status": status, "headers": headers})
+        await send({"type": "http.response.body", "body": body})
+
+    return _do()
+
+
+class GatewayAuthMiddleware:
+    """ASGI middleware enforcing inbound access control for the HTTP transports.
+
+    Both the bearer token and the allowed-hosts list are read **live** from the
+    data volume (managed in the app UI: Settings → MCP), so the MCP container
+    needs no secrets at deploy time and rotation takes effect immediately:
+
+    * No gateway token configured yet  → 503 (tell the operator to set one up).
+    * Host not in a configured allow-list → 403 (empty list = allow any host).
+    * Missing / wrong bearer token       → 401.
+
+    Non-HTTP scopes (lifespan, etc.) pass straight through.
+    """
+
+    def __init__(self, app: Any) -> None:
         self.app = app
-        self.token = token
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
+        from app.services import mcp_gateway
+
         headers = dict(scope.get("headers") or [])
+
+        # Host allow-list (optional hardening; empty = allow any).
+        allowed = mcp_gateway.read_allowed_hosts()
+        host = headers.get(b"host", b"").decode("latin-1")
+        if not mcp_gateway.host_allowed(host, allowed):
+            await _send_json(
+                send, 403,
+                b'{"error":"forbidden","detail":"Host not in POCT allowed hosts."}',
+            )
+            return
+
+        token = mcp_gateway.read_gateway_token()
+        if not token:
+            await _send_json(
+                send, 503,
+                b'{"error":"unconfigured","detail":"MCP gateway token not set. '
+                b'Generate one in the app UI (Settings -> MCP)."}',
+            )
+            return
+
         raw = headers.get(b"authorization", b"").decode("latin-1")
         provided = raw[7:].strip() if raw[:7].lower() == "bearer " else ""
-        if not provided or not hmac.compare_digest(provided, self.token):
-            await send({
-                "type": "http.response.start",
-                "status": 401,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"www-authenticate", b"Bearer"),
-                ],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": b'{"error":"unauthorized","detail":"Missing or invalid bearer token."}',
-            })
+        if not provided or not hmac.compare_digest(provided, token):
+            await _send_json(
+                send, 401,
+                b'{"error":"unauthorized","detail":"Missing or invalid bearer token."}',
+                [(b"www-authenticate", b"Bearer")],
+            )
             return
+
         await self.app(scope, receive, send)
 
 
-def _transport_security() -> Any:
-    """DNS-rebinding protection settings for the HTTP transports.
+def build_http_app(transport: str) -> Any:
+    """Build the auth-wrapped ASGI app for an HTTP transport.
 
-    The SDK only accepts localhost Host headers by default, which 421s a remote
-    gateway connecting via a real hostname/IP. POCT_MCP_ALLOWED_HOSTS (comma-
-    separated, e.g. "mcp.example.com:8011,10.0.0.5:*") adds the hosts the gateway
-    will use. Protection stays on.
+    DNS-rebinding protection in the SDK is disabled because this middleware does
+    its own (UI-managed) host allow-listing; bearer auth is the primary control.
     """
     from mcp.server.transport_security import TransportSecuritySettings
 
-    extra = [h.strip() for h in os.environ.get("POCT_MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
-    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*", *extra]
-    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
-    for host in extra:
-        origins += [f"http://{host}", f"https://{host}"]
-    return TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=hosts,
-        allowed_origins=origins,
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
     )
-
-
-def build_http_app(transport: str, auth_token: str) -> Any:
-    """Build the auth-wrapped ASGI app for an HTTP transport."""
-    mcp.settings.transport_security = _transport_security()
     if transport == "streamable-http":
         app = mcp.streamable_http_app()
     elif transport == "sse":
         app = mcp.sse_app()
     else:
         raise ValueError(f"Unknown HTTP transport: {transport!r}")
-    return BearerAuthMiddleware(app, auth_token)
+    return GatewayAuthMiddleware(app)
 
 
 def main() -> None:
     """Entry point — run the MCP server using the configured transport.
 
-    stdio is local-only (no auth needed). The HTTP transports are network-facing,
-    so they require POCT_MCP_AUTH_TOKEN and are served behind bearer auth — we
-    refuse to start an open endpoint.
+    stdio is local-only. The HTTP transports are network-facing and gated by the
+    UI-managed gateway token (see GatewayAuthMiddleware) — the server starts with
+    no secrets and rejects calls until a token is generated in the app UI.
     """
     if MCP_TRANSPORT == "stdio":
         mcp.run(transport="stdio")
@@ -581,16 +607,10 @@ def main() -> None:
             f"Unknown POCT_MCP_TRANSPORT={MCP_TRANSPORT!r} "
             "(expected: stdio, streamable-http, or sse)."
         )
-    if not MCP_AUTH_TOKEN:
-        raise SystemExit(
-            "POCT_MCP_AUTH_TOKEN must be set for the '" + MCP_TRANSPORT + "' transport.\n"
-            "Refusing to start an unauthenticated, network-facing MCP endpoint.\n"
-            "Set it to a strong secret the gateway will send as 'Authorization: Bearer <token>'."
-        )
     import uvicorn
 
     uvicorn.run(
-        build_http_app(MCP_TRANSPORT, MCP_AUTH_TOKEN),
+        build_http_app(MCP_TRANSPORT),
         host=MCP_HOST,
         port=MCP_PORT,
         log_config=None,

@@ -55,28 +55,20 @@ The SQLite database, screenshots, and signing keys persist in the `poct-data` na
 ### Running the MCP server too (second container)
 
 The compose stack defines two services — the **app** (`8010`) and the **MCP server**
-(`8011`) — but the MCP server is **opt-in** via the `mcp` profile, since it requires an auth
-token. Put a token in a `.env` file next to `docker-compose.yml`:
+(`8011`). The MCP server is **opt-in** via the `mcp` profile and needs **no secrets** to start:
 
 ```bash
-# .env
-POCT_MCP_AUTH_TOKEN=replace-with-a-strong-secret   # gateways present this as a bearer token
-POCT_MCP_ALLOWED_HOSTS=                             # e.g. mcp.example.com:8011 for a remote gateway
-COMPOSE_PROFILES=mcp                                # makes `docker compose up` include the MCP server
-```
-
-Then:
-
-```bash
-docker compose up -d --build      # COMPOSE_PROFILES=mcp from .env starts both
-# ...or explicitly, without the .env line:
 docker compose --profile mcp up -d --build
+# ...or add COMPOSE_PROFILES=mcp to a .env file next to docker-compose.yml so a
+# plain `docker compose up` includes it.
 ```
 
 You should now see **two** containers: `poc-tracker` (app, 8010) and `poc-tracker-mcp`
-(MCP, 8011). The MCP container shares the data volume, so once you generate the **MCP API
-token** in the UI (**Settings → MCP**), it can call the app — and rotating it needs no
-restart. Without the `mcp` profile you'll only see the app container.
+(MCP, 8011). The MCP container shares the data volume, so you do all the setup in the UI under
+**Settings → MCP**: generate the **gateway token** (what your gateway presents) and the **API
+token** (what the MCP server uses to call the app). Until the gateway token exists, the MCP
+endpoint returns `503`. Rotating either one needs no restart. Without the `mcp` profile you'll
+only see the app container.
 
 ## Configuration
 
@@ -121,19 +113,23 @@ export POCT_MCP_BASE_URL=http://localhost:8010
 poct-mcp                              # stdio transport
 ```
 
-### The MCP token (rotate it any time from the UI)
+### Credentials — all managed from the UI (Settings → MCP)
 
-The MCP server needs an API key to call the app. Rather than pasting a key into the
-environment, generate one under **Settings → MCP** and click **Generate token** (or
-**Rotate** later). The token is stored on the data volume and the MCP server reads it
-**live on every request**, so rotating it in the UI takes effect on the server's next call —
-no restart, no config change. Rotating also revokes the previous token immediately.
+There are **two** separate credentials, and both are generated/rotated in the app UI and read
+**live** from the data volume — so the MCP server (and its container) needs **no secrets at
+deploy time**, and rotating takes effect on the next call with no restart:
 
-The MCP server resolves its token in this order:
+- **Outbound — MCP server → app.** The API token the MCP server uses to call the REST API.
+  Generate it under **Settings → MCP**. (Resolution: `POCT_MCP_API_KEY` env override →
+  `POCT_MCP_API_KEY_FILE` → the UI-managed file `<POCT_DATA_DIR>/mcp_api_key`.)
+- **Inbound — gateway → MCP server** (only for the HTTP transports below). The bearer token a
+  gateway must present, plus an optional Host allow-list. Generate them under **Settings →
+  MCP** too. Until a gateway token exists, the HTTP endpoint **rejects every call with `503`**,
+  so it's safe to start the MCP server before configuring it. (Resolution: `POCT_MCP_AUTH_TOKEN`
+  / `POCT_MCP_ALLOWED_HOSTS` env overrides → the UI-managed files.)
 
-1. `POCT_MCP_API_KEY` — a fixed override, if set. **Leave it unset** to use the UI-managed token.
-2. `POCT_MCP_API_KEY_FILE` — an explicit token-file path, if set.
-3. Otherwise the UI-managed file on the app's data volume (`<POCT_DATA_DIR>/mcp_api_key`).
+Both UI-managed paths require the MCP server to **share the app's data volume**. A *remote*
+MCP host that can't see the volume uses the env overrides instead.
 
 For auto-rotation to work, the MCP server must share the app's `POCT_DATA_DIR` (same host, or
 the same Docker volume). A **remote** MCP host can't read that file — set `POCT_MCP_API_KEY`
@@ -186,30 +182,27 @@ for any stdio MCP client (Cursor, custom Agent SDK clients, etc.).
 ### Remote gateways (Saviynt, etc.) — HTTP transport
 
 Stdio has no URL. Gateways that ask for a **Base URL** and an **MCP Endpoint** speak MCP over
-HTTP, so run the server with the **streamable-http** transport. The HTTP endpoint is
-**authenticated** — it requires `POCT_MCP_AUTH_TOKEN`, and the server **refuses to start**
-without it (no open endpoints):
+HTTP, so run the server with the **streamable-http** transport. **No secrets are needed at
+startup** — the endpoint stays locked (returns `503`) until you generate the gateway token in
+the UI, then reads it live:
 
 ```bash
 export POCT_MCP_TRANSPORT=streamable-http
 export POCT_MCP_HOST=0.0.0.0          # 0.0.0.0 so a remote gateway can reach it
 export POCT_MCP_PORT=8011
-export POCT_MCP_AUTH_TOKEN=$(openssl rand -hex 32)   # secret the gateway must present
-export POCT_MCP_ALLOWED_HOSTS=mcp.example.com:8011    # the host the gateway connects to
 export POCT_MCP_BASE_URL=http://localhost:8010        # where the POC Tracker app runs
-export POCT_DATA_DIR=/path/to/shared/data             # same data dir as the app, for the API token
+export POCT_DATA_DIR=/path/to/shared/data             # same data dir as the app (for both tokens)
 poct-mcp
 ```
 
-**Two different credentials are involved — don't confuse them:**
+Then, in the app UI under **Settings → MCP**, generate the **gateway token** (and, if needed,
+set **allowed hosts**) and the **API token**. The MCP server picks both up live from the shared
+volume — no restart.
 
-| Credential | Direction | What it does |
+| Credential | Direction | Where it's managed |
 |---|---|---|
-| `POCT_MCP_AUTH_TOKEN` | gateway → MCP server | access control on the MCP endpoint (the gateway must send `Authorization: Bearer <token>`) |
-| MCP API token (`Settings → MCP`) | MCP server → app | lets the MCP server call the REST API (rotatable in the UI) |
-
-The MCP API token comes from **Settings → MCP** (see above) as long as this server shares the
-app's `POCT_DATA_DIR`; on a separate host set `POCT_MCP_API_KEY=poct_...` instead.
+| Gateway token | gateway → MCP server | **Settings → MCP** (the bearer the gateway presents) |
+| API token | MCP server → app | **Settings → MCP** (lets the MCP server call the REST API) |
 
 **Three addresses in play:**
 
@@ -223,18 +216,15 @@ In the Saviynt gateway, enter:
 - **Base URL:** `http://<mcp-server-host>:8011` (the host/IP where `poct-mcp` runs — use a
   routable address, not `localhost`, if Saviynt is on another machine)
 - **MCP Endpoint:** `/mcp`
-- **Authorization / bearer token:** the value of `POCT_MCP_AUTH_TOKEN`
+- **Authorization / bearer token:** the **gateway token** from Settings → MCP
 
 If the gateway only supports the older **SSE** transport, set
 `POCT_MCP_TRANSPORT=sse` and use **MCP Endpoint** `/sse` instead.
 
-> **Host header / DNS-rebinding protection:** the SDK only accepts `localhost` / `127.0.0.1`
-> Host headers by default and returns `421 Misdirected Request` otherwise. If the gateway
-> connects via a hostname or IP, list it in `POCT_MCP_ALLOWED_HOSTS` (comma-separated, `:*`
-> wildcards allowed, e.g. `mcp.example.com:8011,10.0.0.5:*`).
->
-> Even with bearer auth, prefer keeping port 8011 on a trusted network. If you must reach it
-> from a SaaS gateway, expose it deliberately — see the Cloudflare Tunnel section below.
+> **Host allow-list:** by default any Host header is accepted (bearer auth is the gate). To
+> harden against DNS-rebinding, set **allowed hosts** under Settings → MCP (comma-separated,
+> `:*` wildcards allowed, e.g. `mcp.example.com:8011,10.0.0.5:*`); a non-matching Host then
+> gets `403`. Keep port 8011 on a trusted network or behind the gateway.
 
 ## Deploying behind a Cloudflare Tunnel
 
@@ -252,20 +242,11 @@ origin is plain `http`. In the gateway, the MCP **Base URL** is the `https://` p
 
 **Two things that will trip you up:**
 
-1. **Allow the public Host header (or you get `421`).** Cloudflare forwards the *public*
-   hostname as the `Host` header, which the MCP server's DNS-rebinding protection rejects by
-   default. Add it to `POCT_MCP_ALLOWED_HOSTS`:
-
-   ```bash
-   POCT_MCP_TRANSPORT=streamable-http
-   POCT_MCP_HOST=0.0.0.0                                   # reachable by cloudflared
-   POCT_MCP_PORT=8011
-   POCT_MCP_AUTH_TOKEN=<strong-secret>                    # gateway must present this
-   POCT_MCP_ALLOWED_HOSTS=poctracker-mcp.example.com,poctracker-mcp.example.com:*
-   POCT_MCP_BASE_URL=http://docker-host:8010              # INTERNAL — see below
-   ```
-
-   (Alternatively set `httpHostHeader` on that tunnel ingress rule and allow-list that value.)
+1. **If you set an allow-list, include the public Host header.** Cloudflare forwards the
+   *public* hostname as the `Host` header. By default any host is accepted (bearer auth is the
+   gate), so this only matters if you turn on the allow-list under **Settings → MCP** — then add
+   `poctracker-mcp.example.com` (and `poctracker-mcp.example.com:*`) to it, or a matching Host
+   gets `403`.
 
 2. **Keep `POCT_MCP_BASE_URL` internal.** That's the MCP-server → app hop and never leaves
    your network — point it at the internal `http://docker-host:8010`, not the public URL, so it
