@@ -24,14 +24,11 @@ services:
   # MCP server (HTTP transport, for gateways like Saviynt). Needs NO secrets at
   # deploy time — it starts and rejects calls (503) until you generate the gateway
   # token in the app UI (Settings → MCP), then reads it live from the shared volume.
-  # Opt-in via the "mcp" profile:
-  #   docker compose --profile mcp up -d
-  # or set COMPOSE_PROFILES=mcp in your .env to include it automatically.
+  # Starts alongside the app by default. Don't want it? Comment out this service.
   mcp:
     build: .
     image: poc-tracker:local
     container_name: poc-tracker-mcp
-    profiles: ["mcp"]
     command: ["poct-mcp"]
     depends_on:
       - app
