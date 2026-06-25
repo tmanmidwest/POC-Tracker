@@ -286,6 +286,7 @@ def list_api_keys(
         active_subsection="api_keys",
         keys=keys,
         new_key=new_key,
+        mcp_key_id=mcp_token.current_key_id(db),
     )
 
 
@@ -347,6 +348,9 @@ def revoke_api_key(
     key = db.get(ApiKey, key_id)
     if key is None:
         raise HTTPException(status_code=404, detail="API key not found.")
+    if mcp_token.current_key_id(db) == key_id:
+        flash(request, "That's the MCP server token — rotate or clear it on the MCP page.", "warning")
+        return RedirectResponse(url="/ui/settings/mcp", status_code=303)
     if key.revoked_at is None:
         key.revoked_at = datetime.now(UTC)
         db.commit()
@@ -374,6 +378,9 @@ def delete_api_key(
     key = db.get(ApiKey, key_id)
     if key is None:
         raise HTTPException(status_code=404, detail="API key not found.")
+    if mcp_token.current_key_id(db) == key_id:
+        flash(request, "That's the MCP server token — rotate or clear it on the MCP page.", "warning")
+        return RedirectResponse(url="/ui/settings/mcp", status_code=303)
     name = key.name
     db.delete(key)
     db.commit()

@@ -48,6 +48,18 @@ def _row_for(db: Session, full_key: str) -> ApiKey | None:
     return db.query(ApiKey).filter(ApiKey.key_hash == hash_token(full_key)).one_or_none()
 
 
+def current_key_id(db: Session, settings: Settings | None = None) -> int | None:
+    """Return the ApiKey id of the current MCP token, or None.
+
+    Lets the API-keys list flag and protect the dedicated MCP key.
+    """
+    current = read_token(settings)
+    if not current:
+        return None
+    row = _row_for(db, current)
+    return row.id if row else None
+
+
 def rotate(db: Session, *, actor_id: int, settings: Settings | None = None) -> str:
     """Revoke the previous MCP token (if any), mint a new one, persist it, and
     return the new plaintext key. The plaintext is only returned here."""
