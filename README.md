@@ -52,23 +52,22 @@ docker compose up --build
 
 The SQLite database, screenshots, and signing keys persist in the `poct-data` named volume.
 
-### Running the MCP server too (second container)
+### The two containers
 
-The compose stack defines two services — the **app** (`8010`) and the **MCP server**
-(`8011`). The MCP server is **opt-in** via the `mcp` profile and needs **no secrets** to start:
+The compose stack defines two services that **both start by default** — the **app** (`8010`)
+and the **MCP server** (`8011`):
 
 ```bash
-docker compose --profile mcp up -d --build
-# ...or add COMPOSE_PROFILES=mcp to a .env file next to docker-compose.yml so a
-# plain `docker compose up` includes it.
+docker compose up -d --build
 ```
 
-You should now see **two** containers: `poc-tracker` (app, 8010) and `poc-tracker-mcp`
-(MCP, 8011). The MCP container shares the data volume, so you do all the setup in the UI under
-**Settings → MCP**: generate the **gateway token** (what your gateway presents) and the **API
-token** (what the MCP server uses to call the app). Until the gateway token exists, the MCP
-endpoint returns `503`. Rotating either one needs no restart. Without the `mcp` profile you'll
-only see the app container.
+You should see **two** containers: `poc-tracker` (app, 8010) and `poc-tracker-mcp` (MCP, 8011).
+The MCP server needs **no secrets to start** — it shares the data volume, so you do all the
+setup in the UI under **Settings → MCP**: generate the **gateway token** (what your gateway
+presents) and the **API token** (what the MCP server uses to call the app). Until the gateway
+token exists, the MCP endpoint returns `503`. Rotating either one needs no restart.
+
+Don't need the MCP server? Comment out the `mcp` service in `docker-compose.yml`.
 
 ## Configuration
 
