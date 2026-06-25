@@ -105,3 +105,11 @@ if (resetPhrase) {
     });
   }
 }
+
+// Close any <dialog class="modal"> when its backdrop (the dialog element itself,
+// outside the content) is clicked. Esc and the ✕/Cancel buttons also close it.
+document.addEventListener('click', (e) => {
+  if (e.target instanceof HTMLDialogElement && e.target.open) {
+    e.target.close();
+  }
+});
