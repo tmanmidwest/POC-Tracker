@@ -1,0 +1,133 @@
+{# Base layout used by every page inside the app shell (sidebar + topbar + main). #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% if page_title %}{{ page_title }} · {% endif %}{{ branding.name }}</title>
+
+  <!-- Geist font from Vercel's CDN -->
+  <link rel="preconnect" href="https://fonts.cdnfonts.com" />
+  <link href="https://fonts.cdnfonts.com/css/geist" rel="stylesheet" />
+  <link href="https://fonts.cdnfonts.com/css/geist-mono" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="icon" href="{{ branding.favicon }}" />
+
+  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body>
+
+  {# Flash messages — fixed top right #}
+  {% if flashes %}
+  <div class="flashes">
+    {% for f in flashes %}
+    <div class="flash flash--{{ f.level }}">{{ f.message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="app-shell">
+
+    <aside class="sidebar">
+      <div class="sidebar__brand">
+        <div class="sidebar__brand-lockup">
+          <svg class="sidebar__brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+               style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
+          <div class="sidebar__brand-name"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</div>
+        </div>
+        <div class="sidebar__brand-tagline">POC · non-production</div>
+      </div>
+
+      <nav class="sidebar__nav">
+        <a href="/ui/dashboard" class="sidebar__link {% if active_section == 'dashboard' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/>
+            <rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/>
+          </svg>
+          Dashboard
+        </a>
+
+        <a href="/ui/projects" class="sidebar__link {% if active_section == 'projects' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 3.5h5l1.5 1.5H14v7.5H2z"/>
+          </svg>
+          Projects
+        </a>
+
+        <a href="/ui/customers" class="sidebar__link {% if active_section == 'customers' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2.5" width="9" height="11"/><path d="M11 6.5h3v7H11M4.5 5h4M4.5 7.5h4M4.5 10h2"/>
+          </svg>
+          Customers
+        </a>
+
+        <a href="/ui/library" class="sidebar__link {% if active_section == 'library' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 2.5h7a1 1 0 0 1 1 1v10l-2-1.2-2 1.2V3.5M3 2.5v11"/>
+          </svg>
+          Use Case Library
+        </a>
+
+        <a href="/ui/reports" class="sidebar__link {% if active_section == 'reports' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 2.5h7l3 3v8H3z"/><path d="M5.5 8.5v3M8 6.5v5M10.5 9.5v2"/>
+          </svg>
+          Reports
+        </a>
+
+        <a href="/ui/activity" class="sidebar__link {% if active_section == 'activity' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M1.5 8h3l1.5-4 3 9 1.5-5h3.5"/>
+          </svg>
+          Activity
+        </a>
+
+        {% if current_user and current_user.is_admin %}
+        <div class="sidebar__section-label">Lookups</div>
+        <a href="/ui/lookups/contact-roles" class="sidebar__link {% if active_subsection == 'contact_roles' %}is-active{% endif %}">Contact Roles</a>
+        <a href="/ui/lookups/project-statuses" class="sidebar__link {% if active_subsection == 'project_statuses' %}is-active{% endif %}">Project Statuses</a>
+        <a href="/ui/lookups/feature-types" class="sidebar__link {% if active_subsection == 'feature_types' %}is-active{% endif %}">Feature Types</a>
+        <a href="/ui/lookups/use-case-statuses" class="sidebar__link {% if active_subsection == 'use_case_statuses' %}is-active{% endif %}">Use Case Statuses</a>
+
+        <div class="sidebar__section-label">Settings</div>
+        <a href="/ui/settings/admin-users" class="sidebar__link {% if active_subsection == 'admin_users' %}is-active{% endif %}">Users</a>
+        <a href="/ui/settings/api-keys" class="sidebar__link {% if active_subsection == 'api_keys' %}is-active{% endif %}">API Keys</a>
+        <a href="/ui/settings/oauth-clients" class="sidebar__link {% if active_subsection == 'oauth_clients' %}is-active{% endif %}">OAuth Clients</a>
+        <a href="/ui/settings/auth-providers" class="sidebar__link {% if active_subsection == 'auth_providers' %}is-active{% endif %}">Identity Providers</a>
+        <a href="/ui/settings/branding" class="sidebar__link {% if active_subsection == 'branding' %}is-active{% endif %}">Branding</a>
+        <a href="/ui/settings/system" class="sidebar__link {% if active_subsection == 'system' %}is-active{% endif %}">System</a>
+        <a href="/ui/settings/reset" class="sidebar__link {% if active_subsection == 'reset' %}is-active{% endif %}">Reset Data</a>
+        {% endif %}
+
+        <div class="sidebar__section-label">External</div>
+        <a href="/docs" target="_blank" class="sidebar__link">API Docs ↗</a>
+      </nav>
+
+      <div class="sidebar__footer">v{{ app_version }} · {{ current_user.username if current_user else "" }}</div>
+    </aside>
+
+    <header class="topbar">
+      <div class="topbar__breadcrumb">
+        {% block breadcrumb %}{% endblock %}
+      </div>
+      <div class="topbar__user">
+        {% if current_user %}
+          <span class="topbar__user-name">{{ current_user.username }}</span>
+          <form action="/ui/logout" method="post" style="margin:0;">
+            <button type="submit" class="btn btn--ghost btn--sm">Sign out</button>
+          </form>
+        {% endif %}
+      </div>
+    </header>
+
+    <main class="main">
+      {% block main %}{% endblock %}
+    </main>
+
+  </div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set page_title = "New OAuth Client" %}
+{% block breadcrumb %}
+<a href="/ui/settings/oauth-clients">OAuth Clients</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>New</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">New OAuth Client</h1>
+    <p class="page-header__subtitle">Generates a <code>client_id</code> and <code>client_secret</code> pair for use with <code>/oauth/token</code>.</p>
+  </div>
+</div>
+
+<form method="post" action="/ui/settings/oauth-clients/new" class="card" style="max-width: 480px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="name">Name<span class="label__required">*</span></label>
+      <input class="input" id="name" name="name" required maxlength="100" autofocus
+             placeholder="e.g. Saviynt OAuth Integration" />
+      <div class="form-hint">Used as a label only.</div>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/oauth-clients" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Create client</button>
+  </div>
+</form>
+{% endblock %}

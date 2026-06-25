@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% set page_title = "Admin Users" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Admin Users</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Admin Users</h1>
+    <p class="page-header__subtitle">Accounts that can sign in to this UI.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/admin-users/new" class="btn btn--primary">+ Add Admin</a>
+  </div>
+</div>
+
+<div class="card card--flush">
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Last login</th>
+      <th style="text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.username }} {% if u.is_seeded %}<span class="badge badge--neutral text-xs">Seeded</span>{% endif %}</td>
+      <td>
+        {% if u.is_admin %}<span class="badge badge--warning">Admin</span>
+        {% else %}<span class="badge badge--neutral">Standard</span>{% endif %}
+      </td>
+      <td>
+        {% if u.is_active %}<span class="badge badge--success">Active</span>
+        {% else %}<span class="badge badge--neutral">Disabled</span>{% endif %}
+      </td>
+      <td class="mono text-muted">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="mono text-muted">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
+      <td class="table__actions">
+        <a href="/ui/settings/admin-users/{{ u.id }}/password" class="btn btn--ghost btn--sm">Change Password</a>
+        {% if not u.is_seeded and u.id != current_user.id %}
+        <form action="/ui/settings/admin-users/{{ u.id }}/delete" method="post" style="margin:0;"
+              onsubmit="return confirm('Delete admin {{ u.username }}? They will not be able to log in.');">
+          <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--danger);">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+{% endblock %}

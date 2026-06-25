@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% set page_title = "Activity" %}
+{% block breadcrumb %}<span>Activity</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Activity</h1>
+    <p class="page-header__subtitle">
+      Audit log of logins, OAuth &amp; identity events, and data changes — filter, inspect, and export.
+      {% if retention_days and retention_days > 0 %}<br>Events older than {{ retention_days }} days are removed automatically.{% endif %}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/activity/export.json{% if export_qs %}?{{ export_qs }}{% endif %}" class="btn btn--secondary btn--sm">Export JSON</a>
+    <a href="/ui/activity/export.csv{% if export_qs %}?{{ export_qs }}{% endif %}" class="btn btn--secondary btn--sm">Export CSV</a>
+  </div>
+</div>
+
+{# Quick views — one click to scope to a group of categories #}
+<div class="activity-views">
+  {% set active_view = filters.view if not filters.category else "" %}
+  <a href="/ui/activity" class="btn btn--sm {{ 'btn--primary' if not active_view and not filters.category else 'btn--ghost' }}">All</a>
+  {% for key, v in views.items() %}
+  <a href="/ui/activity?view={{ key }}" class="btn btn--sm {{ 'btn--primary' if active_view == key else 'btn--ghost' }}">{{ v.label }}</a>
+  {% endfor %}
+</div>
+
+{# Filter bar #}
+<form method="get" action="/ui/activity" class="card activity-filters">
+  <div class="card__body">
+    <input type="hidden" name="view" value="{{ filters.view }}" />
+    <div class="activity-filters__grid">
+      <div class="form-row">
+        <label class="label" for="category">Category</label>
+        <select class="select" id="category" name="category">
+          <option value="">All categories</option>
+          {% for c in categories %}
+          <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="label" for="outcome">Outcome</label>
+        <select class="select" id="outcome" name="outcome">
+          <option value="">Any outcome</option>
+          {% for o in outcomes %}
+          <option value="{{ o }}" {% if filters.outcome == o %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="label" for="event_type">Event type</label>
+        <input class="input mono" id="event_type" name="event_type" value="{{ filters.event_type }}" placeholder="e.g. oauth.token" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="actor">Actor</label>
+        <input class="input" id="actor" name="actor" value="{{ filters.actor }}" placeholder="user / client id" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="q">Search</label>
+        <input class="input" id="q" name="q" value="{{ filters.q }}" placeholder="message, target, detail…" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="date_from">From</label>
+        <input class="input" type="datetime-local" id="date_from" name="date_from" value="{{ filters.date_from }}" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="date_to">To</label>
+        <input class="input" type="datetime-local" id="date_to" name="date_to" value="{{ filters.date_to }}" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="limit">Show</label>
+        <select class="select" id="limit" name="limit">
+          {% for n in limit_choices %}
+          <option value="{{ n }}" {% if limit == n %}selected{% endif %}>{{ n }} rows</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="activity-filters__actions">
+      <button type="submit" class="btn btn--primary btn--sm">Apply filters</button>
+      <a href="/ui/activity" class="btn btn--ghost btn--sm">Clear</a>
+      <span class="activity-count text-muted">Showing {{ shown }} of {{ total }} matching event{{ "s" if total != 1 else "" }}</span>
+    </div>
+  </div>
+</form>
+
+<div class="card card--flush">
+{% if not events %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No matching activity</h3>
+    <p class="empty-state__body">
+      {% if total == 0 and not filters.category and not filters.view and not filters.q %}
+      Events appear here as people sign in, request OAuth tokens, and change data.
+      {% else %}
+      No events match the current filters. <a href="/ui/activity">Clear filters</a> to see everything.
+      {% endif %}
+    </p>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table activity-table">
+  <thead>
+    <tr>
+      <th style="width:1%;"></th>
+      <th>Time (UTC)</th>
+      <th>Category</th>
+      <th>Event</th>
+      <th>Actor</th>
+      <th>Target</th>
+      <th>Outcome</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in events %}
+    <tr class="activity-row" onclick="this.nextElementSibling.hidden = !this.nextElementSibling.hidden" style="cursor:pointer;">
+      <td class="text-muted activity-row__caret">▸</td>
+      <td class="mono text-muted">{{ e.occurred_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td><span class="badge badge--neutral">{{ e.category }}</span></td>
+      <td class="mono">{{ e.event_type }}</td>
+      <td>
+        {{ e.actor_label or "—" }}
+        {% if e.actor_type and e.actor_type not in ("user", "system") %}
+        <span class="text-muted">({{ e.actor_type }})</span>
+        {% endif %}
+      </td>
+      <td class="text-muted">{{ e.target_label or (e.target_type ~ " #" ~ e.target_id if e.target_type else "—") }}</td>
+      <td>
+        {% if e.outcome == "success" %}<span class="badge badge--success">success</span>
+        {% elif e.outcome == "failure" %}<span class="badge badge--danger">failure</span>
+        {% else %}<span class="badge badge--warning">{{ e.outcome }}</span>{% endif %}
+      </td>
+    </tr>
+    <tr class="activity-detail" hidden>
+      <td colspan="7">
+        <div class="activity-detail__head">
+          <span>{{ e.message }}</span>
+          {% if e.ip_address %}<span class="text-muted mono">{{ e.ip_address }}</span>{% endif %}
+        </div>
+        <pre class="activity-detail__json mono">{{ e.to_dict() | tojson(indent=2) }}</pre>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% set page_title = "New API Key" %}
+{% block breadcrumb %}
+<a href="/ui/settings/api-keys">API Keys</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>New</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">New API Key</h1>
+    <p class="page-header__subtitle">A label-only field, used to identify the integration this key belongs to.</p>
+  </div>
+</div>
+
+<form method="post" action="/ui/settings/api-keys/new" class="card" style="max-width: 480px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="name">Name<span class="label__required">*</span></label>
+      <input class="input" id="name" name="name" required maxlength="100" autofocus
+             placeholder="e.g. Saviynt Production Connector" />
+      <div class="form-hint">Used only as a label; helps you identify which key belongs to which system.</div>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/api-keys" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Create key</button>
+  </div>
+</form>
+{% endblock %}

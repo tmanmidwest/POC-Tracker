@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% set page_title = "Use Case Library" %}
+{% block breadcrumb %}<span>Use Case Library</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Use Case Library</h1>
+    <p class="page-header__subtitle">{{ total }} master use case(s) you can pull into any project.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/library/new" class="btn btn--primary">+ New Library Use Case</a>
+  </div>
+</div>
+
+{% if not groups %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">The library is empty</h3>
+    <p class="empty-state__body">Add reusable use cases here so they can be picked when building a POC.</p>
+    <a href="/ui/library/new" class="btn btn--primary">+ New Library Use Case</a>
+  </div>
+{% endif %}
+
+{% for g in groups %}
+<div class="card card--flush" style="margin-bottom: var(--s-4);">
+  <div class="card__header"><h3 class="card__title">{{ g.category }}</h3></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th style="width:70px;">Ref</th><th>Name</th><th>Feature</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+      {% for e in g.entries %}
+      <tr>
+        <td class="mono">{{ e.default_reference_number or "—" }}</td>
+        <td><strong>{{ e.name }}</strong>{% if e.description %}<br><span class="text-muted text-xs">{{ e.description }}</span>{% endif %}</td>
+        <td>{% if e.feature_type %}<span class="badge badge--neutral">{{ e.feature_type.name }}</span>{% else %}—{% endif %}</td>
+        <td>{% if e.is_active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--neutral">Inactive</span>{% endif %}</td>
+        <td class="table__actions">
+          <a href="/ui/library/{{ e.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+          <form method="post" action="/ui/library/{{ e.id }}/delete" style="margin:0;" onsubmit="return confirm('Delete {{ e.name }} from the library? Projects already using it are unaffected.');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

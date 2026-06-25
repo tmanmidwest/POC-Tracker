@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% set page_title = "Identity Providers" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Identity Providers</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Identity Providers</h1>
+    <p class="page-header__subtitle">Single sign-on for the web UI via OpenID Connect (e.g. Authentik). Enabled providers appear as buttons on the login page. Local username/password login keeps working alongside these.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/auth-providers/new" class="btn btn--primary">+ New Provider</a>
+  </div>
+</div>
+
+<div class="card card--flush">
+{% if not providers %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No identity providers yet</h3>
+    <p class="empty-state__body">Add an OIDC provider to let users sign in with single sign-on.</p>
+    <a href="/ui/settings/auth-providers/new" class="btn btn--primary">+ New Provider</a>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Slug</th>
+      <th>Issuer</th>
+      <th>Redirect URI (register at IdP)</th>
+      <th>Status</th>
+      <th style="text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in providers %}
+    <tr>
+      <td>{{ p.display_name }}</td>
+      <td class="mono text-muted">{{ p.slug }}</td>
+      <td class="mono text-muted">{{ p.issuer_url }}</td>
+      <td class="mono text-muted" style="word-break: break-all;">{{ redirect_uris[p.id] }}</td>
+      <td>
+        {% if p.is_enabled %}<span class="badge badge--success">Enabled</span>
+        {% else %}<span class="badge badge--neutral">Disabled</span>{% endif %}
+      </td>
+      <td class="table__actions">
+        <a href="/ui/settings/auth-providers/{{ p.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+        <form action="/ui/settings/auth-providers/{{ p.id }}/toggle" method="post" style="margin:0;">
+          <button type="submit" class="btn btn--ghost btn--sm">{{ "Disable" if p.is_enabled else "Enable" }}</button>
+        </form>
+        <form action="/ui/settings/auth-providers/{{ p.id }}/delete" method="post" style="margin:0;"
+              onsubmit="return confirm('Delete this provider? Users provisioned through it will lose their SSO link.');">
+          <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--danger);">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

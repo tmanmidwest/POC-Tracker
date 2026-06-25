@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% set page_title = "Project" %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if project else "New" }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit project" if project else "New project" }}</h1>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 720px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="customer_id">Customer<span class="label__required">*</span></label>
+      <select class="select" id="customer_id" name="customer_id" required>
+        <option value="">Select a customer…</option>
+        {% for c in customers %}
+        <option value="{{ c.id }}" {% if form.customer_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-hint">No customer yet? <a href="/ui/customers/new">Add one first</a>.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="name">Project name</label>
+      <input class="input" id="name" name="name" value="{{ form.name or '' }}" maxlength="200" placeholder="e.g. Q3 ISPM Proof of Concept" />
+      <div class="form-hint">Optional — defaults to the customer name if left blank.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="status_id">Status</label>
+      <select class="select" id="status_id" name="status_id">
+        {% for s in project_statuses %}
+        <option value="{{ s.id }}" {% if form.status_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="start_date">Start date</label>
+        <input class="input" type="date" id="start_date" name="start_date" value="{{ form.start_date or '' }}" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="end_date">End date</label>
+        <input class="input" type="date" id="end_date" name="end_date" value="{{ form.end_date or '' }}" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="sales_engineer_id">Sales Engineer</label>
+      <select class="select" id="sales_engineer_id" name="sales_engineer_id">
+        <option value="">Unassigned</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if form.sales_engineer_id == u.id %}selected{% endif %}>{{ u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="account_executive">Account Executive</label>
+        <input class="input" id="account_executive" name="account_executive" value="{{ form.account_executive or '' }}" maxlength="200" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="account_executive_email">AE email</label>
+        <input class="input" type="email" id="account_executive_email" name="account_executive_email" value="{{ form.account_executive_email or '' }}" maxlength="255" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="notes">Notes</label>
+      <textarea class="textarea" id="notes" name="notes" rows="3">{{ form.notes or '' }}</textarea>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/projects{% if project %}/{{ project.id }}{% endif %}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if project else "Create project" }}</button>
+  </div>
+</form>
+{% endblock %}

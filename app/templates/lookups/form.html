@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set page_title = cfg.title %}
+{% block breadcrumb %}<a href="/ui/lookups/{{ slug }}">{{ cfg.title }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if row else "New" }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit" if row else "New" }} — {{ cfg.title }}</h1>
+  </div>
+</div>
+
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 520px;">
+  <div class="card__body">
+    {% for f in cfg.fields %}
+    {% if f.type == 'checkbox' %}
+    <label class="checkbox-row" style="display:flex; gap:var(--s-2); align-items:center; padding: var(--s-2) 0;">
+      <input type="checkbox" name="{{ f.name }}" value="1" {% if form[f.name] %}checked{% endif %} /> {{ f.label }}
+    </label>
+    {% else %}
+    <div class="form-row">
+      <label class="label" for="{{ f.name }}">{{ f.label }}{% if f.required %}<span class="label__required">*</span>{% endif %}</label>
+      <input class="input" id="{{ f.name }}" name="{{ f.name }}"
+             type="{{ 'number' if f.type == 'number' else 'text' }}"
+             value="{{ form[f.name] if form[f.name] is not none else '' }}"
+             {% if f.required %}required{% endif %} />
+    </div>
+    {% endif %}
+    {% endfor %}
+    <label class="checkbox-row" style="display:flex; gap:var(--s-2); align-items:center; padding: var(--s-2) 0;">
+      <input type="checkbox" name="is_active" value="1" {% if form.is_active %}checked{% endif %} /> Active
+    </label>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/lookups/{{ slug }}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save" if row else "Create" }}</button>
+  </div>
+</form>
+{% endblock %}

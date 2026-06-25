@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · {{ branding.name }}</title>
+  <link rel="preconnect" href="https://fonts.cdnfonts.com" />
+  <link href="https://fonts.cdnfonts.com/css/geist" rel="stylesheet" />
+  <link href="https://fonts.cdnfonts.com/css/geist-mono" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <style>
+    .local-login { margin-top: var(--s-5); border-top: 1px solid var(--line); }
+    .local-login > summary {
+      cursor: pointer; list-style: none; user-select: none;
+      text-align: center; color: var(--text-muted); font-size: 0.85rem;
+      padding: var(--s-4) var(--s-2) 0;
+    }
+    .local-login > summary::-webkit-details-marker { display: none; }
+    .local-login > summary:hover { color: var(--text); text-decoration: underline; }
+    .local-login__body { margin-top: var(--s-4); }
+  </style>
+</head>
+<body>
+
+  {% if flashes %}
+  <div class="flashes">
+    {% for f in flashes %}
+    <div class="flash flash--{{ f.level }}">{{ f.message }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-card__brand">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+             style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
+        <h1 class="auth-card__title"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</h1>
+        <p class="auth-card__subtitle">Sign in to continue</p>
+      </div>
+
+      {% if error %}
+      <div class="inline-error">{{ error }}</div>
+      {% endif %}
+
+      {% if providers %}
+      <div class="sso-options">
+        {% for p in providers %}
+        <a class="btn btn--primary" style="width: 100%; margin-bottom: var(--s-3);"
+           href="/ui/auth/{{ p.slug }}/login?next={{ next | urlencode }}">
+          Sign in with {{ p.display_name }}
+        </a>
+        {% endfor %}
+      </div>
+
+      {# Local login is secondary: hidden behind a toggle. Auto-expands if a
+         local sign-in attempt just failed so the error is shown in context. #}
+      <details class="local-login" {% if error %}open{% endif %}>
+        <summary>Use local credentials instead</summary>
+        <form method="post" action="/ui/login" class="local-login__body">
+          <input type="hidden" name="next" value="{{ next }}" />
+          <div class="form-row">
+            <label class="label" for="username">Username</label>
+            <input type="text" id="username" name="username" class="input" required autocomplete="username" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="password">Password</label>
+            <input type="password" id="password" name="password" class="input" required autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn btn--secondary" style="width: 100%;">Sign in</button>
+        </form>
+      </details>
+      {% else %}
+      <form method="post" action="/ui/login">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <div class="form-row">
+          <label class="label" for="username">Username</label>
+          <input type="text" id="username" name="username" class="input" autofocus required autocomplete="username" />
+        </div>
+        <div class="form-row">
+          <label class="label" for="password">Password</label>
+          <input type="password" id="password" name="password" class="input" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn--primary" style="width: 100%;">Sign in</button>
+      </form>
+      {% endif %}
+
+      <div style="margin-top: var(--s-8); text-align: center;">
+        <div class="auth-card__mark">POC · non-production</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

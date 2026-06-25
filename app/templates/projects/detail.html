@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% set page_title = project.display_name %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ project.display_name }}
+      {% if project.is_archived %}<span class="badge badge--neutral">Archived</span>{% endif %}
+    </h1>
+    <p class="page-header__subtitle">
+      <a href="/ui/customers/{{ project.customer_id }}">{{ project.customer.name }}</a>
+      · <span class="badge badge--neutral">{{ project.status.name }}</span>
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/reports/projects/{{ project.id }}" class="btn btn--secondary">Report</a>
+    <a href="/ui/projects/{{ project.id }}/edit" class="btn btn--secondary">Edit</a>
+    {% if project.is_archived %}
+      <form action="/ui/projects/{{ project.id }}/restore" method="post" style="margin:0;"><button class="btn btn--primary">Restore</button></form>
+    {% else %}
+      <form action="/ui/projects/{{ project.id }}/archive" method="post" style="margin:0;"><button class="btn btn--secondary">Archive</button></form>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- Overview ---- #}
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4);">
+    <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.username if project.sales_engineer else "—" }}</div></div>
+    <div class="stat"><div class="stat__label">Account Exec</div><div class="stat__value">{{ project.account_executive or "—" }}</div></div>
+    <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
+    <div class="stat"><div class="stat__label">Use-case progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} ({{ progress.pct }}%)</div></div>
+  </div>
+  {% if project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ project.notes }}</div>{% endif %}
+</div>
+
+{# ---- Add use cases ---- #}
+<div id="use-cases" class="page-header">
+  <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>
+  <div class="page-header__actions">
+    <details style="position:relative;">
+      <summary class="btn btn--secondary" style="list-style:none;">+ Add custom use case</summary>
+      <div class="card" style="position:absolute; right:0; z-index:20; width:480px; margin-top: var(--s-2);">
+        <form method="post" action="/ui/projects/{{ project.id }}/use-cases" class="card__body">
+          <div style="display:grid; grid-template-columns: 1fr 120px; gap: var(--s-3);">
+            <div class="form-row"><label class="label" for="ac_category">Category<span class="label__required">*</span></label>
+              <input class="input" id="ac_category" name="category" required maxlength="150" /></div>
+            <div class="form-row"><label class="label" for="ac_ref">Ref #</label>
+              <input class="input" id="ac_ref" name="reference_number" maxlength="20" placeholder="1.1" /></div>
+          </div>
+          <div class="form-row"><label class="label" for="ac_name">Name<span class="label__required">*</span></label>
+            <input class="input" id="ac_name" name="name" required maxlength="255" /></div>
+          <div class="form-row"><label class="label" for="ac_desc">Description</label>
+            <textarea class="textarea" id="ac_desc" name="description" rows="2"></textarea></div>
+          <div class="form-row"><label class="label" for="ac_sv">Success validation</label>
+            <textarea class="textarea" id="ac_sv" name="success_validation" rows="2"></textarea></div>
+          <div class="form-row"><label class="label" for="ac_ft">Feature type</label>
+            <select class="select" id="ac_ft" name="feature_type_id"><option value="">—</option>
+              {% for ft in feature_types %}<option value="{{ ft.id }}">{{ ft.name }}</option>{% endfor %}</select></div>
+          <div class="form-actions"><button class="btn btn--primary">Add use case</button></div>
+        </form>
+      </div>
+    </details>
+    <details style="position:relative;">
+      <summary class="btn btn--primary" style="list-style:none;">+ Add from library</summary>
+      <div class="card" style="position:absolute; right:0; z-index:20; width:560px; max-height:70vh; overflow:auto; margin-top: var(--s-2);">
+        <form method="post" action="/ui/projects/{{ project.id }}/use-cases/from-library" class="card__body">
+          {% if not library_groups %}
+            <p class="text-muted">The library is empty. <a href="/ui/library">Add entries</a>.</p>
+          {% else %}
+          <p class="form-hint">Pick the use cases that apply. Already-added ones are checked and disabled.</p>
+          {% for g in library_groups %}
+          <div style="margin-bottom: var(--s-3);">
+            <div class="sidebar__section-label" style="padding-left:0;">{{ g.category }}</div>
+            {% for item in g.entries %}
+            <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:flex-start; padding: var(--s-1) 0; {% if item.added %}opacity:0.5;{% endif %}">
+              <input type="checkbox" name="library_ids" value="{{ item.entry.id }}" {% if item.added %}checked disabled{% endif %} />
+              <span>
+                <strong>{% if item.entry.default_reference_number %}{{ item.entry.default_reference_number }} · {% endif %}{{ item.entry.name }}</strong>
+                {% if item.added %}<span class="badge badge--neutral">added</span>{% endif %}
+                {% if item.entry.description %}<br><span class="text-muted text-xs">{{ item.entry.description }}</span>{% endif %}
+              </span>
+            </label>
+            {% endfor %}
+          </div>
+          {% endfor %}
+          <div class="form-actions"><button class="btn btn--primary">Add selected</button></div>
+          {% endif %}
+        </form>
+      </div>
+    </details>
+  </div>
+</div>
+
+{# ---- Use case list ---- #}
+{% if not use_case_groups %}
+  <div class="empty-state"><p class="empty-state__body">No use cases yet. Add some from the library or create a custom one.</p></div>
+{% endif %}
+
+{% for group in use_case_groups %}
+<div class="card card--flush" style="margin-bottom: var(--s-4);">
+  <div class="card__header"><h3 class="card__title">{{ group.category }}</h3></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th style="width:70px;">Ref</th><th>Use case</th><th>Feature</th><th style="width:200px;">Status</th><th>Source</th><th></th></tr></thead>
+    <tbody>
+      {% for uc in group.use_cases %}
+      <tr>
+        <td class="mono">{{ uc.reference_number or "—" }}</td>
+        <td>
+          <strong>{{ uc.name }}</strong>
+          {% if uc.description %}<br><span class="text-muted text-xs">{{ uc.description }}</span>{% endif %}
+          {% if uc.comments %}<br><span class="text-xs">💬 {{ uc.comments }}</span>{% endif %}
+          {% if uc.screenshots %}
+          <div style="display:flex; gap: var(--s-2); margin-top: var(--s-2); flex-wrap:wrap;">
+            {% for shot in uc.screenshots %}
+            <a href="/ui/projects/screenshots/{{ shot.id }}" target="_blank" title="{{ shot.caption or shot.original_filename }}">
+              <img src="/ui/projects/screenshots/{{ shot.id }}" alt="screenshot" style="height:48px; border-radius:6px; border:1px solid var(--border);" />
+            </a>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </td>
+        <td>{% if uc.feature_type %}<span class="badge badge--neutral">{{ uc.feature_type.name }}</span>{% else %}—{% endif %}</td>
+        <td>
+          <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/status" style="margin:0;">
+            <select class="select" name="status_id" onchange="this.form.submit()">
+              {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+            </select>
+          </form>
+        </td>
+        <td>{% if uc.source == 'library' %}<span class="badge badge--neutral">library</span>{% else %}<span class="badge badge--warning">custom</span>{% endif %}</td>
+        <td class="table__actions">
+          <details style="position:relative;">
+            <summary class="btn btn--ghost btn--sm" style="list-style:none;">Edit</summary>
+            <div class="card" style="position:absolute; right:0; z-index:20; width:520px; margin-top: var(--s-1);">
+              <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/edit" class="card__body">
+                <div style="display:grid; grid-template-columns: 1fr 110px; gap: var(--s-3);">
+                  <div class="form-row"><label class="label">Category</label><input class="input" name="category" value="{{ uc.category }}" required /></div>
+                  <div class="form-row"><label class="label">Ref #</label><input class="input" name="reference_number" value="{{ uc.reference_number or '' }}" /></div>
+                </div>
+                <div class="form-row"><label class="label">Name</label><input class="input" name="name" value="{{ uc.name }}" required /></div>
+                <div class="form-row"><label class="label">Description</label><textarea class="textarea" name="description" rows="2">{{ uc.description or '' }}</textarea></div>
+                <div class="form-row"><label class="label">Success validation</label><textarea class="textarea" name="success_validation" rows="2">{{ uc.success_validation or '' }}</textarea></div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-3);">
+                  <div class="form-row"><label class="label">Feature type</label>
+                    <select class="select" name="feature_type_id"><option value="">—</option>
+                      {% for ft in feature_types %}<option value="{{ ft.id }}" {% if ft.id == uc.feature_type_id %}selected{% endif %}>{{ ft.name }}</option>{% endfor %}</select></div>
+                  <div class="form-row"><label class="label">Status</label>
+                    <select class="select" name="status_id">
+                      {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+                </div>
+                <div class="form-row"><label class="label">Comments</label><textarea class="textarea" name="comments" rows="2">{{ uc.comments or '' }}</textarea></div>
+                <div class="form-actions"><button class="btn btn--primary btn--sm">Save</button></div>
+              </form>
+              <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/screenshots" enctype="multipart/form-data" class="card__body" style="border-top:1px solid var(--border);">
+                <label class="label">Add screenshot</label>
+                <input class="input" type="file" name="file" accept="image/*" required />
+                <input class="input" name="caption" placeholder="Caption (optional)" style="margin-top: var(--s-2);" />
+                <div class="form-actions"><button class="btn btn--secondary btn--sm">Upload</button></div>
+              </form>
+              {% if uc.screenshots %}
+              <div class="card__body" style="border-top:1px solid var(--border);">
+                {% for shot in uc.screenshots %}
+                <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2);">
+                  <a href="/ui/projects/screenshots/{{ shot.id }}" target="_blank">{{ shot.original_filename or shot.stored_filename }}</a>
+                  <form method="post" action="/ui/projects/screenshots/{{ shot.id }}/delete" style="margin:0;">
+                    <button class="btn btn--ghost btn--sm" style="color:var(--danger);">×</button>
+                  </form>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
+              <div class="card__body" style="border-top:1px solid var(--border);">
+                <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/delete" onsubmit="return confirm('Remove use case {{ uc.name }}?');" style="margin:0;">
+                  <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Remove use case</button>
+                </form>
+              </div>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endfor %}
+
+<div style="margin-top: var(--s-5);">
+  <form action="/ui/projects/{{ project.id }}/delete" method="post"
+        onsubmit="return confirm('Delete project {{ project.display_name }}? This removes its use cases and screenshots.');">
+    <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete project</button>
+  </form>
+</div>
+{% endblock %}

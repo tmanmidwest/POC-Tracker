@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set page_title = "Dashboard Preferences" %}
+{% block breadcrumb %}<a href="/ui/dashboard">Dashboard</a> <span class="topbar__breadcrumb-sep">/</span> <span>Customize</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Customize your dashboard</h1>
+    <p class="page-header__subtitle">Choose which columns and statuses to show, and how to sort.</p>
+  </div>
+</div>
+
+<form method="post" action="/ui/dashboard/preferences" class="card" style="max-width: 640px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label">Columns</label>
+      {% for c in all_columns %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="col_{{ c.key }}" value="1" {% if c.key in prefs.columns %}checked{% endif %} />
+        {{ c.label }}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label class="label">Statuses to show</label>
+      <div class="form-hint">Leave all unchecked to show every status.</div>
+      {% for s in statuses %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="status_ids" value="{{ s.id }}"
+          {% if prefs.status_ids and s.id in prefs.status_ids %}checked{% endif %} />
+        {{ s.name }}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="sort">Sort projects within each status by</label>
+      <select class="select" id="sort" name="sort">
+        <option value="updated" {% if prefs.sort == 'updated' %}selected{% endif %}>Recently updated</option>
+        <option value="start_date" {% if prefs.sort == 'start_date' %}selected{% endif %}>Start date</option>
+        <option value="name" {% if prefs.sort == 'name' %}selected{% endif %}>Project name</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/dashboard" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save preferences</button>
+  </div>
+</form>
+{% endblock %}

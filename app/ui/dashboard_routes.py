@@ -1,0 +1,167 @@
+"""HTML UI dashboard — projects grouped by status, with per-user view prefs."""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse, Response
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models import AppUser, DashboardPref, Project, ProjectStatus
+from app.ui.dependencies import require_ui_user
+from app.ui.flash import flash
+from app.ui.templating import render
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/ui/dashboard", tags=["ui"], include_in_schema=False)
+
+
+# All optional columns the user can toggle on the dashboard cards.
+ALL_COLUMNS = [
+    {"key": "name", "label": "Project"},
+    {"key": "sales_engineer", "label": "Sales Engineer"},
+    {"key": "account_executive", "label": "Account Exec"},
+    {"key": "start_date", "label": "Start"},
+    {"key": "end_date", "label": "End"},
+    {"key": "progress", "label": "Use-case progress"},
+]
+DEFAULT_COLUMNS = ["name", "sales_engineer", "start_date", "end_date", "progress"]
+DEFAULT_SORT = "updated"  # updated | start_date | name
+
+
+def _load_prefs(db: Session, user: AppUser) -> dict[str, Any]:
+    row = (
+        db.query(DashboardPref)
+        .filter(DashboardPref.app_user_id == user.id)
+        .one_or_none()
+    )
+    prefs: dict[str, Any] = {
+        "columns": DEFAULT_COLUMNS,
+        "status_ids": None,  # None = show all
+        "sort": DEFAULT_SORT,
+    }
+    if row and row.config_json:
+        try:
+            stored = json.loads(row.config_json)
+            prefs.update({k: v for k, v in stored.items() if v is not None})
+        except (ValueError, TypeError):
+            log.warning("dashboard_prefs_parse_failed", extra={"user": user.username})
+    return prefs
+
+
+def _progress(project: Project) -> dict[str, int]:
+    total = len(project.use_cases)
+    done = sum(
+        1 for uc in project.use_cases if uc.status and uc.status.is_complete_status
+    )
+    pct = round(done / total * 100) if total else 0
+    return {"total": total, "done": done, "pct": pct}
+
+
+@router.get("")
+@router.get("/")
+def dashboard(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    prefs = _load_prefs(db, user)
+    statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
+
+    selected_status_ids = prefs.get("status_ids")
+    visible_statuses = [
+        s for s in statuses
+        if selected_status_ids is None or s.id in selected_status_ids
+    ]
+
+    sort = prefs.get("sort", DEFAULT_SORT)
+    groups = []
+    for status in visible_statuses:
+        q = (
+            db.query(Project)
+            .filter(Project.status_id == status.id, Project.is_archived.is_(False))
+        )
+        if sort == "start_date":
+            q = q.order_by(Project.start_date.is_(None), Project.start_date)
+        elif sort == "name":
+            q = q.order_by(Project.name)
+        else:
+            q = q.order_by(Project.updated_at.desc())
+        projects = q.all()
+        groups.append(
+            {
+                "status": status,
+                "projects": [
+                    {"project": p, "progress": _progress(p)} for p in projects
+                ],
+            }
+        )
+
+    total_active = (
+        db.query(Project).filter(Project.is_archived.is_(False)).count()
+    )
+    return render(
+        request,
+        "dashboard/index.html",
+        current_user=user,
+        active_section="dashboard",
+        groups=groups,
+        prefs=prefs,
+        all_columns=ALL_COLUMNS,
+        total_active=total_active,
+    )
+
+
+@router.get("/preferences")
+def preferences_form(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    prefs = _load_prefs(db, user)
+    statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
+    return render(
+        request,
+        "dashboard/preferences.html",
+        current_user=user,
+        active_section="dashboard",
+        prefs=prefs,
+        statuses=statuses,
+        all_columns=ALL_COLUMNS,
+    )
+
+
+@router.post("/preferences")
+async def save_preferences(
+    request: Request,
+    sort: str = Form(DEFAULT_SORT),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    form = await request.form()
+    columns = [c["key"] for c in ALL_COLUMNS if form.get(f"col_{c['key']}")]
+    status_values = form.getlist("status_ids")  # type: ignore[attr-defined]
+    status_ids = [int(s) for s in status_values] if status_values else None
+
+    config = {
+        "columns": columns or DEFAULT_COLUMNS,
+        "status_ids": status_ids,
+        "sort": sort if sort in {"updated", "start_date", "name"} else DEFAULT_SORT,
+    }
+    row = (
+        db.query(DashboardPref)
+        .filter(DashboardPref.app_user_id == user.id)
+        .one_or_none()
+    )
+    if row is None:
+        row = DashboardPref(app_user_id=user.id)
+        db.add(row)
+    row.config_json = json.dumps(config)
+    db.commit()
+    flash(request, "Dashboard preferences saved.", "success")
+    return RedirectResponse(url="/ui/dashboard", status_code=303)

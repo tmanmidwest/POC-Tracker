@@ -1,0 +1,35 @@
+{# Reusable template macros. Import with: {% import "_macros.html" as M %} #}
+
+{# Sortable table header link. Cycles asc/desc on click. #}
+{% macro sort_link(field, label, current_sort, current_order, base_url, extra_qs="") %}
+  {% set new_order = "desc" if current_sort == field and current_order == "asc" else "asc" %}
+  <a class="table__sort {% if current_sort == field %}is-active{% endif %}"
+     href="{{ base_url }}?{{ extra_qs }}{% if extra_qs %}&{% endif %}sort={{ field }}&order={{ new_order }}">
+    {{ label }}
+    {% if current_sort == field %}
+      <span class="table__sort-arrow">{% if current_order == "asc" %}▲{% else %}▼{% endif %}</span>
+    {% else %}
+      <span class="table__sort-arrow">↕</span>
+    {% endif %}
+  </a>
+{% endmacro %}
+
+
+{# Status badge — auto-colors by status flags. #}
+{% macro status_badge(status) %}
+  {% if status.is_active_status %}
+    <span class="badge badge--success badge--dot">{{ status.label }}</span>
+  {% else %}
+    <span class="badge badge--warning badge--dot">{{ status.label }}</span>
+  {% endif %}
+{% endmacro %}
+
+
+{# Active/inactive flag badge for lookup rows. #}
+{% macro active_badge(is_active) %}
+  {% if is_active %}
+    <span class="badge badge--success">Active</span>
+  {% else %}
+    <span class="badge badge--neutral">Inactive</span>
+  {% endif %}
+{% endmacro %}

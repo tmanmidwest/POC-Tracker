@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% set page_title = "OAuth Clients" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>OAuth Clients</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">OAuth Clients</h1>
+    <p class="page-header__subtitle">Client credentials for OAuth 2.0 (RFC 6749) flows. Use the <code>/oauth/token</code> endpoint to exchange for a JWT.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/oauth-clients/new" class="btn btn--primary">+ New OAuth Client</a>
+  </div>
+</div>
+
+{% if new_client %}
+<div class="secret-reveal">
+  <div class="secret-reveal__label">New OAuth credentials — copy them now</div>
+  <div style="margin-bottom: var(--s-3);">
+    <div class="text-xs text-muted mb-3" style="margin-top: var(--s-2);">CLIENT ID</div>
+    <div class="secret-reveal__value">{{ new_client.client_id }}</div>
+  </div>
+  <div>
+    <div class="text-xs text-muted mb-3" style="margin-top: var(--s-3);">CLIENT SECRET</div>
+    <div class="secret-reveal__value">{{ new_client.client_secret }}</div>
+  </div>
+  <div class="secret-reveal__warning">
+    This is the only time the secret is shown. After leaving this page you'll only see the client ID.
+  </div>
+</div>
+{% endif %}
+
+<div class="card card--flush">
+{% if not clients %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No OAuth clients yet</h3>
+    <p class="empty-state__body">Create one for systems that prefer OAuth 2.0 client_credentials flow.</p>
+    <a href="/ui/settings/oauth-clients/new" class="btn btn--primary">+ New OAuth Client</a>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Client ID</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Last used</th>
+      <th style="text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in clients %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td class="mono text-muted">{{ c.client_id }}</td>
+      <td>
+        {% if c.revoked_at %}<span class="badge badge--neutral">Revoked</span>
+        {% else %}<span class="badge badge--success">Active</span>{% endif %}
+      </td>
+      <td class="mono text-muted">{{ c.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="mono text-muted">{{ c.last_used_at.strftime("%Y-%m-%d %H:%M") if c.last_used_at else "—" }}</td>
+      <td class="table__actions">
+        {% if not c.revoked_at %}
+        <form action="/ui/settings/oauth-clients/{{ c.id }}/revoke" method="post" style="margin:0;"
+              onsubmit="return confirm('Revoke this OAuth client?');">
+          <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
+        </form>
+        {% endif %}
+        <form action="/ui/settings/oauth-clients/{{ c.id }}/delete" method="post" style="margin:0;"
+              onsubmit="return confirm('Permanently delete this OAuth client record?');">
+          <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--danger);">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

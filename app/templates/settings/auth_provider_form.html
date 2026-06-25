@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% set is_edit = provider is not none %}
+{% set page_title = "Edit Provider" if is_edit else "New Provider" %}
+{% block breadcrumb %}
+<a href="/ui/settings/auth-providers">Identity Providers</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>{{ "Edit" if is_edit else "New" }}</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit Identity Provider" if is_edit else "New Identity Provider" }}</h1>
+    <p class="page-header__subtitle">Configure an OpenID Connect provider. The app reads the discovery document at <code>&lt;issuer&gt;/.well-known/openid-configuration</code> and uses the Authorization Code flow with PKCE.</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="inline-error" style="max-width: 640px;">{{ error }}</div>
+{% endif %}
+
+{% if is_edit and redirect_uri %}
+<div class="card" style="max-width: 640px; margin-bottom: var(--s-4);">
+  <div class="card__body">
+    <div class="text-xs text-muted mb-3">REDIRECT URI — register this exact value at your provider</div>
+    <div class="mono" style="word-break: break-all;">{{ redirect_uri }}</div>
+  </div>
+</div>
+{% elif callback_base %}
+<div class="card" style="max-width: 640px; margin-bottom: var(--s-4);">
+  <div class="card__body">
+    <div class="text-xs text-muted mb-3">REDIRECT URI — register this at your provider (with your chosen slug)</div>
+    <div class="mono" style="word-break: break-all;">{{ callback_base }}callback</div>
+  </div>
+</div>
+{% endif %}
+
+<form method="post"
+      action="{{ '/ui/settings/auth-providers/' ~ provider.id ~ '/edit' if is_edit else '/ui/settings/auth-providers/new' }}"
+      class="card" style="max-width: 640px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="display_name">Display name<span class="label__required">*</span></label>
+      <input class="input" id="display_name" name="display_name" required maxlength="100" autofocus
+             value="{{ form.display_name or '' }}" placeholder="e.g. Authentik" />
+      <div class="form-hint">Shown on the login button: "Sign in with …".</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="slug">Slug<span class="label__required">*</span></label>
+      <input class="input mono" id="slug" name="slug" required maxlength="50"
+             pattern="[a-z0-9-]+" value="{{ form.slug or '' }}" placeholder="e.g. authentik" />
+      <div class="form-hint">Lowercase letters, numbers, hyphens. Used in the redirect URI; changing it changes the URI you must register at the IdP.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="issuer_url">Issuer URL<span class="label__required">*</span></label>
+      <input class="input" id="issuer_url" name="issuer_url" required maxlength="500"
+             value="{{ form.issuer_url or '' }}"
+             placeholder="https://authentik.example.com/application/o/hr-app/" />
+      <div class="form-hint">The OIDC issuer. Authentik shows this on the provider's overview page.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="client_id">Client ID<span class="label__required">*</span></label>
+      <input class="input mono" id="client_id" name="client_id" required maxlength="255"
+             value="{{ form.client_id or '' }}" />
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="client_secret">Client secret{% if not is_edit %}<span class="label__required">*</span>{% endif %}</label>
+      <input class="input mono" id="client_secret" name="client_secret" type="password"
+             autocomplete="new-password"
+             placeholder="{{ '•••••••• (leave blank to keep current)' if is_edit else '' }}" />
+      <div class="form-hint">Stored encrypted. {% if is_edit %}Leave blank to keep the existing secret.{% else %}Leave blank only for public (PKCE-only) clients.{% endif %}</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="scopes">Scopes</label>
+      <input class="input mono" id="scopes" name="scopes" maxlength="255"
+             value="{{ form.scopes or 'openid email profile' }}" />
+      <div class="form-hint">Space-separated. Must include <code>openid</code>.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+        <input type="checkbox" name="is_enabled" value="1" {{ "checked" if form.is_enabled else "" }} />
+        Enabled (show on login page)
+      </label>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/auth-providers" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if is_edit else "Create provider" }}</button>
+  </div>
+</form>
+{% endblock %}

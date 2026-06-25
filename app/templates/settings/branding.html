@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% set page_title = "Branding" %}
+{% block breadcrumb %}
+<span>Settings</span>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>Branding</span>
+{% endblock %}
+
+{% block main %}
+{# Fall back to a valid preset if the submitted key was invalid (re-render after error). #}
+{% set preview_icon = icon_presets.get(form.icon_key) or icon_presets['suitcase'] %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Branding</h1>
+    <p class="page-header__subtitle">Customize the name, accent color, and icon shown in the sidebar, login page, and browser tab.</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="inline-error" style="max-width: 640px;">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/ui/settings/branding" class="card" style="max-width: 640px;">
+  <div class="card__body">
+
+    {# Live preview of the lockup #}
+    <div class="form-row">
+      <label class="label">Preview</label>
+      <div id="brand-preview"
+           style="display:flex; align-items:center; gap:10px; padding:var(--s-4) var(--s-5);
+                  border:1px solid var(--line); border-radius:8px; background:var(--primary-soft);">
+        <svg id="brand-preview-icon" width="28" height="28" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+             style="color: {{ form.brand_color }};">{{ preview_icon.svg | safe }}</svg>
+        <span id="brand-preview-name" style="font-size:16px; font-weight:600; color: {{ form.brand_color }};">{{ form.brand_name }}</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="brand_name">Brand name<span class="label__required">*</span></label>
+      <input class="input" id="brand_name" name="brand_name" required maxlength="100" autofocus
+             value="{{ form.brand_name or '' }}" placeholder="e.g. POC Tracker" />
+      <div class="form-hint">Shown in the sidebar, on the login page, and in the browser tab title.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="brand_color_hex">Accent color</label>
+      <div style="display:flex; align-items:center; gap:var(--s-3);">
+        <input type="color" id="brand_color" name="brand_color" value="{{ form.brand_color }}"
+               style="width:44px; height:38px; padding:2px; border:1px solid var(--line); border-radius:6px; cursor:pointer;" />
+        <input class="input mono" id="brand_color_hex" value="{{ form.brand_color }}"
+               maxlength="7" pattern="#[0-9a-fA-F]{6}" style="max-width:140px;" />
+        <button type="button" class="btn btn--ghost btn--sm" id="brand_color_reset">Reset to default</button>
+      </div>
+      <div class="form-hint">Applied to the brand name and icon. Default is <span class="mono">{{ default_color }}</span>.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label">Icon</label>
+      <div class="icon-grid">
+        {% for key, preset in icon_presets.items() %}
+        <label class="icon-option{% if form.icon_key == key %} is-selected{% endif %}" data-icon-key="{{ key }}">
+          <input type="radio" name="icon_key" value="{{ key }}" {{ "checked" if form.icon_key == key else "" }} />
+          <svg class="icon-option__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">{{ preset.svg | safe }}</svg>
+          <span class="icon-option__label">{{ preset.label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/dashboard" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save branding</button>
+  </div>
+</form>
+
+<style>
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: var(--s-3);
+  }
+  .icon-option {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: var(--s-4) var(--s-2);
+    border: 1px solid var(--line); border-radius: 8px;
+    cursor: pointer; text-align: center;
+    transition: border-color .12s, background .12s;
+  }
+  .icon-option:hover { border-color: var(--primary); }
+  .icon-option.is-selected { border-color: var(--primary); background: var(--primary-soft); }
+  .icon-option input { position: absolute; opacity: 0; pointer-events: none; }
+  .icon-option__svg { width: 26px; height: 26px; color: var(--text); }
+  .icon-option__label { font-size: 11px; color: var(--text-muted); }
+</style>
+
+<script>
+  (function () {
+    var color = document.getElementById('brand_color');
+    var hex = document.getElementById('brand_color_hex');
+    var reset = document.getElementById('brand_color_reset');
+    var nameInput = document.getElementById('brand_name');
+    var previewName = document.getElementById('brand-preview-name');
+    var previewIcon = document.getElementById('brand-preview-icon');
+    var defaultColor = {{ default_color | tojson }};
+    var presets = {{ icon_presets | tojson }};
+
+    function applyColor(value) {
+      previewName.style.color = value;
+      previewIcon.style.color = value;
+    }
+    color.addEventListener('input', function () {
+      hex.value = color.value;
+      applyColor(color.value);
+    });
+    hex.addEventListener('input', function () {
+      if (/^#[0-9a-fA-F]{6}$/.test(hex.value)) {
+        color.value = hex.value;
+        applyColor(hex.value);
+      }
+    });
+    reset.addEventListener('click', function () {
+      color.value = defaultColor;
+      hex.value = defaultColor;
+      applyColor(defaultColor);
+    });
+    nameInput.addEventListener('input', function () {
+      previewName.textContent = nameInput.value;
+    });
+
+    document.querySelectorAll('.icon-option').forEach(function (opt) {
+      opt.addEventListener('click', function () {
+        document.querySelectorAll('.icon-option').forEach(function (o) { o.classList.remove('is-selected'); });
+        opt.classList.add('is-selected');
+        var key = opt.getAttribute('data-icon-key');
+        if (presets[key]) { previewIcon.innerHTML = presets[key].svg; }
+      });
+    });
+  })();
+</script>
+{% endblock %}

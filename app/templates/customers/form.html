@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set page_title = "Customer" %}
+{% block breadcrumb %}<a href="/ui/customers">Customers</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if customer else "New" }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit customer" if customer else "New customer" }}</h1>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 560px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="name">Company name<span class="label__required">*</span></label>
+      <input class="input" id="name" name="name" value="{{ form.name or '' }}" required maxlength="200" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="website">Website</label>
+      <input class="input" id="website" name="website" value="{{ form.website or '' }}" maxlength="255" placeholder="https://…" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="notes">Notes</label>
+      <textarea class="textarea" id="notes" name="notes" rows="4">{{ form.notes or '' }}</textarea>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/customers{% if customer %}/{{ customer.id }}{% endif %}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if customer else "Create customer" }}</button>
+  </div>
+</form>
+{% endblock %}

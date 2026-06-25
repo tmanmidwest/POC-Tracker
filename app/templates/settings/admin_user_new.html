@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set page_title = "New Admin User" %}
+{% block breadcrumb %}
+<a href="/ui/settings/admin-users">Admin Users</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>New</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Add Admin User</h1>
+    <p class="page-header__subtitle">Create a new account that can sign in to this UI.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ui/settings/admin-users/new" class="card" style="max-width: 480px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="username">Username<span class="label__required">*</span></label>
+      <input class="input" id="username" name="username" value="{{ form.username or '' }}" required maxlength="100" autocomplete="username" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="password">Password<span class="label__required">*</span></label>
+      <input class="input" type="password" id="password" name="password" required minlength="8" autocomplete="new-password" />
+      <div class="form-hint">Minimum 8 characters.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="role">Role<span class="label__required">*</span></label>
+      <select class="select" id="role" name="role">
+        <option value="standard" {% if form.role != 'admin' %}selected{% endif %}>Standard — add/edit projects &amp; use cases</option>
+        <option value="admin" {% if form.role == 'admin' %}selected{% endif %}>Admin — full access (lookups, library, settings)</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/admin-users" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Create admin</button>
+  </div>
+</form>
+{% endblock %}

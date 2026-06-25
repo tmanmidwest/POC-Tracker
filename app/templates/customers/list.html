@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set page_title = "Customers" %}
+{% block breadcrumb %}<span>Customers</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Customers</h1>
+    <p class="page-header__subtitle">Prospects and customers you run POCs for.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/customers/new" class="btn btn--primary">+ New Customer</a>
+  </div>
+</div>
+
+<div class="card card--flush">
+{% if not customers %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No customers yet</h3>
+    <p class="empty-state__body">Add your first prospect to start tracking a POC.</p>
+    <a href="/ui/customers/new" class="btn btn--primary">+ New Customer</a>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th>Website</th><th>Contacts</th><th>Projects</th></tr>
+  </thead>
+  <tbody>
+    {% for c in customers %}
+    <tr onclick="window.location='/ui/customers/{{ c.id }}'" style="cursor:pointer;">
+      <td><strong>{{ c.name }}</strong></td>
+      <td class="text-muted">{{ c.website or "—" }}</td>
+      <td>{{ c.contacts | length }}</td>
+      <td>{{ c.projects | length }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

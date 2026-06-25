@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set page_title = "Dashboard" %}
+{% block breadcrumb %}<span>Dashboard</span>{% endblock %}
+
+{% set cols = prefs.columns %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Dashboard</h1>
+    <p class="page-header__subtitle">{{ total_active }} active POC project(s), grouped by status.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/dashboard/preferences" class="btn btn--secondary">Customize</a>
+    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+  </div>
+</div>
+
+{% for group in groups %}
+<div class="card card--flush" style="margin-bottom: var(--s-5);">
+  <div class="card__header">
+    <h2 class="card__title">{{ group.status.name }}
+      <span class="badge badge--neutral">{{ group.projects | length }}</span>
+    </h2>
+  </div>
+  {% if not group.projects %}
+    <div class="empty-state" style="padding: var(--s-5);">
+      <p class="empty-state__body">No projects in this status.</p>
+    </div>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Customer</th>
+        {% if 'name' in cols %}<th>Project</th>{% endif %}
+        {% if 'sales_engineer' in cols %}<th>Sales Engineer</th>{% endif %}
+        {% if 'account_executive' in cols %}<th>Account Exec</th>{% endif %}
+        {% if 'start_date' in cols %}<th>Start</th>{% endif %}
+        {% if 'end_date' in cols %}<th>End</th>{% endif %}
+        {% if 'progress' in cols %}<th>Use cases</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in group.projects %}
+      {% set p = item.project %}
+      <tr onclick="window.location='/ui/projects/{{ p.id }}'" style="cursor:pointer;">
+        <td><strong>{{ p.customer.name }}</strong></td>
+        {% if 'name' in cols %}<td>{{ p.name or "—" }}</td>{% endif %}
+        {% if 'sales_engineer' in cols %}<td class="text-muted">{{ p.sales_engineer.username if p.sales_engineer else "—" }}</td>{% endif %}
+        {% if 'account_executive' in cols %}<td class="text-muted">{{ p.account_executive or "—" }}</td>{% endif %}
+        {% if 'start_date' in cols %}<td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>{% endif %}
+        {% if 'end_date' in cols %}<td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>{% endif %}
+        {% if 'progress' in cols %}
+        <td>
+          {% if item.progress.total %}
+            <span class="badge {% if item.progress.pct == 100 %}badge--success{% else %}badge--neutral{% endif %}">
+              {{ item.progress.done }}/{{ item.progress.total }} ({{ item.progress.pct }}%)
+            </span>
+          {% else %}<span class="text-muted">none</span>{% endif %}
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">Nothing to show</h3>
+    <p class="empty-state__body">No statuses are selected, or there are no projects yet.</p>
+    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+  </div>
+{% endfor %}
+{% endblock %}

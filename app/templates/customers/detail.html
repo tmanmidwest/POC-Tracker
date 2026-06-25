@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% set page_title = customer.name %}
+{% block breadcrumb %}<a href="/ui/customers">Customers</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ customer.name }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ customer.name }}</h1>
+    <p class="page-header__subtitle">
+      {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener">{{ customer.website }}</a>{% else %}No website on file{% endif %}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/customers/{{ customer.id }}/edit" class="btn btn--secondary">Edit</a>
+    <a href="/ui/projects/new?customer_id={{ customer.id }}" class="btn btn--primary">+ New Project</a>
+  </div>
+</div>
+
+{% if customer.notes %}
+<div class="card" style="margin-bottom: var(--s-5);"><div class="card__body">{{ customer.notes }}</div></div>
+{% endif %}
+
+<div class="card card--flush" style="margin-bottom: var(--s-5);">
+  <div class="card__header"><h2 class="card__title">Contacts</h2></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+    <tbody>
+      {% for ct in customer.contacts %}
+      <tr>
+        <td><strong>{{ ct.name }}</strong></td>
+        <td>{% if ct.role %}<span class="badge badge--neutral">{{ ct.role.name }}</span>{% else %}—{% endif %}</td>
+        <td class="text-muted">{{ ct.email or "—" }}</td>
+        <td class="text-muted">{{ ct.phone or "—" }}</td>
+        <td class="table__actions">
+          <form action="/ui/customers/contacts/{{ ct.id }}/delete" method="post" style="margin:0;"
+                onsubmit="return confirm('Remove contact {{ ct.name }}?');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="table__empty">No contacts yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="card__body">
+    <form method="post" action="/ui/customers/{{ customer.id }}/contacts" class="form-grid" style="display:grid; grid-template-columns: 1.4fr 1fr 1.4fr 1fr auto; gap: var(--s-3); align-items:end;">
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="c_name">Name<span class="label__required">*</span></label>
+        <input class="input" id="c_name" name="name" required maxlength="200" />
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="c_role">Role</label>
+        <select class="select" id="c_role" name="role_id">
+          <option value="">—</option>
+          {% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="c_email">Email</label>
+        <input class="input" id="c_email" name="email" type="email" maxlength="255" />
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="c_phone">Phone</label>
+        <input class="input" id="c_phone" name="phone" maxlength="50" />
+      </div>
+      <button type="submit" class="btn btn--primary">Add contact</button>
+    </form>
+  </div>
+</div>
+
+<div class="card card--flush">
+  <div class="card__header"><h2 class="card__title">Projects</h2></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Project</th><th>Status</th><th>Start</th><th>End</th></tr></thead>
+    <tbody>
+      {% for p in projects %}
+      <tr onclick="window.location='/ui/projects/{{ p.id }}'" style="cursor:pointer;">
+        <td><strong>{{ p.display_name }}</strong>{% if p.is_archived %} <span class="badge badge--neutral">Archived</span>{% endif %}</td>
+        <td><span class="badge badge--neutral">{{ p.status.name }}</span></td>
+        <td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>
+        <td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="table__empty">No projects yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div style="margin-top: var(--s-5);">
+  <form action="/ui/customers/{{ customer.id }}/delete" method="post"
+        onsubmit="return confirm('Delete customer {{ customer.name }}? This cannot be undone.');">
+    <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete customer</button>
+  </form>
+</div>
+{% endblock %}

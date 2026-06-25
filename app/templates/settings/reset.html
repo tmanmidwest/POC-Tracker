@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% set page_title = "Reset Data" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Reset Data</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Reset Data</h1>
+    <p class="page-header__subtitle">Wipe and re-seed selected tables. Use this during demos and integration testing to return to a clean state.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 720px; border-color: var(--danger-line);">
+  <div class="card__header" style="background: var(--danger-soft); border-bottom-color: var(--danger-line);">
+    <h2 class="card__title" style="color: var(--danger);">⚠ Destructive Action</h2>
+  </div>
+  <form method="post" action="/ui/settings/reset" class="card__body">
+
+    <p class="text-muted mb-6">
+      Each selected table is wiped and re-seeded with default data. Users, API keys, and OAuth clients are <strong>never</strong> touched by reset — only POC data and lookup tables.
+    </p>
+
+    <div style="display: flex; flex-direction: column; gap: var(--s-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-4);">
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_sample_data" name="reset_sample_data" value="1" />
+        <label for="reset_sample_data">
+          <strong>Customers &amp; Projects</strong>
+          <div class="text-xs text-muted">Wipe all customers, contacts, projects, project use cases, and screenshots, then reload the sample customer/project.</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_contact_roles" name="reset_contact_roles" value="1" />
+        <label for="reset_contact_roles">
+          <strong>Contact Roles</strong>
+          <div class="text-xs text-muted">Reset to default roles (Champion, Sourcing, Technical/Business Stakeholder, …). Requires the Customers &amp; Projects reset too.</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_project_statuses" name="reset_project_statuses" value="1" />
+        <label for="reset_project_statuses">
+          <strong>Project Statuses</strong>
+          <div class="text-xs text-muted">Reset to default statuses (Pending Scheduling, In Progress, Completed, …). Requires the Customers &amp; Projects reset too.</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_feature_types" name="reset_feature_types" value="1" />
+        <label for="reset_feature_types">
+          <strong>Feature Types</strong>
+          <div class="text-xs text-muted">Reset to default feature/platform types (JML, ISPM, Certifications, NHI, AI, …). Requires the Customers &amp; Projects reset too.</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_use_case_statuses" name="reset_use_case_statuses" value="1" />
+        <label for="reset_use_case_statuses">
+          <strong>Use Case Statuses</strong>
+          <div class="text-xs text-muted">Reset to defaults (Pending Testing, Testing in Progress, Completed, …). Requires the Customers &amp; Projects reset too.</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_use_case_library" name="reset_use_case_library" value="1" />
+        <label for="reset_use_case_library">
+          <strong>Use Case Library</strong>
+          <div class="text-xs text-muted">Reset the master library to the default sample entries. Project use cases already copied are <em>not</em> affected (they're snapshots).</div>
+        </label>
+      </div>
+
+      <div class="checkbox-row" style="padding: var(--s-2) 0;">
+        <input type="checkbox" id="reset_audit_events" name="reset_audit_events" value="1" />
+        <label for="reset_audit_events">
+          <strong>Activity log</strong>
+          <div class="text-xs text-muted">Clear all recorded audit / activity events. Independent of the other tables — safe to clear on its own between demos.</div>
+        </label>
+      </div>
+    </div>
+
+    <div data-reset-phrase="RESET" style="margin-top: var(--s-6);">
+      <label class="label" for="reset-confirm-input">
+        To confirm, type <span class="kbd">RESET</span> below:<span class="label__required">*</span>
+      </label>
+      <input class="input mono" id="reset-confirm-input" autocomplete="off" placeholder="Type RESET to enable the button" />
+    </div>
+
+    <div class="form-actions">
+      <a href="/ui/dashboard" class="btn btn--secondary">Cancel</a>
+      <button type="submit" id="reset-submit" class="btn btn--danger" disabled>Reset selected tables</button>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

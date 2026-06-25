@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set page_title = "Projects" %}
+{% block breadcrumb %}<span>Projects</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Projects</h1>
+    <p class="page-header__subtitle">All POC engagements.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: var(--s-4);">
+  <div class="card__body" style="display:flex; gap: var(--s-4); align-items:end; flex-wrap:wrap;">
+    <form method="get" action="/ui/projects" style="display:flex; gap: var(--s-3); align-items:end;">
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="status_id">Status</label>
+        <select class="select" id="status_id" name="status_id" onchange="this.form.submit()">
+          <option value="">All statuses</option>
+          {% for s in statuses %}<option value="{{ s.id }}" {% if status_id == s.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="view">View</label>
+        <select class="select" id="view" name="view" onchange="this.form.submit()">
+          <option value="active" {% if view == 'active' %}selected{% endif %}>Active</option>
+          <option value="archived" {% if view == 'archived' %}selected{% endif %}>Archived</option>
+          <option value="all" {% if view == 'all' %}selected{% endif %}>All</option>
+        </select>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card card--flush">
+{% if not projects %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No projects</h3>
+    <p class="empty-state__body">Create a project to start tracking use cases.</p>
+    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr><th>Customer</th><th>Project</th><th>Status</th><th>Sales Engineer</th><th>Start</th><th>End</th></tr>
+  </thead>
+  <tbody>
+    {% for p in projects %}
+    <tr onclick="window.location='/ui/projects/{{ p.id }}'" style="cursor:pointer;">
+      <td><strong>{{ p.customer.name }}</strong></td>
+      <td>{{ p.name or "—" }}{% if p.is_archived %} <span class="badge badge--neutral">Archived</span>{% endif %}</td>
+      <td><span class="badge badge--neutral">{{ p.status.name }}</span></td>
+      <td class="text-muted">{{ p.sales_engineer.username if p.sales_engineer else "—" }}</td>
+      <td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>
+      <td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

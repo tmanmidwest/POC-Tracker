@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set page_title = cfg.title %}
+{% block breadcrumb %}<span>Lookups</span> <span class="topbar__breadcrumb-sep">/</span> <span>{{ cfg.title }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ cfg.title }}</h1>
+    <p class="page-header__subtitle">{{ cfg.subtitle }}</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/lookups/{{ slug }}/new" class="btn btn--primary">+ Add</a>
+  </div>
+</div>
+
+<div class="card card--flush">
+{% if not rows %}
+  <div class="empty-state"><p class="empty-state__body">Nothing here yet.</p></div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      {% for f in cfg.fields %}<th>{{ f.label }}</th>{% endfor %}
+      <th>Active</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      {% for f in cfg.fields %}
+      <td>
+        {% set val = row[f.name] %}
+        {% if f.type == 'checkbox' %}{% if val %}✓{% else %}—{% endif %}
+        {% elif f.name == 'name' %}<strong>{{ val }}</strong>{% if row.is_system %} <span class="badge badge--neutral text-xs">system</span>{% endif %}
+        {% else %}{{ val if val is not none else "—" }}{% endif %}
+      </td>
+      {% endfor %}
+      <td>{% if row.is_active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--neutral">Inactive</span>{% endif %}</td>
+      <td class="table__actions">
+        <a href="/ui/lookups/{{ slug }}/{{ row.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+        {% if not row.is_system %}
+        <form method="post" action="/ui/lookups/{{ slug }}/{{ row.id }}/delete" style="margin:0;" onsubmit="return confirm('Delete {{ row.name }}?');">
+          <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

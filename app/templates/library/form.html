@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set page_title = "Library Use Case" %}
+{% block breadcrumb %}<a href="/ui/library">Use Case Library</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if entry else "New" }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit library use case" if entry else "New library use case" }}</h1>
+  </div>
+</div>
+
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 640px;">
+  <div class="card__body">
+    <div style="display:grid; grid-template-columns: 1fr 140px; gap: var(--s-4);">
+      <div class="form-row"><label class="label" for="category">Category<span class="label__required">*</span></label>
+        <input class="input" id="category" name="category" value="{{ form.category or '' }}" required maxlength="150" /></div>
+      <div class="form-row"><label class="label" for="ref">Default ref #</label>
+        <input class="input" id="ref" name="default_reference_number" value="{{ form.default_reference_number or '' }}" maxlength="20" placeholder="1.1" /></div>
+    </div>
+    <div class="form-row"><label class="label" for="name">Name<span class="label__required">*</span></label>
+      <input class="input" id="name" name="name" value="{{ form.name or '' }}" required maxlength="255" /></div>
+    <div class="form-row"><label class="label" for="description">Description</label>
+      <textarea class="textarea" id="description" name="description" rows="3">{{ form.description or '' }}</textarea></div>
+    <div class="form-row"><label class="label" for="success_validation">Success validation</label>
+      <textarea class="textarea" id="success_validation" name="success_validation" rows="3">{{ form.success_validation or '' }}</textarea></div>
+    <div class="form-row"><label class="label" for="feature_type_id">Feature type</label>
+      <select class="select" id="feature_type_id" name="feature_type_id"><option value="">—</option>
+        {% for ft in feature_types %}<option value="{{ ft.id }}" {% if form.feature_type_id == ft.id %}selected{% endif %}>{{ ft.name }}</option>{% endfor %}</select></div>
+    {% if entry %}
+    <label class="checkbox-row" style="display:flex; gap:var(--s-2); align-items:center;">
+      <input type="checkbox" name="is_active" value="1" {% if form.is_active %}checked{% endif %} /> Active (available to pick)
+    </label>
+    {% endif %}
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/library" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if entry else "Create" }}</button>
+  </div>
+</form>
+{% endblock %}

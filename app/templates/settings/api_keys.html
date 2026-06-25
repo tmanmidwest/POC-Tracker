@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set page_title = "API Keys" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>API Keys</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">API Keys</h1>
+    <p class="page-header__subtitle">Long-lived bearer tokens for IGA integrations. Keys are shown once at creation and stored hashed.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/api-keys/new" class="btn btn--primary">+ New API Key</a>
+  </div>
+</div>
+
+{% if new_key %}
+<div class="secret-reveal">
+  <div class="secret-reveal__label">New API key created — copy it now</div>
+  <div class="secret-reveal__value">{{ new_key }}</div>
+  <div class="secret-reveal__warning">
+    This is the only time the full key is shown. After leaving this page you'll only see the prefix.
+  </div>
+</div>
+{% endif %}
+
+<div class="card card--flush">
+{% if not keys %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No API keys yet</h3>
+    <p class="empty-state__body">Create one to authenticate REST API calls.</p>
+    <a href="/ui/settings/api-keys/new" class="btn btn--primary">+ New API Key</a>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Prefix</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th>Last used</th>
+      <th style="text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for k in keys %}
+    <tr>
+      <td>{{ k.name }}</td>
+      <td class="mono text-muted">{{ k.key_prefix }}…</td>
+      <td>
+        {% if k.revoked_at %}<span class="badge badge--neutral">Revoked</span>
+        {% else %}<span class="badge badge--success">Active</span>{% endif %}
+      </td>
+      <td class="mono text-muted">{{ k.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="mono text-muted">{{ k.last_used_at.strftime("%Y-%m-%d %H:%M") if k.last_used_at else "—" }}</td>
+      <td class="table__actions">
+        {% if not k.revoked_at %}
+        <form action="/ui/settings/api-keys/{{ k.id }}/revoke" method="post" style="margin:0;"
+              onsubmit="return confirm('Revoke this API key? Integrations using it will stop working immediately.');">
+          <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
+        </form>
+        {% endif %}
+        <form action="/ui/settings/api-keys/{{ k.id }}/delete" method="post" style="margin:0;"
+              onsubmit="return confirm('Permanently delete this API key record?');">
+          <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--danger);">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}
