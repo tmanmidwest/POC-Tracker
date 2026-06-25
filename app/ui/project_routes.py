@@ -609,13 +609,13 @@ def serve_screenshot(
     if not path.exists():
         raise HTTPException(status_code=404, detail="Screenshot file missing.")
     # Serve inline so clicking a thumbnail opens the image in the browser
-    # instead of downloading it. Passing `filename=` would make Starlette set
-    # Content-Disposition: attachment, which forces a download.
-    download_name = shot.original_filename or shot.stored_filename
+    # instead of downloading it. content_disposition_type="inline" keeps
+    # Starlette's proper filename encoding while avoiding a forced download.
     return FileResponse(
         path,
         media_type=shot.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{download_name}"'},
+        filename=shot.original_filename or shot.stored_filename,
+        content_disposition_type="inline",
     )
 
 
