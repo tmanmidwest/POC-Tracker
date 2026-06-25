@@ -77,8 +77,17 @@ Full interactive docs at `/docs`. See [docs/API.md](docs/API.md).
 
 ## MCP server
 
-The MCP server exposes read/report tools (list/get projects & customers, the library, and
-report generators) over the REST API.
+The MCP server lets an AI assistant both **read** and **write** POC data over the REST API:
+
+- **Query/report** — `list_projects`, `find_projects`, `get_project`, `list_customers`,
+  `list_use_case_library`, `list_lookups`, `all_pocs_summary`, `project_report`.
+- **Write** — `add_custom_use_cases` (bulk-add a list of use cases to a project — the main
+  one for "here's a list, add them"), `add_custom_use_case`, `add_use_cases_from_library`,
+  `update_use_case`, `set_use_case_status`, `delete_use_case`, `create_project`,
+  `create_customer`.
+
+Status and feature-type arguments accept a **name or id** (resolved case-insensitively), so
+an agent can say `status="Completed"` or `feature_type="JML"` without looking up ids.
 
 ```bash
 pip install -e ".[mcp]"
@@ -86,6 +95,50 @@ export POCT_MCP_BASE_URL=http://localhost:8010
 export POCT_MCP_API_KEY=poct_...      # an API key from the app
 poct-mcp                              # stdio transport
 ```
+
+### Use it from Claude Desktop
+
+The app must be running (so the MCP server can reach its REST API) and you need an API key
+from **Settings → API Keys**. Add the server to your `claude_desktop_config.json`
+(macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "poc-tracker": {
+      "command": "/absolute/path/to/POC-Tracker/.venv/bin/poct-mcp",
+      "env": {
+        "POCT_MCP_BASE_URL": "http://localhost:8010",
+        "POCT_MCP_API_KEY": "poct_your_key_here"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop launches the command directly (no shell), so use the **absolute path** to the
+`poct-mcp` entry point in your virtualenv. If you didn't install the package, you can run the
+module instead:
+
+```json
+{
+  "mcpServers": {
+    "poc-tracker": {
+      "command": "/absolute/path/to/POC-Tracker/.venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/POC-Tracker",
+        "POCT_MCP_BASE_URL": "http://localhost:8010",
+        "POCT_MCP_API_KEY": "poct_your_key_here"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop, then ask it to e.g. *"add these use cases to the Acme POC"* with a
+list — it will call `find_projects` then `add_custom_use_cases`. The same config shape works
+for any stdio MCP client (Cursor, custom Agent SDK clients, etc.).
 
 ## Development
 
