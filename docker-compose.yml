@@ -51,6 +51,16 @@ services:
       POCT_MCP_AUTH_TOKEN: ${POCT_MCP_AUTH_TOKEN:-}
       POCT_MCP_ALLOWED_HOSTS: ${POCT_MCP_ALLOWED_HOSTS:-}
     restart: unless-stopped
+    # Override the image's healthcheck (which targets the app on :8010 — there's
+    # no app in this container). The MCP endpoint requires auth, so a plain
+    # `curl -f` would fail on 401; `curl -s` treats any HTTP response (incl. 401/
+    # 503) as "the server is up".
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:8011/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   poct-data:
