@@ -8,8 +8,11 @@ platform to read from and then generate reports or query data").
 It talks to the running app's REST API using an API key, so it inherits the
 app's auth and stays decoupled from the database. Configure with:
 
-    POCT_MCP_BASE_URL   base URL of the running app (default http://localhost:8010)
-    POCT_MCP_API_KEY    an API key generated in the app (Settings → API Keys)
+    POCT_MCP_BASE_URL    base URL of the running app (default http://localhost:8010)
+    POCT_MCP_API_KEY     fixed API key override (optional). Leave UNSET to use the
+                         UI-managed, rotatable token (Settings → MCP), which is read
+                         live from the data volume so rotations need no restart.
+    POCT_MCP_API_KEY_FILE  explicit path to a token file (optional)
 
 Run it (stdio transport, for Claude Desktop / MCP clients):
 
@@ -24,6 +27,7 @@ feature type) may be passed by name or id — names are resolved case-insensitiv
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,25 +36,45 @@ from mcp.server.fastmcp import FastMCP
 BASE_URL = os.environ.get("POCT_MCP_BASE_URL", "http://localhost:8010").rstrip("/")
 API_KEY = os.environ.get("POCT_MCP_API_KEY", "")
 
-mcp = FastMCP("poc-tracker")
+# Transport for `poct-mcp`:
+#   stdio           — default; for local clients (Claude Desktop, Cursor)
+#   streamable-http — HTTP at <host>:<port>/mcp (for gateways like Saviynt)
+#   sse             — HTTP at <host>:<port>/sse (older HTTP transport)
+MCP_TRANSPORT = os.environ.get("POCT_MCP_TRANSPORT", "stdio")
+MCP_HOST = os.environ.get("POCT_MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.environ.get("POCT_MCP_PORT", "8011"))
+
+mcp = FastMCP("poc-tracker", host=MCP_HOST, port=MCP_PORT)
 
 # Lazily-created HTTP session. Tests inject a TestClient here.
 _session: httpx.Client | None = None
 
 
+def _resolve_token() -> str | None:
+    """Resolve the API token to authenticate to the app, freshly each call.
+
+    Order: POCT_MCP_API_KEY (fixed override) → POCT_MCP_API_KEY_FILE → the
+    UI-managed token file on the app's data volume. Reading live means rotating
+    the token in the UI takes effect on the very next call, no restart.
+    """
+    if API_KEY:
+        return API_KEY
+    file_env = os.environ.get("POCT_MCP_API_KEY_FILE")
+    if file_env:
+        path = Path(file_env)
+        return path.read_text().strip() or None if path.exists() else None
+    try:
+        from app.services.mcp_token import read_token
+
+        return read_token()
+    except Exception:  # app package/config not importable in this context
+        return None
+
+
 def _http() -> httpx.Client:
     global _session
     if _session is None:
-        if not API_KEY:
-            raise RuntimeError(
-                "POCT_MCP_API_KEY is not set. Generate an API key in the app "
-                "(Settings → API Keys) and export it for the MCP server."
-            )
-        _session = httpx.Client(
-            base_url=f"{BASE_URL}/api/v1",
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            timeout=30.0,
-        )
+        _session = httpx.Client(base_url=f"{BASE_URL}/api/v1", timeout=30.0)
     return _session
 
 
@@ -62,7 +86,15 @@ def _request(
     params: dict[str, Any] | None = None,
 ) -> Any:
     """Call the REST API and return parsed JSON, raising a clean error on failure."""
-    resp = _http().request(method, path, json=json, params=params)
+    client = _http()
+    token = _resolve_token()
+    headers = {"Authorization": f"Bearer {token}"} if token else None
+    if headers is None and not any(k.lower() == "authorization" for k in client.headers):
+        raise RuntimeError(
+            "No MCP API token found. Generate one in the app (Settings → MCP), "
+            "or set POCT_MCP_API_KEY / POCT_MCP_API_KEY_FILE."
+        )
+    resp = client.request(method, path, json=json, params=params, headers=headers)
     if resp.status_code >= 400:
         try:
             detail = resp.json().get("detail", resp.text)
@@ -453,8 +485,8 @@ def project_report(project_id: int) -> str:
 
 
 def main() -> None:
-    """Entry point — run the MCP server over stdio."""
-    mcp.run()
+    """Entry point — run the MCP server using the configured transport."""
+    mcp.run(transport=MCP_TRANSPORT)
 
 
 if __name__ == "__main__":

@@ -92,9 +92,26 @@ an agent can say `status="Completed"` or `feature_type="JML"` without looking up
 ```bash
 pip install -e ".[mcp]"
 export POCT_MCP_BASE_URL=http://localhost:8010
-export POCT_MCP_API_KEY=poct_...      # an API key from the app
 poct-mcp                              # stdio transport
 ```
+
+### The MCP token (rotate it any time from the UI)
+
+The MCP server needs an API key to call the app. Rather than pasting a key into the
+environment, generate one under **Settings → MCP** and click **Generate token** (or
+**Rotate** later). The token is stored on the data volume and the MCP server reads it
+**live on every request**, so rotating it in the UI takes effect on the server's next call —
+no restart, no config change. Rotating also revokes the previous token immediately.
+
+The MCP server resolves its token in this order:
+
+1. `POCT_MCP_API_KEY` — a fixed override, if set. **Leave it unset** to use the UI-managed token.
+2. `POCT_MCP_API_KEY_FILE` — an explicit token-file path, if set.
+3. Otherwise the UI-managed file on the app's data volume (`<POCT_DATA_DIR>/mcp_api_key`).
+
+For auto-rotation to work, the MCP server must share the app's `POCT_DATA_DIR` (same host, or
+the same Docker volume). A **remote** MCP host can't read that file — set `POCT_MCP_API_KEY`
+there instead.
 
 ### Use it from Claude Desktop
 
@@ -139,6 +156,43 @@ module instead:
 Restart Claude Desktop, then ask it to e.g. *"add these use cases to the Acme POC"* with a
 list — it will call `find_projects` then `add_custom_use_cases`. The same config shape works
 for any stdio MCP client (Cursor, custom Agent SDK clients, etc.).
+
+### Remote gateways (Saviynt, etc.) — HTTP transport
+
+Stdio has no URL. Gateways that ask for a **Base URL** and an **MCP Endpoint** speak MCP over
+HTTP, so run the server with the **streamable-http** transport:
+
+```bash
+export POCT_MCP_TRANSPORT=streamable-http
+export POCT_MCP_HOST=0.0.0.0          # 0.0.0.0 so a remote gateway can reach it
+export POCT_MCP_PORT=8011
+export POCT_MCP_BASE_URL=http://localhost:8010   # where the POC Tracker app runs
+export POCT_DATA_DIR=/path/to/shared/data        # same data dir as the app, for the token
+poct-mcp
+```
+
+The token comes from **Settings → MCP** (see above) as long as this server shares the app's
+`POCT_DATA_DIR`. If it runs on a separate host, set `POCT_MCP_API_KEY=poct_...` instead.
+
+There are **two** things in play — keep them straight:
+
+| Layer | Address | Notes |
+|---|---|---|
+| POC Tracker **app** (REST API) | `http://<host>:8010` | `POCT_MCP_BASE_URL` points the MCP server here |
+| POC Tracker **MCP server** | `http://<host>:8011/mcp` | this is what the Saviynt gateway connects to |
+
+In the Saviynt gateway, enter:
+
+- **Base URL:** `http://<mcp-server-host>:8011` (the host/IP where `poct-mcp` runs — use a
+  routable address, not `localhost`, if Saviynt is on another machine)
+- **MCP Endpoint:** `/mcp`
+
+If the gateway only supports the older **SSE** transport, set
+`POCT_MCP_TRANSPORT=sse` and use **MCP Endpoint** `/sse` instead.
+
+> ⚠️ The HTTP MCP endpoint is **unauthenticated** — anyone who can reach `:8011/mcp` can call
+> the tools (including writes). Run it on a trusted network / behind the gateway, and don't
+> expose port 8011 publicly. The MCP server still authenticates to the app with its API key.
 
 ## Development
 

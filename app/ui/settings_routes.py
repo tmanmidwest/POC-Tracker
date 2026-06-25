@@ -17,7 +17,7 @@ from app.models.app_branding import BRANDING_ID
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import DEFAULT_SCOPES
 from app.services import branding as branding_service
-from app.services import seed_data, system_config
+from app.services import mcp_token, seed_data, system_config
 from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
@@ -389,6 +389,73 @@ def delete_api_key(
     )
     flash(request, f"Deleted API key '{name}'.", "success")
     return RedirectResponse(url="/ui/settings/api-keys", status_code=303)
+
+
+# ===========================================================================
+# MCP token — a rotatable key the MCP server reads live from the data volume
+# ===========================================================================
+
+
+@router.get("/mcp")
+def show_mcp_token(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    new_token = request.session.pop("_revealed_mcp_token", None)
+    return render(
+        request,
+        "settings/mcp.html",
+        current_user=user,
+        active_subsection="mcp",
+        status=mcp_token.status(db),
+        new_token=new_token,
+    )
+
+
+@router.post("/mcp/rotate")
+def rotate_mcp_token(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    full_key = mcp_token.rotate(db, actor_id=user.id)
+    log.info("ui_mcp_token_rotated", extra={"by": user.username})
+    _settings_event(
+        request, user,
+        category="api_key",
+        event_type="api_key.mcp_rotated",
+        target_type="api_key",
+        target_label="MCP Server",
+        message="Rotated the MCP server token",
+    )
+    # One-shot reveal on the next page load.
+    request.session["_revealed_mcp_token"] = full_key
+    flash(request, "MCP token rotated. The MCP server will use it on its next call.", "success")
+    return RedirectResponse(url="/ui/settings/mcp", status_code=303)
+
+
+@router.post("/mcp/clear")
+def clear_mcp_token(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    existed = mcp_token.clear(db)
+    if existed:
+        log.info("ui_mcp_token_cleared", extra={"by": user.username})
+        _settings_event(
+            request, user,
+            category="api_key",
+            event_type="api_key.mcp_cleared",
+            target_type="api_key",
+            target_label="MCP Server",
+            message="Cleared the MCP server token",
+        )
+        flash(request, "MCP token cleared and revoked.", "success")
+    else:
+        flash(request, "No MCP token was configured.", "warning")
+    return RedirectResponse(url="/ui/settings/mcp", status_code=303)
 
 
 # ===========================================================================

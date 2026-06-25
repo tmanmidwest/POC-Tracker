@@ -187,6 +187,21 @@ def test_library_admin_create(ui: TestClient) -> None:
     assert "Library Item X" in ui.get("/ui/library").text
 
 
+def test_mcp_token_settings_page_and_rotate(ui: TestClient) -> None:
+    from app.services.mcp_token import read_token
+
+    assert ui.get("/ui/settings/mcp").status_code == 200
+    assert read_token() is None
+    resp = ui.post("/ui/settings/mcp/rotate", follow_redirects=False)
+    assert resp.status_code == 303
+    # One-time reveal on the next page load, and the token is persisted.
+    assert "poct_" in ui.get("/ui/settings/mcp").text
+    assert read_token() is not None
+    # Clearing revokes + removes it.
+    ui.post("/ui/settings/mcp/clear", follow_redirects=False)
+    assert read_token() is None
+
+
 # ---------------------------------------------------------------------------
 # RBAC
 # ---------------------------------------------------------------------------

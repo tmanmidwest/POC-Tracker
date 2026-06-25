@@ -99,3 +99,32 @@ def test_unknown_status_name_is_a_clear_error(mcp_env) -> None:  # type: ignore[
     ])
     assert result["added"] == 0
     assert "Unknown use-case status" in result["errors"][0]["error"]
+
+
+def test_token_rotation_is_read_live(client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The MCP server resolves the UI-managed token freshly, and rotating it in
+    the app revokes the old one and is picked up without a restart."""
+    from app import mcp_server
+    from app.db import get_session_factory
+    from app.models import ApiKey, AppUser
+    from app.services import mcp_token
+    from app.services.tokens import hash_token
+
+    monkeypatch.setattr(mcp_server, "API_KEY", "")  # no fixed override
+    monkeypatch.setattr(mcp_server, "_session", None)  # use real resolution path
+
+    db = get_session_factory()()
+    admin = db.query(AppUser).first()
+
+    assert mcp_server._resolve_token() is None  # nothing configured yet
+
+    t1 = mcp_token.rotate(db, actor_id=admin.id)
+    assert mcp_server._resolve_token() == t1
+
+    t2 = mcp_token.rotate(db, actor_id=admin.id)
+    assert t2 != t1
+    assert mcp_server._resolve_token() == t2  # picked up live
+
+    db.expire_all()
+    old = db.query(ApiKey).filter(ApiKey.key_hash == hash_token(t1)).one()
+    assert old.revoked_at is not None  # previous token revoked

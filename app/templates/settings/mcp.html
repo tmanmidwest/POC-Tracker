@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% set page_title = "MCP Token" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>MCP Token</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">MCP Token</h1>
+    <p class="page-header__subtitle">
+      The key the MCP server uses to reach this app's API. Rotate it any time — the
+      running MCP server reads it live and picks up the new value on its next call.
+    </p>
+  </div>
+</div>
+
+{% if new_token %}
+<div class="card" style="margin-bottom: var(--s-5); border-color: var(--success-line, var(--border));">
+  <div class="card__header"><h2 class="card__title">New MCP token</h2></div>
+  <div class="card__body">
+    <p class="text-muted">Copy this now if you also use it elsewhere — it won't be shown again.
+    The MCP server reads it from disk automatically, so you don't need to paste it anywhere
+    for the local server.</p>
+    <input class="input mono" value="{{ new_token }}" readonly onclick="this.select()"
+           style="width:100%;" />
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="max-width: 720px; margin-bottom: var(--s-5);">
+  <div class="card__header"><h2 class="card__title">Status</h2></div>
+  <div class="card__body">
+    {% if status.configured %}
+    <div style="display:grid; grid-template-columns: 160px 1fr; gap: var(--s-3) var(--s-4);">
+      <div class="text-muted">Token</div><div class="mono">{{ status.prefix }}…
+        {% if status.revoked %}<span class="badge badge--danger">revoked</span>
+        {% elif not status.tracked %}<span class="badge badge--warning">unknown to DB</span>
+        {% else %}<span class="badge badge--success">active</span>{% endif %}</div>
+      <div class="text-muted">Created</div><div class="mono">{{ status.created_at.strftime("%Y-%m-%d %H:%M") if status.created_at else "—" }}</div>
+      <div class="text-muted">Last used</div><div class="mono">{{ status.last_used_at.strftime("%Y-%m-%d %H:%M") if status.last_used_at else "never" }}</div>
+      <div class="text-muted">Stored at</div><div class="mono text-xs">{{ status.path }}</div>
+    </div>
+    {% else %}
+    <p class="text-muted">No MCP token is configured yet. Generate one to let the MCP server
+    authenticate to this app.</p>
+    <p class="mono text-xs text-muted">Will be stored at: {{ status.path }}</p>
+    {% endif %}
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <form method="post" action="/ui/settings/mcp/rotate" style="margin:0;">
+      <button class="btn btn--primary"
+        {% if status.configured %}onclick="return confirm('Rotate the MCP token? The current token is revoked immediately; the MCP server switches to the new one on its next call.');"{% endif %}>
+        {{ "Rotate token" if status.configured else "Generate token" }}
+      </button>
+    </form>
+    {% if status.configured %}
+    <form method="post" action="/ui/settings/mcp/clear" style="margin:0;"
+          onsubmit="return confirm('Clear and revoke the MCP token? The MCP server will no longer be able to authenticate until you generate a new one.');">
+      <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear &amp; revoke</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width: 720px;">
+  <div class="card__header"><h2 class="card__title">How the MCP server picks this up</h2></div>
+  <div class="card__body">
+    <p class="text-muted">The MCP server reads its token in this order:</p>
+    <ol class="text-muted" style="margin: var(--s-2) 0 var(--s-3) var(--s-5);">
+      <li><span class="mono">POCT_MCP_API_KEY</span> env var, if set (a fixed override — leave it
+        <strong>unset</strong> to use this UI-managed token).</li>
+      <li><span class="mono">POCT_MCP_API_KEY_FILE</span> env var, if set.</li>
+      <li>Otherwise the file above on the shared data volume.</li>
+    </ol>
+    <p class="text-muted text-xs">For auto-rotation to work, the MCP server must share this
+    app's data directory (same host, or the same Docker volume). A remote MCP host can't read
+    the file — set <span class="mono">POCT_MCP_API_KEY</span> there instead.</p>
+  </div>
+</div>
+{% endblock %}
