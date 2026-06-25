@@ -160,39 +160,95 @@ for any stdio MCP client (Cursor, custom Agent SDK clients, etc.).
 ### Remote gateways (Saviynt, etc.) — HTTP transport
 
 Stdio has no URL. Gateways that ask for a **Base URL** and an **MCP Endpoint** speak MCP over
-HTTP, so run the server with the **streamable-http** transport:
+HTTP, so run the server with the **streamable-http** transport. The HTTP endpoint is
+**authenticated** — it requires `POCT_MCP_AUTH_TOKEN`, and the server **refuses to start**
+without it (no open endpoints):
 
 ```bash
 export POCT_MCP_TRANSPORT=streamable-http
 export POCT_MCP_HOST=0.0.0.0          # 0.0.0.0 so a remote gateway can reach it
 export POCT_MCP_PORT=8011
-export POCT_MCP_BASE_URL=http://localhost:8010   # where the POC Tracker app runs
-export POCT_DATA_DIR=/path/to/shared/data        # same data dir as the app, for the token
+export POCT_MCP_AUTH_TOKEN=$(openssl rand -hex 32)   # secret the gateway must present
+export POCT_MCP_ALLOWED_HOSTS=mcp.example.com:8011    # the host the gateway connects to
+export POCT_MCP_BASE_URL=http://localhost:8010        # where the POC Tracker app runs
+export POCT_DATA_DIR=/path/to/shared/data             # same data dir as the app, for the API token
 poct-mcp
 ```
 
-The token comes from **Settings → MCP** (see above) as long as this server shares the app's
-`POCT_DATA_DIR`. If it runs on a separate host, set `POCT_MCP_API_KEY=poct_...` instead.
+**Two different credentials are involved — don't confuse them:**
 
-There are **two** things in play — keep them straight:
+| Credential | Direction | What it does |
+|---|---|---|
+| `POCT_MCP_AUTH_TOKEN` | gateway → MCP server | access control on the MCP endpoint (the gateway must send `Authorization: Bearer <token>`) |
+| MCP API token (`Settings → MCP`) | MCP server → app | lets the MCP server call the REST API (rotatable in the UI) |
+
+The MCP API token comes from **Settings → MCP** (see above) as long as this server shares the
+app's `POCT_DATA_DIR`; on a separate host set `POCT_MCP_API_KEY=poct_...` instead.
+
+**Three addresses in play:**
 
 | Layer | Address | Notes |
 |---|---|---|
 | POC Tracker **app** (REST API) | `http://<host>:8010` | `POCT_MCP_BASE_URL` points the MCP server here |
-| POC Tracker **MCP server** | `http://<host>:8011/mcp` | this is what the Saviynt gateway connects to |
+| POC Tracker **MCP server** | `http://<host>:8011/mcp` | what the Saviynt gateway connects to |
 
 In the Saviynt gateway, enter:
 
 - **Base URL:** `http://<mcp-server-host>:8011` (the host/IP where `poct-mcp` runs — use a
   routable address, not `localhost`, if Saviynt is on another machine)
 - **MCP Endpoint:** `/mcp`
+- **Authorization / bearer token:** the value of `POCT_MCP_AUTH_TOKEN`
 
 If the gateway only supports the older **SSE** transport, set
 `POCT_MCP_TRANSPORT=sse` and use **MCP Endpoint** `/sse` instead.
 
-> ⚠️ The HTTP MCP endpoint is **unauthenticated** — anyone who can reach `:8011/mcp` can call
-> the tools (including writes). Run it on a trusted network / behind the gateway, and don't
-> expose port 8011 publicly. The MCP server still authenticates to the app with its API key.
+> **Host header / DNS-rebinding protection:** the SDK only accepts `localhost` / `127.0.0.1`
+> Host headers by default and returns `421 Misdirected Request` otherwise. If the gateway
+> connects via a hostname or IP, list it in `POCT_MCP_ALLOWED_HOSTS` (comma-separated, `:*`
+> wildcards allowed, e.g. `mcp.example.com:8011,10.0.0.5:*`).
+>
+> Even with bearer auth, prefer keeping port 8011 on a trusted network. If you must reach it
+> from a SaaS gateway, expose it deliberately — see the Cloudflare Tunnel section below.
+
+## Deploying behind a Cloudflare Tunnel
+
+The app and the MCP server are two services on two ports, so they get **two public
+hostnames** on the same tunnel — add a second ingress rule / public hostname exactly like the
+first:
+
+| Public hostname | Tunnel origin (internal) | Service |
+|---|---|---|
+| `poctracker.example.com` | `http://docker-host:8010` | the app (UI + REST API) |
+| `poctracker-mcp.example.com` | `http://docker-host:8011` | the MCP server |
+
+Cloudflare terminates TLS at the edge, so clients use `https://…` even though the tunnel
+origin is plain `http`. In the gateway, the MCP **Base URL** is the `https://` public hostname.
+
+**Two things that will trip you up:**
+
+1. **Allow the public Host header (or you get `421`).** Cloudflare forwards the *public*
+   hostname as the `Host` header, which the MCP server's DNS-rebinding protection rejects by
+   default. Add it to `POCT_MCP_ALLOWED_HOSTS`:
+
+   ```bash
+   POCT_MCP_TRANSPORT=streamable-http
+   POCT_MCP_HOST=0.0.0.0                                   # reachable by cloudflared
+   POCT_MCP_PORT=8011
+   POCT_MCP_AUTH_TOKEN=<strong-secret>                    # gateway must present this
+   POCT_MCP_ALLOWED_HOSTS=poctracker-mcp.example.com,poctracker-mcp.example.com:*
+   POCT_MCP_BASE_URL=http://docker-host:8010              # INTERNAL — see below
+   ```
+
+   (Alternatively set `httpHostHeader` on that tunnel ingress rule and allow-list that value.)
+
+2. **Keep `POCT_MCP_BASE_URL` internal.** That's the MCP-server → app hop and never leaves
+   your network — point it at the internal `http://docker-host:8010`, not the public URL, so it
+   doesn't round-trip out through Cloudflare and back.
+
+**Security:** a tunnel makes the MCP endpoint internet-reachable, gated only by the bearer
+token. Since the write tools mutate data, put **Cloudflare Access (Zero Trust)** in front of
+`poctracker-mcp.example.com` as well — a **service token** is a clean fit when a single gateway
+(e.g. Saviynt) is the only caller — so the bearer secret isn't the sole line of defense.
 
 ## Development
 

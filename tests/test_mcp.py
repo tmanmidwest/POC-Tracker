@@ -101,6 +101,29 @@ def test_unknown_status_name_is_a_clear_error(mcp_env) -> None:  # type: ignore[
     assert "Unknown use-case status" in result["errors"][0]["error"]
 
 
+def test_http_transport_requires_bearer_auth(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The HTTP transport is gated by POCT_MCP_AUTH_TOKEN — missing/wrong tokens
+    get 401, the correct one passes through to the MCP handshake."""
+    from app import mcp_server
+
+    # Allow the TestClient's Host header past DNS-rebinding protection.
+    monkeypatch.setenv("POCT_MCP_ALLOWED_HOSTS", "testserver,testserver:*")
+    app = mcp_server.build_http_app("streamable-http", "gateway-secret")
+    init = {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                   "clientInfo": {"name": "gw", "version": "1"}},
+    }
+    accept = {"Accept": "application/json, text/event-stream"}
+    with TestClient(app) as c:
+        assert c.post("/mcp", json=init, headers=accept).status_code == 401
+        assert c.post("/mcp", json=init,
+                      headers={**accept, "Authorization": "Bearer nope"}).status_code == 401
+        ok = c.post("/mcp", json=init,
+                    headers={**accept, "Authorization": "Bearer gateway-secret"})
+        assert ok.status_code == 200  # auth + host check passed → MCP handshake
+
+
 def test_token_rotation_is_read_live(client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """The MCP server resolves the UI-managed token freshly, and rotating it in
     the app revokes the old one and is picked up without a restart."""

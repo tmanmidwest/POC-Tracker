@@ -202,6 +202,27 @@ def test_mcp_token_settings_page_and_rotate(ui: TestClient) -> None:
     assert read_token() is None
 
 
+def test_mcp_key_flagged_and_protected_in_api_keys_list(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.services import mcp_token
+
+    ui.post("/ui/settings/mcp/rotate", follow_redirects=False)
+    db = get_session_factory()()
+    mcp_id = mcp_token.current_key_id(db)
+    assert mcp_id is not None
+
+    page = ui.get("/ui/settings/api-keys").text
+    assert "Manage on MCP page" in page  # dedicated key isn't revoke/delete-able here
+
+    # Revoking/deleting the MCP key from the API-keys list is bounced to the MCP page
+    # and leaves the token intact.
+    r = ui.post(f"/ui/settings/api-keys/{mcp_id}/revoke", follow_redirects=False)
+    assert r.headers["location"] == "/ui/settings/mcp"
+    r = ui.post(f"/ui/settings/api-keys/{mcp_id}/delete", follow_redirects=False)
+    assert r.headers["location"] == "/ui/settings/mcp"
+    assert mcp_token.read_token() is not None
+
+
 # ---------------------------------------------------------------------------
 # RBAC
 # ---------------------------------------------------------------------------
