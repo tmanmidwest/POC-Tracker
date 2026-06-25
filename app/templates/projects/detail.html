@@ -42,15 +42,16 @@
 <div id="use-cases" class="page-header">
   <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>
   <div class="page-header__actions">
-    <button type="button" class="btn btn--secondary" onclick="document.getElementById('dlg-add-custom').showModal()">+ Add custom use case</button>
-    <button type="button" class="btn btn--primary" onclick="document.getElementById('dlg-add-library').showModal()">+ Add from library</button>
+    <button type="button" class="btn btn--secondary" onclick="pocOpen('m-add-custom')">+ Add custom use case</button>
+    <button type="button" class="btn btn--primary" onclick="pocOpen('m-add-library')">+ Add from library</button>
   </div>
 </div>
 
-<dialog id="dlg-add-custom" class="modal">
-  <div class="dialog__head"><span class="dialog__title">Add custom use case</span>
-    <button type="button" class="btn btn--ghost btn--sm" onclick="this.closest('dialog').close()">✕</button></div>
-  <form method="post" action="/ui/projects/{{ project.id }}/use-cases" class="dialog__body">
+<div class="ucmodal" id="m-add-custom" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Add custom use case</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <form method="post" action="/ui/projects/{{ project.id }}/use-cases" class="ucmodal__body">
     <div style="display:grid; grid-template-columns: 1fr 120px; gap: var(--s-3);">
       <div class="form-row"><label class="label" for="ac_category">Category<span class="label__required">*</span></label>
         <input class="input" id="ac_category" name="category" required maxlength="150" /></div>
@@ -67,16 +68,18 @@
       <select class="select" id="ac_ft" name="feature_type_id"><option value="">—</option>
         {% for ft in feature_types %}<option value="{{ ft.id }}">{{ ft.name }}</option>{% endfor %}</select></div>
     <div class="form-actions">
-      <button type="button" class="btn btn--secondary" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
       <button class="btn btn--primary">Add use case</button>
     </div>
   </form>
-</dialog>
+ </div>
+</div>
 
-<dialog id="dlg-add-library" class="modal">
-  <div class="dialog__head"><span class="dialog__title">Add from library</span>
-    <button type="button" class="btn btn--ghost btn--sm" onclick="this.closest('dialog').close()">✕</button></div>
-  <form method="post" action="/ui/projects/{{ project.id }}/use-cases/from-library" class="dialog__body">
+<div class="ucmodal" id="m-add-library" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Add from library</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <form method="post" action="/ui/projects/{{ project.id }}/use-cases/from-library" class="ucmodal__body">
     {% if not library_groups %}
       <p class="text-muted">The library is empty. <a href="/ui/library">Add entries</a>.</p>
     {% else %}
@@ -97,12 +100,13 @@
     </div>
     {% endfor %}
     <div class="form-actions">
-      <button type="button" class="btn btn--secondary" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
       <button class="btn btn--primary">Add selected</button>
     </div>
     {% endif %}
   </form>
-</dialog>
+ </div>
+</div>
 
 {# ---- Use case list ---- #}
 {% if not use_case_groups %}
@@ -143,11 +147,12 @@
         </td>
         <td>{% if uc.source == 'library' %}<span class="badge badge--neutral">library</span>{% else %}<span class="badge badge--warning">custom</span>{% endif %}</td>
         <td class="table__actions">
-          <button type="button" class="btn btn--ghost btn--sm" onclick="document.getElementById('dlg-uc-{{ uc.id }}').showModal()">Edit</button>
-          <dialog id="dlg-uc-{{ uc.id }}" class="modal">
-            <div class="dialog__head"><span class="dialog__title">Edit use case</span>
-              <button type="button" class="btn btn--ghost btn--sm" onclick="this.closest('dialog').close()">✕</button></div>
-            <div class="dialog__body">
+          <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-uc-{{ uc.id }}')">Edit</button>
+          <div class="ucmodal" id="m-uc-{{ uc.id }}" hidden>
+           <div class="ucmodal__box">
+            <div class="ucmodal__head"><span class="ucmodal__title">Edit use case</span>
+              <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+            <div class="ucmodal__body">
               <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/edit">
                 <div style="display:grid; grid-template-columns: 1fr 110px; gap: var(--s-3);">
                   <div class="form-row"><label class="label">Category</label><input class="input" name="category" value="{{ uc.category }}" required /></div>
@@ -166,12 +171,12 @@
                 </div>
                 <div class="form-row"><label class="label">Comments</label><textarea class="textarea" name="comments" rows="3">{{ uc.comments or '' }}</textarea></div>
                 <div class="form-actions">
-                  <button type="button" class="btn btn--secondary" onclick="this.closest('dialog').close()">Cancel</button>
+                  <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
                   <button class="btn btn--primary">Save</button>
                 </div>
               </form>
 
-              <div class="dialog__section">
+              <div class="ucmodal__section">
                 <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/screenshots" enctype="multipart/form-data">
                   <label class="label">Add screenshot</label>
                   <input class="input" type="file" name="file" accept="image/*" required />
@@ -192,13 +197,14 @@
                 {% endif %}
               </div>
 
-              <div class="dialog__section">
+              <div class="ucmodal__section">
                 <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/delete" onsubmit="return confirm('Remove use case {{ uc.name }}?');" style="margin:0;">
                   <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Remove use case</button>
                 </form>
               </div>
             </div>
-          </dialog>
+           </div>
+          </div>
         </td>
       </tr>
       {% endfor %}

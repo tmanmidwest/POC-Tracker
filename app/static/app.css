@@ -1064,22 +1064,32 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 }
 
 /* ---------------------------------------------------------------------------
-   Modal dialogs — use-case edit + add forms. Native <dialog> renders in the
-   top layer, so it's never clipped by a parent's overflow (e.g. .table-wrap).
+   Use-case / add-form overlays. A position:fixed overlay escapes the table's
+   overflow clipping, and distinct class names avoid colliding with the legacy
+   .modal/.modal-overlay HTMX styles above. Toggled via the `hidden` attribute.
    --------------------------------------------------------------------------- */
-dialog.modal {
+.ucmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5vh 16px;
+  background: rgba(28, 25, 23, 0.45);
+  overflow-y: auto;
+}
+.ucmodal[hidden] { display: none; }
+.ucmodal__box {
   width: min(640px, 94vw);
-  max-height: 88vh;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  margin: auto;
   background: var(--surface);
   color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
   box-shadow: 0 16px 48px rgba(28, 25, 23, 0.28);
-  overflow: auto;
 }
-dialog.modal::backdrop { background: rgba(28, 25, 23, 0.45); }
-.dialog__head {
+.ucmodal__head {
   position: sticky;
   top: 0;
   display: flex;
@@ -1089,8 +1099,9 @@ dialog.modal::backdrop { background: rgba(28, 25, 23, 0.45); }
   padding: var(--s-4) var(--s-5);
   background: var(--surface);
   border-bottom: 1px solid var(--line);
-  z-index: 1;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
 }
-.dialog__title { font-weight: 600; }
-.dialog__body { padding: var(--s-5); }
-.dialog__section { padding-top: var(--s-4); margin-top: var(--s-4); border-top: 1px solid var(--line); }
+.ucmodal__title { font-weight: 600; }
+.ucmodal__body { padding: var(--s-5); }
+.ucmodal__section { padding-top: var(--s-4); margin-top: var(--s-4); border-top: 1px solid var(--line); }
+body.poc-modal-open { overflow: hidden; }

@@ -106,10 +106,32 @@ if (resetPhrase) {
   }
 }
 
-// Close any <dialog class="modal"> when its backdrop (the dialog element itself,
-// outside the content) is clicked. Esc and the ✕/Cancel buttons also close it.
+// Lightweight overlay modals (.ucmodal) for the project page. Toggled via the
+// `hidden` attribute; close on backdrop click, [data-ucmodal-close], or Escape.
+function pocOpen(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.hidden = false;
+    document.body.classList.add('poc-modal-open');
+  }
+}
+function pocClose(el) {
+  if (!el) return;
+  el.hidden = true;
+  if (!document.querySelector('.ucmodal:not([hidden])')) {
+    document.body.classList.remove('poc-modal-open');
+  }
+}
 document.addEventListener('click', (e) => {
-  if (e.target instanceof HTMLDialogElement && e.target.open) {
-    e.target.close();
+  if (e.target.classList && e.target.classList.contains('ucmodal')) {
+    pocClose(e.target); // clicked the backdrop, not the box
+    return;
+  }
+  const closer = e.target.closest && e.target.closest('[data-ucmodal-close]');
+  if (closer) pocClose(closer.closest('.ucmodal'));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.ucmodal:not([hidden])').forEach(pocClose);
   }
 });
