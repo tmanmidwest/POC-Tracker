@@ -52,6 +52,32 @@ docker compose up --build
 
 The SQLite database, screenshots, and signing keys persist in the `poct-data` named volume.
 
+### Running the MCP server too (second container)
+
+The compose stack defines two services — the **app** (`8010`) and the **MCP server**
+(`8011`) — but the MCP server is **opt-in** via the `mcp` profile, since it requires an auth
+token. Put a token in a `.env` file next to `docker-compose.yml`:
+
+```bash
+# .env
+POCT_MCP_AUTH_TOKEN=replace-with-a-strong-secret   # gateways present this as a bearer token
+POCT_MCP_ALLOWED_HOSTS=                             # e.g. mcp.example.com:8011 for a remote gateway
+COMPOSE_PROFILES=mcp                                # makes `docker compose up` include the MCP server
+```
+
+Then:
+
+```bash
+docker compose up -d --build      # COMPOSE_PROFILES=mcp from .env starts both
+# ...or explicitly, without the .env line:
+docker compose --profile mcp up -d --build
+```
+
+You should now see **two** containers: `poc-tracker` (app, 8010) and `poc-tracker-mcp`
+(MCP, 8011). The MCP container shares the data volume, so once you generate the **MCP API
+token** in the UI (**Settings → MCP**), it can call the app — and rotating it needs no
+restart. Without the `mcp` profile you'll only see the app container.
+
 ## Configuration
 
 All settings are environment variables prefixed `POCT_` (see `app/config.py`):

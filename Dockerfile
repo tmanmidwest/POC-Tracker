@@ -26,9 +26,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy application source
 COPY app/ ./app/
 
-# Install the package and dependencies
+# Install the package and dependencies (incl. the MCP server extra so the same
+# image can run either the web app or `poct-mcp`)
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install .
+    && pip install ".[mcp]"
 
 # ---------- Runtime stage ----------
 FROM python:3.12-slim AS runtime
@@ -64,7 +65,8 @@ USER poct
 
 VOLUME ["/data"]
 
-EXPOSE 8010
+# 8010 = web app (default CMD); 8011 = MCP server (when run as `poct-mcp`)
+EXPOSE 8010 8011
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8010/health || exit 1
