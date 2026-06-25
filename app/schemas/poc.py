@@ -229,6 +229,7 @@ class ProjectOut(BaseModel):
     sales_engineer: UserRef | None
     account_executive: str | None
     account_executive_email: str | None
+    salesforce_opp_url: str | None
     notes: str | None
     is_archived: bool
     created_at: datetime
@@ -248,6 +249,7 @@ class ProjectCreate(BaseModel):
     sales_engineer_id: int | None = None
     account_executive: str | None = Field(default=None, max_length=200)
     account_executive_email: str | None = Field(default=None, max_length=255)
+    salesforce_opp_url: str | None = Field(default=None, max_length=1000)
     notes: str | None = None
 
 
@@ -260,5 +262,6 @@ class ProjectUpdate(BaseModel):
     sales_engineer_id: int | None = None
     account_executive: str | None = Field(default=None, max_length=200)
     account_executive_email: str | None = Field(default=None, max_length=255)
+    salesforce_opp_url: str | None = Field(default=None, max_length=1000)
     notes: str | None = None
     is_archived: bool | None = None

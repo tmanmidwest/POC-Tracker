@@ -22,6 +22,9 @@
     <div class="stat"><div class="stat__label">Account Executive</div><div class="stat__value">{{ project.account_executive or "—" }}{% if project.account_executive_email %} ({{ project.account_executive_email }}){% endif %}</div></div>
     <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} use cases complete ({{ progress.pct }}%)</div></div>
+    {% if project.salesforce_opp_url %}
+    <div class="stat"><div class="stat__label">Salesforce</div><div class="stat__value"><a href="{{ project.salesforce_opp_url }}" target="_blank" rel="noopener noreferrer">Salesforce Opp ↗</a></div></div>
+    {% endif %}
   </div>
   {% if project.notes %}<div class="card__body" style="border-top:1px solid var(--border);"><strong>Notes:</strong> {{ project.notes }}</div>{% endif %}
 </div>

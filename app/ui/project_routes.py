@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, date, datetime
 from itertools import groupby
 
@@ -45,6 +46,22 @@ def _clean(value: str | None) -> str | None:
         return None
     v = value.strip()
     return v or None
+
+
+_URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
+
+
+def _clean_url(value: str | None) -> str | None:
+    """Normalize a user-entered URL: trim, default to https://, and reject any
+    non-http(s) scheme (e.g. javascript:, data:) so it's safe as a link href."""
+    v = _clean(value)
+    if v is None:
+        return None
+    if v.lower().startswith(("http://", "https://")):
+        return v
+    if _URL_SCHEME_RE.match(v):  # some other scheme — drop it
+        return None
+    return f"https://{v}"
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -165,6 +182,7 @@ async def _read_project_form(request: Request) -> dict:
         "sales_engineer_id": form.get("sales_engineer_id"),
         "account_executive": _clean(form.get("account_executive")),  # type: ignore[arg-type]
         "account_executive_email": _clean(form.get("account_executive_email")),  # type: ignore[arg-type]
+        "salesforce_opp_url": _clean_url(form.get("salesforce_opp_url")),  # type: ignore[arg-type]
         "notes": _clean(form.get("notes")),  # type: ignore[arg-type]
     }
 
@@ -193,6 +211,7 @@ async def create_project(
         sales_engineer_id=int(data["sales_engineer_id"]) if data["sales_engineer_id"] else None,
         account_executive=data["account_executive"],
         account_executive_email=data["account_executive_email"],
+        salesforce_opp_url=data["salesforce_opp_url"],
         notes=data["notes"],
     )
     db.add(project)
@@ -225,6 +244,7 @@ def edit_form(
         "sales_engineer_id": project.sales_engineer_id,
         "account_executive": project.account_executive,
         "account_executive_email": project.account_executive_email,
+        "salesforce_opp_url": project.salesforce_opp_url,
         "notes": project.notes,
     }
     return render(
@@ -257,6 +277,7 @@ async def update_project(
     )
     project.account_executive = data["account_executive"]
     project.account_executive_email = data["account_executive_email"]
+    project.salesforce_opp_url = data["salesforce_opp_url"]
     project.notes = data["notes"]
     db.commit()
     record_event(

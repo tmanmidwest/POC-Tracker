@@ -52,6 +52,10 @@ class Project(Base, TimestampMixin):
     account_executive: Mapped[str | None] = mapped_column(String(200), nullable=True)
     account_executive_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Full URL to the Salesforce opportunity; shown in the UI as a short
+    # "Salesforce Opp" hyperlink rather than the raw URL.
+    salesforce_opp_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_archived: Mapped[bool] = mapped_column(

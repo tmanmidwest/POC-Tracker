@@ -121,6 +121,37 @@ def test_full_project_flow(ui: TestClient) -> None:
     assert "Client special" in page.text
 
 
+def test_salesforce_opp_link(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import Project
+
+    cid = _create_customer(ui, "SF Customer")
+    # No-scheme URL should be normalized to https://, and render as a tidy link.
+    ui.post("/ui/projects/new", data={
+        "customer_id": cid, "name": "SF POC", "status_id": "",
+        "start_date": "", "end_date": "", "sales_engineer_id": "",
+        "account_executive": "", "account_executive_email": "",
+        "salesforce_opp_url": "acme.lightning.force.com/opp/1", "notes": "",
+    }, follow_redirects=False)
+    db = get_session_factory()()
+    p = db.query(Project).filter(Project.name == "SF POC").one()
+    assert p.salesforce_opp_url == "https://acme.lightning.force.com/opp/1"
+
+    detail = ui.get(f"/ui/projects/{p.id}").text
+    assert "Salesforce Opp" in detail and p.salesforce_opp_url in detail
+    assert "Salesforce Opp" in ui.get("/ui/dashboard").text
+
+    # A javascript: (or any non-http) scheme is rejected, not stored.
+    ui.post(f"/ui/projects/{p.id}/edit", data={
+        "customer_id": cid, "name": "SF POC", "status_id": str(p.status_id),
+        "start_date": "", "end_date": "", "sales_engineer_id": "",
+        "account_executive": "", "account_executive_email": "",
+        "salesforce_opp_url": "javascript:alert(1)", "notes": "",
+    }, follow_redirects=False)
+    db.expire_all()
+    assert db.get(Project, p.id).salesforce_opp_url is None
+
+
 def test_screenshot_upload_and_serve(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.models import ProjectUseCase, Screenshot
