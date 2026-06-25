@@ -174,6 +174,7 @@ class ProjectUseCaseOut(BaseModel):
     status_id: int
     status: NamedRef
     comments: str | None
+    completed_on: date | None
     screenshots: list[ScreenshotOut] = []
     created_at: datetime
     updated_at: datetime
@@ -190,6 +191,7 @@ class ProjectUseCaseCreate(BaseModel):
     feature_type_id: int | None = None
     status_id: int | None = None
     comments: str | None = None
+    completed_on: date | None = None
 
 
 class ProjectUseCaseUpdate(BaseModel):
@@ -201,6 +203,7 @@ class ProjectUseCaseUpdate(BaseModel):
     feature_type_id: int | None = None
     status_id: int | None = None
     comments: str | None = None
+    completed_on: date | None = None
 
 
 class AddLibraryUseCases(BaseModel):

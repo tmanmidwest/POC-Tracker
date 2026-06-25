@@ -478,6 +478,7 @@ def update_use_case(
     feature_type_id: str | None = Form(None),
     status_id: str | None = Form(None),
     comments: str | None = Form(None),
+    completed_on: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -491,6 +492,7 @@ def update_use_case(
     if status_id:
         uc.status_id = int(status_id)
     uc.comments = _clean(comments)
+    uc.completed_on = _parse_date(completed_on)
     db.commit()
     record_event(
         category="project", event_type="use_case.updated", actor_type="user",

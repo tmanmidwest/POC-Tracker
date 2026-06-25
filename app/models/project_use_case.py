@@ -8,9 +8,10 @@ and screenshots. Independent of the library original once created.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -60,6 +61,9 @@ class ProjectUseCase(Base, TimestampMixin):
     )
 
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Optional calendar date marking when this use case was completed/last updated.
+    completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="use_cases")
     library: Mapped[UseCaseLibrary | None] = relationship("UseCaseLibrary", lazy="joined")

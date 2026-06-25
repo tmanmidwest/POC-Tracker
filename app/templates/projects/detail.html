@@ -144,6 +144,7 @@
               {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
             </select>
           </form>
+          {% if uc.completed_on %}<div class="text-muted text-xs" style="margin-top: var(--s-1);">✅ Completed {{ uc.completed_on.strftime('%b %-d, %Y') }}</div>{% endif %}
         </td>
         <td>{% if uc.source == 'library' %}<span class="badge badge--neutral">library</span>{% else %}<span class="badge badge--warning">custom</span>{% endif %}</td>
         <td class="table__actions">
@@ -170,6 +171,7 @@
                       {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
                 </div>
                 <div class="form-row"><label class="label">Comments</label><textarea class="textarea" name="comments" rows="3">{{ uc.comments or '' }}</textarea></div>
+                <div class="form-row"><label class="label">Completed on</label><input class="input" type="date" name="completed_on" value="{{ uc.completed_on.isoformat() if uc.completed_on else '' }}" /></div>
                 <div class="form-actions">
                   <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
                   <button class="btn btn--primary">Save</button>
