@@ -1,5 +1,5 @@
 services:
-  hr-sot:
+  app:
     build: .
     image: poc-tracker:local
     container_name: poc-tracker
@@ -20,6 +20,37 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # MCP server (HTTP transport, for gateways like Saviynt). Opt-in via the "mcp"
+  # profile so a plain `docker compose up` doesn't require an auth token:
+  #   docker compose --profile mcp up -d
+  # or set COMPOSE_PROFILES=mcp in your .env to include it automatically.
+  mcp:
+    build: .
+    image: poc-tracker:local
+    container_name: poc-tracker-mcp
+    profiles: ["mcp"]
+    command: ["poct-mcp"]
+    depends_on:
+      - app
+    ports:
+      - "${POCT_MCP_HOST_PORT:-8011}:8011"
+    volumes:
+      # Same volume as the app: lets the MCP server read the UI-managed token
+      # file (<data_dir>/mcp_api_key) so rotating it in the UI needs no restart.
+      - poct-data:/data
+    environment:
+      POCT_LOG_LEVEL: INFO
+      POCT_MCP_TRANSPORT: streamable-http
+      POCT_MCP_HOST: 0.0.0.0
+      POCT_MCP_PORT: "8011"
+      # Reach the app over the compose network (internal — not the public URL).
+      POCT_MCP_BASE_URL: http://app:8010
+      # REQUIRED — the secret the gateway must present as a bearer token.
+      POCT_MCP_AUTH_TOKEN: ${POCT_MCP_AUTH_TOKEN:?set POCT_MCP_AUTH_TOKEN in your .env to run the MCP server}
+      # Public Host header(s) the gateway connects via (e.g. a Cloudflare hostname).
+      POCT_MCP_ALLOWED_HOSTS: ${POCT_MCP_ALLOWED_HOSTS:-}
+    restart: unless-stopped
 
 volumes:
   poct-data:
