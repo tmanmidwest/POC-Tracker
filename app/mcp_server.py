@@ -7,7 +7,7 @@ platform to read from and then generate reports or query data").
 It talks to the running app's REST API using an API key, so it inherits the
 app's auth and stays decoupled from the database. Configure with:
 
-    POCT_MCP_BASE_URL   base URL of the running app (default http://localhost:8000)
+    POCT_MCP_BASE_URL   base URL of the running app (default http://localhost:8010)
     POCT_MCP_API_KEY    an API key generated in the app (Settings → API Keys)
 
 Run it (stdio transport, for Claude Desktop / MCP clients):
@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-BASE_URL = os.environ.get("POCT_MCP_BASE_URL", "http://localhost:8000").rstrip("/")
+BASE_URL = os.environ.get("POCT_MCP_BASE_URL", "http://localhost:8010").rstrip("/")
 API_KEY = os.environ.get("POCT_MCP_API_KEY", "")
 
 mcp = FastMCP("poc-tracker")

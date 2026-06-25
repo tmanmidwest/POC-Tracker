@@ -4,7 +4,7 @@ services:
     image: poc-tracker:local
     container_name: poc-tracker
     ports:
-      - "${POCT_HOST_PORT:-8000}:8000"
+      - "${POCT_HOST_PORT:-8010}:8010"
     volumes:
       # Named volume (not a host bind mount): a fresh named volume inherits the
       # image's /data ownership (uid/gid 1000, the non-root `poct` user), so the
@@ -15,7 +15,7 @@ services:
       POCT_LOG_LEVEL: INFO
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
       interval: 30s
       timeout: 5s
       retries: 3

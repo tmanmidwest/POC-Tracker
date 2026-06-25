@@ -38,7 +38,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH" \
     POCT_DATA_DIR=/data \
     POCT_BIND_HOST=0.0.0.0 \
-    POCT_BIND_PORT=8000
+    POCT_BIND_PORT=8010
 
 # Install runtime-only dependencies (curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -64,9 +64,9 @@ USER poct
 
 VOLUME ["/data"]
 
-EXPOSE 8000
+EXPOSE 8010
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8010/health || exit 1
 
 CMD ["python", "-m", "app.main"]

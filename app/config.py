@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # --- Bind ---
     bind_host: str = Field(default="0.0.0.0", description="Host to bind the HTTP server to.")
-    bind_port: int = Field(default=8000, description="Port to bind the HTTP server to.")
+    bind_port: int = Field(default=8010, description="Port to bind the HTTP server to.")
 
     # --- Logging ---
     log_level: str = Field(

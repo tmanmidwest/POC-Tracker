@@ -9,7 +9,7 @@ non-obvious decisions made along the way.
 |---|---|
 | Deployable as Docker container(s) | Single container: `Dockerfile` + `docker-compose.yml` (named `poct-data` volume) |
 | Stored in a GitHub repo | `github.com/tmanmidwest/POC-Tracker` |
-| Runs on Docker Desktop (Mac) for initial testing | Compose maps `POCT_HOST_PORT` (default 8000) |
+| Runs on Docker Desktop (Mac) for initial testing | Compose maps `POCT_HOST_PORT` (default 8010) |
 | REST API to read/edit/update any item | `/api/v1/*` (FastAPI, OpenAPI at `/docs`) |
 | MCP server for AI to read & generate reports/queries | `app/mcp_server.py` (`poct-mcp`), read/report tools over the REST API |
 

@@ -35,11 +35,11 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 export POCT_DATA_DIR=./data          # where the SQLite DB + keys live
-python -m app.main                   # serves on http://localhost:8000
+python -m app.main                   # serves on http://localhost:8010
 ```
 
 Migrations run and seed data loads automatically on startup. Open
-http://localhost:8000 and sign in with the seeded admin (see
+http://localhost:8010 and sign in with the seeded admin (see
 `./data/INITIAL_CREDENTIALS.txt`, default `robbytheadmin` /
 `N0nPr0dF0r$@viynt8`). Change the password immediately under **Settings → Users**.
 
@@ -47,7 +47,7 @@ http://localhost:8000 and sign in with the seeded admin (see
 
 ```bash
 docker compose up --build
-# UI on http://localhost:8000 (override with POCT_HOST_PORT)
+# UI on http://localhost:8010 (override with POCT_HOST_PORT)
 ```
 
 The SQLite database, screenshots, and signing keys persist in the `poct-data` named volume.
@@ -59,18 +59,18 @@ All settings are environment variables prefixed `POCT_` (see `app/config.py`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `POCT_DATA_DIR` | `/data` | Directory for the SQLite DB, screenshots, and keys |
-| `POCT_BIND_HOST` / `POCT_BIND_PORT` | `0.0.0.0` / `8000` | HTTP bind |
+| `POCT_BIND_HOST` / `POCT_BIND_PORT` | `0.0.0.0` / `8010` | HTTP bind |
 | `POCT_INITIAL_ADMIN_USERNAME` / `POCT_INITIAL_ADMIN_PASSWORD` | `robbytheadmin` / … | Seeded admin |
 | `POCT_PUBLIC_BASE_URL` | — | External URL for OIDC redirect URIs behind a proxy |
 | `POCT_AUDIT_RETENTION_DAYS` | `30` | Activity-log retention (0 = keep forever) |
-| `POCT_HOST_PORT` | `8000` | Host port mapping for docker-compose |
+| `POCT_HOST_PORT` | `8010` | Host port mapping for docker-compose |
 
 ## REST API
 
 Authenticate with an API key (Settings → API Keys) or an OAuth access token:
 
 ```bash
-curl -H "Authorization: Bearer poct_..." http://localhost:8000/api/v1/projects/
+curl -H "Authorization: Bearer poct_..." http://localhost:8010/api/v1/projects/
 ```
 
 Full interactive docs at `/docs`. See [docs/API.md](docs/API.md).
@@ -82,7 +82,7 @@ report generators) over the REST API.
 
 ```bash
 pip install -e ".[mcp]"
-export POCT_MCP_BASE_URL=http://localhost:8000
+export POCT_MCP_BASE_URL=http://localhost:8010
 export POCT_MCP_API_KEY=poct_...      # an API key from the app
 poct-mcp                              # stdio transport
 ```

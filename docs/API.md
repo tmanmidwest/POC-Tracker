@@ -14,7 +14,7 @@ Authorization: Bearer poct_xxxxxxxx
 OAuth token endpoint (RFC 6749 client_credentials):
 
 ```bash
-curl -X POST http://localhost:8000/oauth/token \
+curl -X POST http://localhost:8010/oauth/token \
   -d grant_type=client_credentials -d client_id=poct_client_… -d client_secret=…
 ```
 
