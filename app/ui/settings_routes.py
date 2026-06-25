@@ -17,7 +17,7 @@ from app.models.app_branding import BRANDING_ID
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import DEFAULT_SCOPES
 from app.services import branding as branding_service
-from app.services import mcp_token, seed_data, system_config
+from app.services import mcp_gateway, mcp_token, seed_data, system_config
 from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
@@ -410,6 +410,7 @@ def show_mcp_token(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     new_token = request.session.pop("_revealed_mcp_token", None)
+    new_gateway_token = request.session.pop("_revealed_gateway_token", None)
     return render(
         request,
         "settings/mcp.html",
@@ -417,6 +418,8 @@ def show_mcp_token(
         active_subsection="mcp",
         status=mcp_token.status(db),
         new_token=new_token,
+        gateway=mcp_gateway.status(),
+        new_gateway_token=new_gateway_token,
     )
 
 
@@ -462,6 +465,63 @@ def clear_mcp_token(
         flash(request, "MCP token cleared and revoked.", "success")
     else:
         flash(request, "No MCP token was configured.", "warning")
+    return RedirectResponse(url="/ui/settings/mcp", status_code=303)
+
+
+@router.post("/mcp/gateway/rotate")
+def rotate_gateway_token(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    token = mcp_gateway.rotate_gateway_token()
+    log.info("ui_mcp_gateway_token_rotated", extra={"by": user.username})
+    _settings_event(
+        request, user,
+        category="api_key",
+        event_type="api_key.mcp_gateway_rotated",
+        target_type="mcp_gateway",
+        target_label="MCP gateway token",
+        message="Rotated the MCP gateway (inbound) token",
+    )
+    request.session["_revealed_gateway_token"] = token
+    flash(request, "Gateway token rotated. Update it in your gateway (e.g. Saviynt).", "success")
+    return RedirectResponse(url="/ui/settings/mcp", status_code=303)
+
+
+@router.post("/mcp/gateway/clear")
+def clear_gateway_token(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    existed = mcp_gateway.clear_gateway_token()
+    if existed:
+        log.info("ui_mcp_gateway_token_cleared", extra={"by": user.username})
+        _settings_event(
+            request, user,
+            category="api_key",
+            event_type="api_key.mcp_gateway_cleared",
+            target_type="mcp_gateway",
+            target_label="MCP gateway token",
+            message="Cleared the MCP gateway (inbound) token",
+        )
+        flash(request, "Gateway token cleared. The MCP endpoint now rejects all calls.", "success")
+    else:
+        flash(request, "No gateway token was configured.", "warning")
+    return RedirectResponse(url="/ui/settings/mcp", status_code=303)
+
+
+@router.post("/mcp/allowed-hosts")
+def save_allowed_hosts(
+    request: Request,
+    allowed_hosts: str = Form(""),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    hosts = mcp_gateway.set_allowed_hosts(allowed_hosts)
+    log.info("ui_mcp_allowed_hosts_set", extra={"by": user.username, "count": len(hosts)})
+    if hosts:
+        flash(request, f"Allowed hosts saved ({len(hosts)}).", "success")
+    else:
+        flash(request, "Allowed hosts cleared — any host is accepted (bearer auth still required).", "success")
     return RedirectResponse(url="/ui/settings/mcp", status_code=303)
 
 
