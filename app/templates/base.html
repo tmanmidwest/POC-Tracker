@@ -11,7 +11,7 @@
   <link href="https://fonts.cdnfonts.com/css/geist" rel="stylesheet" />
   <link href="https://fonts.cdnfonts.com/css/geist-mono" rel="stylesheet" />
 
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}" />
   <link rel="icon" href="{{ branding.favicon }}" />
 
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
@@ -129,6 +129,6 @@
 
   </div>
 
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v={{ asset_v }}" defer></script>
 </body>
 </html>
