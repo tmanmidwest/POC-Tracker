@@ -34,7 +34,12 @@ class ProjectNote(Base, TimestampMixin):
 
     # User-facing date for the note — defaults to today, editable when adding.
     note_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # Plain-text rendering of the note, kept for search/export and as a fallback
+    # for older notes saved before rich text. Always populated.
     body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Sanitized rich-text HTML, shown in the UI/PDF when present. Null for
+    # legacy plain-text notes, which fall back to ``body``.
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Username of whoever added the note, kept for display. Nullable for safety.
     created_by: Mapped[str | None] = mapped_column(String(150), nullable=True)
 

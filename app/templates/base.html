@@ -15,6 +15,7 @@
   <link rel="icon" href="{{ branding.favicon }}" />
 
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
 
@@ -132,6 +133,7 @@
 
   </div>
 
+  {% block body_scripts %}{% endblock %}
   <script src="/static/app.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

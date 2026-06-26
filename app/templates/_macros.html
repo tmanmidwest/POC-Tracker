@@ -33,3 +33,26 @@
     <span class="badge badge--neutral">Inactive</span>
   {% endif %}
 {% endmacro %}
+
+
+{# Render stored note content as HTML. Prefers sanitized rich-text HTML; falls
+   back to escaped plain text (newlines → <br>) for legacy plain-text notes. #}
+{% macro render_note(html, text) %}
+  {%- if html -%}
+    <div class="note-html">{{ html | safe }}</div>
+  {%- else -%}
+    <div style="white-space:pre-wrap;">{{ text }}</div>
+  {%- endif -%}
+{% endmacro %}
+
+
+{# Seed value for a Quill editor: sanitized HTML if present, otherwise the
+   escaped plain text with newlines turned into <br> so legacy notes stay
+   editable without losing their line breaks. #}
+{% macro rte_seed(html, text) %}
+  {%- if html -%}
+    {{ html | safe }}
+  {%- elif text -%}
+    {{ (text | e).replace("\n", "<br>" | safe) }}
+  {%- endif -%}
+{% endmacro %}

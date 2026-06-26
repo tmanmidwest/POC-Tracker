@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = "Project" %}
 {% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if project else "New" }}</span>{% endblock %}
+{% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
+{% block body_scripts %}{% include "_rte_scripts.html" %}{% endblock %}
 
 {% block main %}
 <div class="page-header">
@@ -77,7 +80,8 @@
     </div>
     <div class="form-row">
       <label class="label" for="notes">Notes</label>
-      <textarea class="textarea" id="notes" name="notes" rows="3">{{ form.notes or '' }}</textarea>
+      <div class="rte" data-rte-target="#notes" data-placeholder="Notes about this project…">{{ M.rte_seed(form.notes_html, form.notes) }}</div>
+      <input type="hidden" id="notes" name="notes" />
     </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "poc-tracker",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "POCT_DATA_DIR=./data .venv/bin/python -m app.main"],
+      "port": 8010
+    }
+  ]
+}

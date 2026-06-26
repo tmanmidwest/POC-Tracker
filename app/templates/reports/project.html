@@ -1,4 +1,5 @@
 {% extends "reports/base_report.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = project.display_name ~ " — Report" %}
 
 {% block content %}
@@ -36,8 +37,8 @@
     <td colspan="3"><a href="{{ project.notebook_url }}">{{ project.notebook_url }}</a></td>
   </tr>
   {% endif %}
-  {% if project.notes %}
-  <tr><th>Notes</th><td colspan="3" class="prewrap">{{ project.notes }}</td></tr>
+  {% if project.notes_html or project.notes %}
+  <tr><th>Notes</th><td colspan="3">{{ M.render_note(project.notes_html, project.notes) }}</td></tr>
   {% endif %}
 </table>
 
@@ -63,7 +64,7 @@
       <span class="note__date">{{ note.note_date.strftime('%b %-d, %Y') }}</span>
       {% if note.created_by %}<span class="muted xs">{{ note.created_by }}</span>{% endif %}
     </div>
-    <div class="prewrap">{{ note.body }}</div>
+    {{ M.render_note(note.body_html, note.body) }}
     {% if note.attachments %}
     <div class="muted xs" style="margin-top:6px;">📎 Attachments:
       {% for att in note.attachments %}<a href="/ui/projects/note-attachments/{{ att.id }}">{{ att.original_filename or att.stored_filename }}</a>{% if not loop.last %}, {% endif %}{% endfor %}

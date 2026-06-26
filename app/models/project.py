@@ -60,7 +60,10 @@ class Project(Base, TimestampMixin):
     # "Notebook Link" hyperlink in the UI.
     notebook_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
+    # Free-text project notes. ``notes`` holds a plain-text rendering (search/
+    # export/fallback); ``notes_html`` holds sanitized rich-text HTML when present.
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True

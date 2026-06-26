@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = project.display_name %}
 {% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
+{% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
+{% block body_scripts %}{% include "_rte_scripts.html" %}{% endblock %}
 
 {% block main %}
 <div class="page-header">
@@ -38,7 +41,7 @@
     <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Use-case progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} ({{ progress.pct }}%)</div></div>
   </div>
-  {% if project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ project.notes }}</div>{% endif %}
+  {% if project.notes_html or project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ M.render_note(project.notes_html, project.notes) }}</div>{% endif %}
 </div>
 
 {# ---- Project Notes ---- #}
@@ -49,7 +52,7 @@
     {% if note.created_by %}<div class="text-muted text-xs">{{ note.created_by }}</div>{% endif %}
   </div>
   <div style="flex:1;">
-    <div style="white-space:pre-wrap;">{{ note.body }}</div>
+    {{ M.render_note(note.body_html, note.body) }}
     {% if note.attachments %}
     <div style="display:flex; flex-wrap:wrap; gap: var(--s-2); margin-top: var(--s-2);">
       {% for att in note.attachments %}
@@ -75,7 +78,8 @@
       <div class="form-row"><label class="label">Date</label>
         <input class="input" type="date" name="note_date" value="{{ note.note_date.isoformat() }}" /></div>
       <div class="form-row"><label class="label">Note</label>
-        <textarea class="textarea" name="body" rows="4" required>{{ note.body }}</textarea></div>
+        <div class="rte" data-rte-target="#note-body-{{ note.id }}">{{ M.rte_seed(note.body_html, note.body) }}</div>
+        <input type="hidden" name="body" id="note-body-{{ note.id }}" /></div>
       <div class="form-actions">
         <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
         <button class="btn btn--primary">Save</button>
@@ -139,7 +143,8 @@
       <div class="form-row"><label class="label">Date</label>
         <input class="input" type="date" name="note_date" value="{{ today }}" /></div>
       <div class="form-row"><label class="label">Note</label>
-        <textarea class="textarea" name="body" rows="4" placeholder="Add an update…" required></textarea></div>
+        <div class="rte" data-rte-target="#add-note-body" data-placeholder="Add an update…"></div>
+        <input type="hidden" name="body" id="add-note-body" /></div>
       <div class="form-row"><label class="label">Attachments <span class="text-muted text-xs">(optional — PDF, Word, Excel, images)</span></label>
         <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" /></div>
       <div class="form-actions">

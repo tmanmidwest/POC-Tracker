@@ -31,6 +31,7 @@ from app.models.project_use_case import SOURCE_CUSTOM
 from app.services import note_attachments as note_store
 from app.services import screenshots as screenshot_store
 from app.services.audit import record_event
+from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.use_cases import (
     added_library_ids,
     copy_library_entries_to_project,
@@ -232,6 +233,7 @@ def new_form(
 
 async def _read_project_form(request: Request) -> dict:
     form = await request.form()
+    notes_html = sanitize_note_html(form.get("notes"))  # type: ignore[arg-type]
     return {
         "customer_id": form.get("customer_id"),
         "name": _clean(form.get("name")),  # type: ignore[arg-type]
@@ -243,7 +245,9 @@ async def _read_project_form(request: Request) -> dict:
         "account_executive_email": _clean(form.get("account_executive_email")),  # type: ignore[arg-type]
         "salesforce_opp_url": _clean_url(form.get("salesforce_opp_url")),  # type: ignore[arg-type]
         "notebook_url": _clean_url(form.get("notebook_url")),  # type: ignore[arg-type]
-        "notes": _clean(form.get("notes")),  # type: ignore[arg-type]
+        # Rich-text notes: store sanitized HTML + a plain-text rendering.
+        "notes": html_to_text(notes_html),
+        "notes_html": notes_html,
     }
 
 
@@ -274,6 +278,7 @@ async def create_project(
         salesforce_opp_url=data["salesforce_opp_url"],
         notebook_url=data["notebook_url"],
         notes=data["notes"],
+        notes_html=data["notes_html"],
     )
     db.add(project)
     db.commit()
@@ -308,6 +313,7 @@ def edit_form(
         "salesforce_opp_url": project.salesforce_opp_url,
         "notebook_url": project.notebook_url,
         "notes": project.notes,
+        "notes_html": project.notes_html,
     }
     return render(
         request, "projects/form.html", current_user=user, active_section="projects",
@@ -342,6 +348,7 @@ async def update_project(
     project.salesforce_opp_url = data["salesforce_opp_url"]
     project.notebook_url = data["notebook_url"]
     project.notes = data["notes"]
+    project.notes_html = data["notes_html"]
     db.commit()
     record_event(
         category="project", event_type="project.updated", actor_type="user",
@@ -540,7 +547,8 @@ async def add_project_note(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     project = _get_project(db, project_id)
-    text = _clean(body)
+    body_html = sanitize_note_html(body)
+    text = html_to_text(body_html)
     if not text:
         flash(request, "Note text is required.", "error")
         return RedirectResponse(url=f"/ui/projects/{project.id}#notes", status_code=303)
@@ -548,6 +556,7 @@ async def add_project_note(
         project_id=project.id,
         note_date=_parse_date(note_date) or date.today(),
         body=text,
+        body_html=body_html,
         created_by=user.username,
     )
     db.add(note)
@@ -647,11 +656,13 @@ def edit_project_note(
     note = db.get(ProjectNote, note_id)
     if note is None:
         raise HTTPException(status_code=404, detail="Note not found.")
-    text = _clean(body)
+    body_html = sanitize_note_html(body)
+    text = html_to_text(body_html)
     if not text:
         flash(request, "Note text is required.", "error")
         return RedirectResponse(url=f"/ui/projects/{note.project_id}#notes", status_code=303)
     note.body = text
+    note.body_html = body_html
     note.note_date = _parse_date(note_date) or note.note_date
     db.commit()
     record_event(

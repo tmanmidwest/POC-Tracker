@@ -1,0 +1,80 @@
+{# Quill rich-text editor + initializer. Included via the base template's
+   body_scripts block. Any element with a `data-rte-target` attribute is turned
+   into an editor whose HTML is synced into the hidden input named by that
+   selector on form submit.
+
+   Markup pattern (see projects/detail.html, projects/form.html):
+     <div class="rte" data-rte-target="#note-body">{{ existing_html|safe }}</div>
+     <input type="hidden" name="body" id="note-body" />
+#}
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+<script>
+  (function () {
+    var TOOLBAR = [
+      ['bold', 'italic', 'underline'],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      ['link'],
+      ['clean'],
+    ];
+
+    // Quill 2 represents both bullet and numbered lists as <ol> with a
+    // per-item `data-list` attribute plus internal <span class="ql-ui"> nodes.
+    // Convert that to standard <ul>/<ol> so the markup survives sanitization
+    // (which drops data-list) with the right list type. Consecutive items of
+    // the same type are grouped into one list.
+    function normalize(quill) {
+      var src = quill.root;
+      var out = document.createElement('div');
+      Array.prototype.forEach.call(src.childNodes, function (node) {
+        if (node.nodeType !== 1) return;
+        var tag = node.tagName.toLowerCase();
+        if (tag === 'ol' || tag === 'ul') {
+          var group = null, gtype = null;
+          Array.prototype.forEach.call(node.children, function (li) {
+            var t = li.getAttribute('data-list') === 'ordered' ? 'ol' : 'ul';
+            if (!group || gtype !== t) {
+              group = document.createElement(t);
+              gtype = t;
+              out.appendChild(group);
+            }
+            var nli = document.createElement('li');
+            Array.prototype.forEach.call(li.childNodes, function (c) {
+              if (c.nodeType === 1 && c.classList && c.classList.contains('ql-ui')) return;
+              nli.appendChild(c.cloneNode(true));
+            });
+            group.appendChild(nli);
+          });
+        } else {
+          out.appendChild(node.cloneNode(true));
+        }
+      });
+      return out.innerHTML;
+    }
+
+    function initOne(el) {
+      if (el.dataset.rteReady) return;
+      el.dataset.rteReady = '1';
+      var input = document.querySelector(el.getAttribute('data-rte-target'));
+      var quill = new Quill(el, {
+        theme: 'snow',
+        placeholder: el.getAttribute('data-placeholder') || '',
+        modules: { toolbar: TOOLBAR },
+      });
+      function sync() {
+        input.value = quill.getText().trim() === '' ? '' : normalize(quill);
+      }
+      var form = el.closest('form');
+      if (form && input) {
+        sync(); // seed so a submit without edits still carries the original HTML
+        form.addEventListener('submit', sync);
+      }
+    }
+
+    function initAll() {
+      document.querySelectorAll('[data-rte-target]').forEach(initOne);
+    }
+
+    if (document.readyState !== 'loading') initAll();
+    else document.addEventListener('DOMContentLoaded', initAll);
+  })();
+</script>

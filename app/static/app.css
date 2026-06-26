@@ -1194,3 +1194,44 @@ html[data-theme="dark"] {
 /* Dark-mode form controls: native widgets follow the page scheme (text
  * cursor, dropdown chevrons, date pickers render dark). */
 html[data-theme="dark"] { color-scheme: dark; }
+
+/* ---------------------------------------------------------------------------
+ * Rich-text editor (Quill) — style the snow theme to match the app's inputs.
+ * ------------------------------------------------------------------------- */
+.rte {
+  background: var(--surface);
+  border-bottom-left-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-md);
+  min-height: 120px;
+  font-family: inherit;
+}
+.ql-toolbar.ql-snow {
+  border-color: var(--line-strong);
+  border-top-left-radius: var(--r-md);
+  border-top-right-radius: var(--r-md);
+}
+.ql-container.ql-snow { border-color: var(--line-strong); }
+.ql-editor { font-size: 13px; line-height: 1.5; color: var(--text); }
+.ql-editor.ql-blank::before { color: var(--text-faint); font-style: normal; }
+
+/* Read-only rendered note HTML: tighten default list/paragraph spacing. */
+.note-html p { margin: 0 0 0.5em; }
+.note-html p:last-child { margin-bottom: 0; }
+.note-html ul, .note-html ol { margin: 0 0 0.5em; padding-left: 1.5em; }
+
+/* Dark-mode: recolor toolbar icons/pickers (Quill hardcodes near-black). */
+html[data-theme="dark"] .ql-snow .ql-stroke { stroke: var(--text-muted); }
+html[data-theme="dark"] .ql-snow .ql-fill { fill: var(--text-muted); }
+html[data-theme="dark"] .ql-snow .ql-picker { color: var(--text-muted); }
+html[data-theme="dark"] .ql-snow .ql-picker-options {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+html[data-theme="dark"] .ql-snow.ql-toolbar button:hover .ql-stroke,
+html[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--primary-hover);
+}
+html[data-theme="dark"] .ql-snow.ql-toolbar button:hover .ql-fill,
+html[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-fill {
+  fill: var(--primary-hover);
+}
