@@ -18,6 +18,7 @@ from app.db import Base
 from app.models._mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.note_attachment import NoteAttachment
     from app.models.project import Project
 
 
@@ -38,6 +39,12 @@ class ProjectNote(Base, TimestampMixin):
     created_by: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
     project: Mapped[Project] = relationship("Project", back_populates="note_entries")
+    attachments: Mapped[list[NoteAttachment]] = relationship(
+        "NoteAttachment",
+        back_populates="note",
+        cascade="all, delete-orphan",
+        order_by="NoteAttachment.id",
+    )
 
     def __repr__(self) -> str:
         return f"<ProjectNote id={self.id} project_id={self.project_id} date={self.note_date}>"

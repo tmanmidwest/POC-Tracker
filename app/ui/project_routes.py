@@ -16,6 +16,7 @@ from app.models import (
     AppUser,
     Customer,
     FeatureType,
+    NoteAttachment,
     Project,
     ProjectNote,
     ProjectStatus,
@@ -25,6 +26,7 @@ from app.models import (
     UseCaseStatus,
 )
 from app.models.project_use_case import SOURCE_CUSTOM
+from app.services import note_attachments as note_store
 from app.services import screenshots as screenshot_store
 from app.services.audit import record_event
 from app.services.use_cases import (
@@ -398,12 +400,48 @@ def detail(
     )
 
 
+async def _store_note_attachments(
+    db: Session,
+    note: ProjectNote,
+    files: list[UploadFile],
+    request: Request,
+) -> int:
+    """Validate and persist uploaded files for a note. Flashes per-file errors
+    and returns how many were saved. Caller commits the session."""
+    saved = 0
+    for f in files:
+        if f is None or not f.filename:
+            continue  # empty file part the browser may send when none selected
+        if not note_store.is_allowed(f.filename):
+            flash(request, f"'{f.filename}': unsupported file type.", "error")
+            continue
+        content = await f.read()
+        if not content:
+            continue
+        if len(content) > note_store.MAX_SIZE_BYTES:
+            flash(request, f"'{f.filename}' is too large (25 MB max).", "error")
+            continue
+        stored = note_store.store_bytes(content, f.filename)
+        db.add(
+            NoteAttachment(
+                project_note_id=note.id,
+                stored_filename=stored,
+                original_filename=f.filename,
+                content_type=f.content_type,
+                size_bytes=len(content),
+            )
+        )
+        saved += 1
+    return saved
+
+
 @router.post("/{project_id}/notes")
-def add_project_note(
+async def add_project_note(
     project_id: int,
     request: Request,
     body: str = Form(...),
     note_date: str | None = Form(None),
+    files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -419,6 +457,8 @@ def add_project_note(
         created_by=user.username,
     )
     db.add(note)
+    db.flush()  # assign note.id before attaching files
+    await _store_note_attachments(db, note, files, request)
     db.commit()
     record_event(
         category="project", event_type="note.added", actor_type="user",
@@ -429,6 +469,76 @@ def add_project_note(
     )
     flash(request, "Note added.", "success")
     return RedirectResponse(url=f"/ui/projects/{project.id}#notes", status_code=303)
+
+
+@router.post("/notes/{note_id}/attachments")
+async def upload_note_attachments(
+    note_id: int,
+    request: Request,
+    files: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    note = db.get(ProjectNote, note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    saved = await _store_note_attachments(db, note, files, request)
+    db.commit()
+    if saved:
+        record_event(
+            category="project", event_type="note.attachment.added", actor_type="user",
+            actor_label=user.username, actor_id=user.id, target_type="project",
+            target_id=note.project_id, target_label=note.project.display_name,
+            message=f"Attached {saved} file(s) to a note on '{note.project.display_name}'",
+            detail={"surface": "ui", "count": saved}, request=request,
+        )
+        flash(request, f"Attached {saved} file(s).", "success")
+    return RedirectResponse(url=f"/ui/projects/{note.project_id}#notes", status_code=303)
+
+
+@router.get("/note-attachments/{att_id}")
+def serve_note_attachment(
+    att_id: int,
+    db: Session = Depends(get_db),
+    _user: AppUser = Depends(require_ui_user),
+) -> Response:
+    att = db.get(NoteAttachment, att_id)
+    if att is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    path = note_store.path_for(att)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Attachment file missing.")
+    # Inline so images/PDFs open in the browser; other types download.
+    return FileResponse(
+        path,
+        media_type=note_store.content_type_for(att),
+        filename=att.original_filename or att.stored_filename,
+        content_disposition_type="inline",
+    )
+
+
+@router.post("/note-attachments/{att_id}/delete")
+def delete_note_attachment(
+    att_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    att = db.get(NoteAttachment, att_id)
+    if att is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    project_id = att.note.project_id
+    note_store.delete_file(att)
+    db.delete(att)
+    db.commit()
+    record_event(
+        category="project", event_type="note.attachment.deleted", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project_id, target_label=str(project_id),
+        message="Removed a note attachment", detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Attachment removed.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#notes", status_code=303)
 
 
 @router.post("/notes/{note_id}/edit")

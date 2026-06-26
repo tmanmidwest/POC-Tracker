@@ -189,6 +189,72 @@ def test_reject_non_image_screenshot(ui: TestClient) -> None:
     assert db.query(Screenshot).count() == 0
 
 
+def test_project_notes_crud_and_attachments(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import NoteAttachment, ProjectNote
+
+    cid = _create_customer(ui, "Notes Co")
+    pid = _create_project(ui, cid, "Notes POC")
+
+    # Add a note with a date and a PDF attachment in one shot.
+    resp = ui.post(
+        f"/ui/projects/{pid}/notes",
+        data={"body": "Kicked off the POC", "note_date": "2026-06-20"},
+        files=[("files", ("plan.pdf", b"%PDF-1.4 fake", "application/pdf"))],
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    db = get_session_factory()()
+    note = db.query(ProjectNote).filter(ProjectNote.project_id == pid).one()
+    assert note.body == "Kicked off the POC"
+    assert note.note_date.isoformat() == "2026-06-20"
+    assert note.created_by  # stamped with the acting user
+    att = db.query(NoteAttachment).filter(NoteAttachment.project_note_id == note.id).one()
+    assert att.original_filename == "plan.pdf"
+    att_id = att.id
+
+    # The note + attachment link render on the project page.
+    page = ui.get(f"/ui/projects/{pid}").text
+    assert "Kicked off the POC" in page
+    assert f"/ui/projects/note-attachments/{att_id}" in page
+
+    # Attachment is served (inline) for viewing/download.
+    served = ui.get(f"/ui/projects/note-attachments/{att_id}")
+    assert served.status_code == 200
+    assert "inline" in served.headers.get("content-disposition", "")
+
+    # Edit the note's body + date.
+    ui.post(f"/ui/projects/notes/{note.id}/edit",
+            data={"body": "Updated summary", "note_date": "2026-06-21"},
+            follow_redirects=False)
+    db.expire_all()
+    note = db.get(ProjectNote, note.id)
+    assert note.body == "Updated summary"
+    assert note.note_date.isoformat() == "2026-06-21"
+
+    # Upload a second attachment to the existing note.
+    ui.post(f"/ui/projects/notes/{note.id}/attachments",
+            files=[("files", ("doc.docx", b"PK\x03\x04 fake", None))],
+            follow_redirects=False)
+    assert db.query(NoteAttachment).filter(NoteAttachment.project_note_id == note.id).count() == 2
+
+    # A disallowed file type is rejected (count unchanged).
+    ui.post(f"/ui/projects/notes/{note.id}/attachments",
+            files=[("files", ("evil.exe", b"MZ", "application/octet-stream"))],
+            follow_redirects=False)
+    assert db.query(NoteAttachment).filter(NoteAttachment.project_note_id == note.id).count() == 2
+
+    # Remove one attachment.
+    ui.post(f"/ui/projects/note-attachments/{att_id}/delete", follow_redirects=False)
+    assert db.query(NoteAttachment).filter(NoteAttachment.id == att_id).count() == 0
+
+    # Deleting the note cascades to its remaining attachments.
+    ui.post(f"/ui/projects/notes/{note.id}/delete", follow_redirects=False)
+    assert db.query(ProjectNote).filter(ProjectNote.project_id == pid).count() == 0
+    assert db.query(NoteAttachment).filter(NoteAttachment.project_note_id == note.id).count() == 0
+
+
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------
