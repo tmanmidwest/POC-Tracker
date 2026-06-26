@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import UTC, date, datetime
@@ -24,6 +25,7 @@ from app.models import (
     Screenshot,
     UseCaseLibrary,
     UseCaseStatus,
+    UseCaseViewPref,
 )
 from app.models.project_use_case import SOURCE_CUSTOM
 from app.services import note_attachments as note_store
@@ -87,16 +89,70 @@ def _ref_sort_key(ref: str | None) -> tuple:
     return tuple(parts)
 
 
-def _grouped_use_cases(project: Project) -> list[dict]:
-    """Use cases grouped by category, each list sorted by reference number."""
+def _group_use_cases(use_cases: list[ProjectUseCase]) -> list[dict]:
+    """Group the given use cases by category, each list sorted by reference number."""
     ucs = sorted(
-        project.use_cases,
+        use_cases,
         key=lambda u: (u.category.lower(), _ref_sort_key(u.reference_number), u.name.lower()),
     )
     groups = []
     for category, items in groupby(ucs, key=lambda u: u.category):
         groups.append({"category": category, "use_cases": list(items)})
     return groups
+
+
+def _grouped_use_cases(project: Project) -> list[dict]:
+    """All of a project's use cases, grouped by category."""
+    return _group_use_cases(list(project.use_cases))
+
+
+# Toggleable use-case fields on the project page. "name" and "status" always show.
+ALL_UC_FIELDS = [
+    {"key": "ref", "label": "Ref #"},
+    {"key": "feature", "label": "Feature type"},
+    {"key": "source", "label": "Source"},
+    {"key": "completed_on", "label": "Completed on"},
+    {"key": "description", "label": "Description"},
+    {"key": "success_validation", "label": "Success validation"},
+    {"key": "comments", "label": "Comments"},
+    {"key": "screenshots", "label": "Screenshots"},
+]
+DEFAULT_UC_FIELDS = ["ref", "feature", "source", "completed_on", "description", "comments", "screenshots"]
+_UC_FIELD_KEYS = {f["key"] for f in ALL_UC_FIELDS}
+
+
+def _load_uc_view(db: Session, user: AppUser) -> dict[str, object]:
+    """Load the user's use-case view prefs (visible fields + status filter)."""
+    prefs: dict[str, object] = {"fields": DEFAULT_UC_FIELDS, "status_filter": "all"}
+    row = (
+        db.query(UseCaseViewPref)
+        .filter(UseCaseViewPref.app_user_id == user.id)
+        .one_or_none()
+    )
+    if row and row.config_json:
+        try:
+            stored = json.loads(row.config_json)
+            if isinstance(stored.get("fields"), list):
+                prefs["fields"] = [f for f in stored["fields"] if f in _UC_FIELD_KEYS]
+            if stored.get("status_filter"):
+                prefs["status_filter"] = str(stored["status_filter"])
+        except (ValueError, TypeError):
+            log.warning("uc_view_prefs_parse_failed", extra={"user": user.username})
+    return prefs
+
+
+def _filter_use_cases(
+    use_cases: list[ProjectUseCase], status_filter: str
+) -> list[ProjectUseCase]:
+    """Apply the saved status filter: 'all', 'open' (not complete), or a status id."""
+    if not status_filter or status_filter == "all":
+        return use_cases
+    if status_filter == "open":
+        return [uc for uc in use_cases if not (uc.status and uc.status.is_complete_status)]
+    if status_filter.isdigit():
+        sid = int(status_filter)
+        return [uc for uc in use_cases if uc.status_id == sid]
+    return use_cases
 
 
 def _get_project(db: Session, project_id: int) -> Project:
@@ -391,13 +447,47 @@ def detail(
     total = len(project.use_cases)
     done = sum(1 for uc in project.use_cases if uc.status and uc.status.is_complete_status)
 
+    # Per-user view prefs: which fields to show and an optional status filter.
+    uc_view = _load_uc_view(db, user)
+    visible = _filter_use_cases(list(project.use_cases), str(uc_view["status_filter"]))
+
     return render(
         request, "projects/detail.html", current_user=user, active_section="projects",
-        project=project, use_case_groups=_grouped_use_cases(project),
+        project=project, use_case_groups=_group_use_cases(visible),
         library_groups=lib_groups, uc_statuses=uc_statuses, feature_types=feature_types,
         progress={"total": total, "done": done, "pct": round(done / total * 100) if total else 0},
         today=date.today().isoformat(),
+        uc_fields=set(uc_view["fields"]), uc_status_filter=str(uc_view["status_filter"]),
+        uc_field_options=ALL_UC_FIELDS, uc_filtered_count=len(visible),
     )
+
+
+@router.post("/{project_id}/use-case-view")
+async def save_use_case_view(
+    project_id: int,
+    request: Request,
+    status_filter: str = Form("all"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    form = await request.form()
+    fields = [f["key"] for f in ALL_UC_FIELDS if form.get(f"field_{f['key']}")]
+    config = {
+        "fields": fields,  # empty list = show only name + status
+        "status_filter": _clean(status_filter) or "all",
+    }
+    row = (
+        db.query(UseCaseViewPref)
+        .filter(UseCaseViewPref.app_user_id == user.id)
+        .one_or_none()
+    )
+    if row is None:
+        row = UseCaseViewPref(app_user_id=user.id)
+        db.add(row)
+    row.config_json = json.dumps(config)
+    db.commit()
+    flash(request, "Use-case view updated.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 
 async def _store_note_attachments(

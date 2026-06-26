@@ -44,6 +44,7 @@ def _load_prefs(db: Session, user: AppUser) -> dict[str, Any]:
     prefs: dict[str, Any] = {
         "columns": DEFAULT_COLUMNS,
         "status_ids": None,  # None = show all
+        "status_order": None,  # None = use ProjectStatus.sort_order
         "sort": DEFAULT_SORT,
     }
     if row and row.config_json:
@@ -53,6 +54,17 @@ def _load_prefs(db: Session, user: AppUser) -> dict[str, Any]:
         except (ValueError, TypeError):
             log.warning("dashboard_prefs_parse_failed", extra={"user": user.username})
     return prefs
+
+
+def _order_statuses(
+    statuses: list[ProjectStatus], order: list[int] | None
+) -> list[ProjectStatus]:
+    """Order statuses by the user's saved order; any not listed fall to the end
+    keeping their canonical sort_order."""
+    if not order:
+        return statuses
+    pos = {sid: i for i, sid in enumerate(order)}
+    return sorted(statuses, key=lambda s: (pos.get(s.id, len(order)), s.sort_order))
 
 
 def _progress(project: Project) -> dict[str, int]:
@@ -79,6 +91,7 @@ def dashboard(
         s for s in statuses
         if selected_status_ids is None or s.id in selected_status_ids
     ]
+    visible_statuses = _order_statuses(visible_statuses, prefs.get("status_order"))
 
     sort = prefs.get("sort", DEFAULT_SORT)
     groups = []
@@ -126,6 +139,7 @@ def preferences_form(
 ) -> Response:
     prefs = _load_prefs(db, user)
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
+    statuses = _order_statuses(statuses, prefs.get("status_order"))
     return render(
         request,
         "dashboard/preferences.html",
@@ -149,9 +163,13 @@ async def save_preferences(
     status_values = form.getlist("status_ids")  # type: ignore[attr-defined]
     status_ids = [int(s) for s in status_values] if status_values else None
 
+    order_raw = form.get("status_order", "")
+    status_order = [int(x) for x in str(order_raw).split(",") if x.strip().isdigit()] or None
+
     config = {
         "columns": columns or DEFAULT_COLUMNS,
         "status_ids": status_ids,
+        "status_order": status_order,
         "sort": sort if sort in {"updated", "start_date", "name"} else DEFAULT_SORT,
     }
     row = (

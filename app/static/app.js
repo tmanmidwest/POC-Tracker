@@ -64,6 +64,43 @@ function applyColumnVisibility(colName, visible) {
 
 document.querySelectorAll('.col-picker').forEach(setupColumnPicker);
 
+// Drag-to-reorder list. Container has [data-reorder] and [data-reorder-input]
+// (the id of a hidden input); each row has [data-reorder-item] and [data-id].
+// On drop, the hidden input is set to the comma-separated order of data-id.
+function setupReorder(listEl) {
+  const hidden = document.getElementById(listEl.dataset.reorderInput);
+  const items = () => Array.from(listEl.querySelectorAll('[data-reorder-item]'));
+  let dragging = null;
+
+  function sync() {
+    if (hidden) hidden.value = items().map((el) => el.dataset.id).join(',');
+  }
+  function afterElement(y) {
+    return items()
+      .filter((el) => el !== dragging)
+      .reduce((closest, el) => {
+        const box = el.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        return offset < 0 && offset > closest.offset ? { offset, el } : closest;
+      }, { offset: -Infinity, el: null }).el;
+  }
+
+  items().forEach((item) => {
+    item.setAttribute('draggable', 'true');
+    item.addEventListener('dragstart', () => { dragging = item; item.classList.add('is-dragging'); });
+    item.addEventListener('dragend', () => { item.classList.remove('is-dragging'); dragging = null; sync(); });
+  });
+  listEl.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (!dragging) return;
+    const after = afterElement(e.clientY);
+    if (after == null) listEl.appendChild(dragging);
+    else listEl.insertBefore(dragging, after);
+  });
+  sync();
+}
+document.querySelectorAll('[data-reorder]').forEach(setupReorder);
+
 // Modal: close on Escape, close on overlay click
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

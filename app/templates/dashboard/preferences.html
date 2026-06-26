@@ -23,15 +23,22 @@
     </div>
 
     <div class="form-row">
-      <label class="label">Statuses to show</label>
-      <div class="form-hint">Leave all unchecked to show every status.</div>
-      {% for s in statuses %}
-      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
-        <input type="checkbox" name="status_ids" value="{{ s.id }}"
-          {% if prefs.status_ids and s.id in prefs.status_ids %}checked{% endif %} />
-        {{ s.name }}
-      </label>
-      {% endfor %}
+      <label class="label">Statuses — show &amp; order</label>
+      <div class="form-hint">Drag the ⠿ handle to reorder how status groups stack on your dashboard. Leave all unchecked to show every status.</div>
+      <input type="hidden" name="status_order" id="status_order_input" />
+      <div data-reorder data-reorder-input="status_order_input" style="margin-top: var(--s-2);">
+        {% for s in statuses %}
+        <div data-reorder-item data-id="{{ s.id }}"
+             style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2); border:1px solid var(--line); border-radius:6px; margin-bottom: var(--s-1); background: var(--surface);">
+          <span class="reorder-handle" style="cursor:grab; color: var(--text-muted); user-select:none;" title="Drag to reorder">⠿</span>
+          <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; flex:1; margin:0;">
+            <input type="checkbox" name="status_ids" value="{{ s.id }}"
+              {% if prefs.status_ids and s.id in prefs.status_ids %}checked{% endif %} />
+            {{ s.name }}
+          </label>
+        </div>
+        {% endfor %}
+      </div>
     </div>
 
     <div class="form-row">

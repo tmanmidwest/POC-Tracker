@@ -306,6 +306,72 @@ def test_project_report_pdf(ui: TestClient) -> None:
     assert r.content[:5] == b"%PDF-"
 
 
+def test_use_case_view_prefs(ui: TestClient) -> None:
+    import json
+
+    from app.db import get_session_factory
+    from app.models import ProjectUseCase, UseCaseStatus, UseCaseViewPref
+
+    cid = _create_customer(ui, "View Co")
+    pid = _create_project(ui, cid, "View POC")
+    ui.post(f"/ui/projects/{pid}/use-cases/from-library",
+            data={"library_ids": ["1", "2"]}, follow_redirects=False)
+    db = get_session_factory()()
+    ucs = db.query(ProjectUseCase).filter(ProjectUseCase.project_id == pid).all()
+    complete = db.query(UseCaseStatus).filter(UseCaseStatus.is_complete_status.is_(True)).first()
+    ucs[1].success_validation = "Must pass SSO test"
+    db.commit()
+    # Mark the first use case complete (leaves one open).
+    ui.post(f"/ui/projects/use-cases/{ucs[0].id}/status",
+            data={"status_id": complete.id}, follow_redirects=False)
+
+    # Default view: the Success validation field is off, so its value appears
+    # only in the (always-present) edit modal textarea — exactly once.
+    page = ui.get(f"/ui/projects/{pid}").text
+    assert page.count("Must pass SSO test") == 1
+
+    # Enable the Success validation field and filter to not-completed.
+    ui.post(f"/ui/projects/{pid}/use-case-view",
+            data={"field_success_validation": "1", "field_ref": "1", "status_filter": "open"},
+            follow_redirects=False)
+    page = ui.get(f"/ui/projects/{pid}").text
+    # Now it shows in the visible row too (row + modal = twice).
+    assert page.count("Must pass SSO test") == 2
+    assert "(1 shown)" in page             # filter applied: only the 1 open UC remains
+
+    # Preference persisted per-user.
+    pref = db.query(UseCaseViewPref).one()
+    cfg = json.loads(pref.config_json)
+    assert "success_validation" in cfg["fields"]
+    assert cfg["status_filter"] == "open"
+
+
+def test_dashboard_status_ordering(ui: TestClient) -> None:
+    import json
+
+    from app.db import get_session_factory
+    from app.models import DashboardPref, ProjectStatus
+
+    db = get_session_factory()()
+    statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
+    assert len(statuses) >= 2
+    reordered = [statuses[1], statuses[0], *statuses[2:]]
+    order = ",".join(str(s.id) for s in reordered)
+
+    ui.post("/ui/dashboard/preferences",
+            data={"col_name": "1", "sort": "updated", "status_order": order,
+                  "status_ids": [str(s.id) for s in statuses]},
+            follow_redirects=False)
+
+    pref = db.query(DashboardPref).one()
+    cfg = json.loads(pref.config_json)
+    assert cfg["status_order"][0] == statuses[1].id
+
+    # Dashboard renders the groups in the saved order.
+    page = ui.get("/ui/dashboard").text
+    assert page.index(statuses[1].name) < page.index(statuses[0].name)
+
+
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------

@@ -1139,3 +1139,7 @@ body.poc-modal-open { overflow: hidden; }
 }
 .settings-tile__title svg { width: 16px; height: 16px; flex: none; }
 .settings-tile__desc { margin-top: var(--s-2); font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+
+/* Drag-to-reorder rows (dashboard status order) */
+[data-reorder-item].is-dragging { opacity: 0.5; }
+[data-reorder-item] { background: var(--surface); }

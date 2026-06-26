@@ -152,9 +152,48 @@
 <div id="use-cases" class="page-header">
   <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>
   <div class="page-header__actions">
+    <button type="button" class="btn btn--ghost" onclick="pocOpen('m-uc-view')" title="Choose fields & filter">⚙ View</button>
     <button type="button" class="btn btn--secondary" onclick="pocOpen('m-add-custom')">+ Add custom use case</button>
     <button type="button" class="btn btn--primary" onclick="pocOpen('m-add-library')">+ Add from library</button>
   </div>
+</div>
+
+{% if uc_status_filter and uc_status_filter != 'all' %}
+<p class="text-muted text-xs" style="margin: calc(-1 * var(--s-2)) 0 var(--s-3);">
+  Filtered to {% if uc_status_filter == 'open' %}not-completed{% else %}{% for s in uc_statuses %}{% if s.id|string == uc_status_filter %}“{{ s.name }}”{% endif %}{% endfor %}{% endif %}
+  use cases ({{ uc_filtered_count }} shown) ·
+  <a href="#" onclick="pocOpen('m-uc-view'); return false;">change</a>
+</p>
+{% endif %}
+
+<div class="ucmodal" id="m-uc-view" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Use-case view</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <form method="post" action="/ui/projects/{{ project.id }}/use-case-view" class="ucmodal__body">
+    <div class="form-row">
+      <label class="label">Filter by status</label>
+      <select class="select" name="status_filter">
+        <option value="all" {% if uc_status_filter == 'all' %}selected{% endif %}>All use cases</option>
+        <option value="open" {% if uc_status_filter == 'open' %}selected{% endif %}>Not completed</option>
+        {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id|string == uc_status_filter %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-row">
+      <label class="label">Fields to show <span class="text-muted text-xs">(Name &amp; Status always shown)</span></label>
+      {% for f in uc_field_options %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="field_{{ f.key }}" value="1" {% if f.key in uc_fields %}checked{% endif %} />
+        {{ f.label }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+      <button class="btn btn--primary">Apply</button>
+    </div>
+  </form>
+ </div>
 </div>
 
 <div class="ucmodal" id="m-add-custom" hidden>
@@ -228,16 +267,24 @@
   <div class="card__header"><h3 class="card__title">{{ group.category }}</h3></div>
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th style="width:70px;">Ref</th><th>Use case</th><th>Feature</th><th style="width:200px;">Status</th><th>Source</th><th></th></tr></thead>
+    <thead><tr>
+      {% if 'ref' in uc_fields %}<th style="width:70px;">Ref</th>{% endif %}
+      <th>Use case</th>
+      {% if 'feature' in uc_fields %}<th>Feature</th>{% endif %}
+      <th style="width:200px;">Status</th>
+      {% if 'source' in uc_fields %}<th>Source</th>{% endif %}
+      <th></th>
+    </tr></thead>
     <tbody>
       {% for uc in group.use_cases %}
       <tr>
-        <td class="mono">{{ uc.reference_number or "—" }}</td>
+        {% if 'ref' in uc_fields %}<td class="mono">{{ uc.reference_number or "—" }}</td>{% endif %}
         <td>
           <strong>{{ uc.name }}</strong>
-          {% if uc.description %}<br><span class="text-muted text-xs">{{ uc.description }}</span>{% endif %}
-          {% if uc.comments %}<br><span class="text-xs">💬 {{ uc.comments }}</span>{% endif %}
-          {% if uc.screenshots %}
+          {% if 'description' in uc_fields and uc.description %}<br><span class="text-muted text-xs">{{ uc.description }}</span>{% endif %}
+          {% if 'success_validation' in uc_fields and uc.success_validation %}<br><span class="text-xs">✓ <span class="text-muted">{{ uc.success_validation }}</span></span>{% endif %}
+          {% if 'comments' in uc_fields and uc.comments %}<br><span class="text-xs">💬 {{ uc.comments }}</span>{% endif %}
+          {% if 'screenshots' in uc_fields and uc.screenshots %}
           <div style="display:flex; gap: var(--s-2); margin-top: var(--s-2); flex-wrap:wrap;">
             {% for shot in uc.screenshots %}
             <a href="/ui/projects/screenshots/{{ shot.id }}" target="_blank" title="{{ shot.caption or shot.original_filename }}">
@@ -247,16 +294,16 @@
           </div>
           {% endif %}
         </td>
-        <td>{% if uc.feature_type %}<span class="badge badge--neutral">{{ uc.feature_type.name }}</span>{% else %}—{% endif %}</td>
+        {% if 'feature' in uc_fields %}<td>{% if uc.feature_type %}<span class="badge badge--neutral">{{ uc.feature_type.name }}</span>{% else %}—{% endif %}</td>{% endif %}
         <td>
           <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/status" style="margin:0;">
             <select class="select" name="status_id" onchange="this.form.submit()">
               {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
             </select>
           </form>
-          {% if uc.completed_on %}<div class="text-muted text-xs" style="margin-top: var(--s-1);">✅ Completed {{ uc.completed_on.strftime('%b %-d, %Y') }}</div>{% endif %}
+          {% if 'completed_on' in uc_fields and uc.completed_on %}<div class="text-muted text-xs" style="margin-top: var(--s-1);">✅ Completed {{ uc.completed_on.strftime('%b %-d, %Y') }}</div>{% endif %}
         </td>
-        <td>{% if uc.source == 'library' %}<span class="badge badge--neutral">library</span>{% else %}<span class="badge badge--warning">custom</span>{% endif %}</td>
+        {% if 'source' in uc_fields %}<td>{% if uc.source == 'library' %}<span class="badge badge--neutral">library</span>{% else %}<span class="badge badge--warning">custom</span>{% endif %}</td>{% endif %}
         <td class="table__actions">
           <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-uc-{{ uc.id }}')">Edit</button>
           <div class="ucmodal" id="m-uc-{{ uc.id }}" hidden>

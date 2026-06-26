@@ -24,6 +24,7 @@ from app.models.project_use_case import ProjectUseCase
 from app.models.screenshot import Screenshot
 from app.models.use_case_library import UseCaseLibrary
 from app.models.use_case_status import UseCaseStatus
+from app.models.use_case_view_pref import UseCaseViewPref
 from app.models.user_identity import UserIdentity
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     "Screenshot",
     "UseCaseLibrary",
     "UseCaseStatus",
+    "UseCaseViewPref",
     "UserIdentity",
 ]
