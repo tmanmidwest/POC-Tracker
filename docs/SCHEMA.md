@@ -18,6 +18,7 @@ customers ──< contacts ───────> contact_roles
 
 use_case_library ──> feature_types
 dashboard_prefs ──> app_users (one row per user)
+projects ──< project_grants ──> app_users (per-project read access for external viewers)
 ```
 
 ### Core tables
@@ -26,8 +27,10 @@ dashboard_prefs ──> app_users (one row per user)
 - **contacts** — `customer_id`, `name`, `email`, `phone`, `role_id` → contact_roles.
 - **projects** — `customer_id`, `name` (optional; falls back to customer name),
   `status_id`, `start_date`, `end_date`, `sales_engineer_id` → app_users,
-  `account_executive` / `account_executive_email` (reference only), `notes`,
-  `is_archived` / `archived_at`.
+  `account_executive` / `account_executive_email` (reference only), `notes` / `notes_html`,
+  `is_archived` / `archived_at`. AI executive summary: `exec_summary` (plain text),
+  `exec_summary_html` (editable rendering), `exec_summary_generated_at`,
+  `exec_summary_model` (e.g. `anthropic/claude-opus-4-8`).
 - **project_use_cases** — a use case attached to a project:
   - `source` — `"library"` (a snapshot of a library entry) or `"custom"` (ad-hoc).
   - `library_id` — provenance only; `SET NULL` if the library entry is deleted.
@@ -49,7 +52,23 @@ dashboard_prefs ──> app_users (one row per user)
 `is_system` rows are seed defaults and cannot be deleted; a lookup still referenced by
 live data cannot be deleted either (deactivate it instead).
 
+### Access control
+
+- **project_grants** — grants one external viewer read access to one project:
+  `project_id` → projects (`ON DELETE CASCADE`), `user_id` → app_users (`ON DELETE CASCADE`),
+  `tier` (default `"viewer"`), `granted_by_user_id`. Unique on `(project_id, user_id)`.
+  Internal users (admins and standard users) see all projects and ignore grants; external
+  viewers see only the projects they're granted. Enforced in the web UI.
+
+## AI
+
+- **ai_providers** — a configured text-generation provider for AI features (executive
+  summaries, the requirements importer): `provider` (registry key, e.g. `"anthropic"`),
+  `display_name`, `model`, `api_key_encrypted` (Fernet, recoverable), `is_enabled`,
+  `is_default` (the one used for generation), `created_by_user_id`, `last_used_at`.
+
 ## Platform tables (shared scaffold)
 
-`app_users` (with `is_admin`), `api_keys`, `oauth_clients`, `auth_providers`,
+`app_users` (with `is_admin` and `is_external`), `api_keys`, `oauth_clients`,
+`auth_providers` (with `default_user_tier` — the tier given to users it provisions),
 `user_identities`, `app_branding`, `app_config`, `audit_events`.
