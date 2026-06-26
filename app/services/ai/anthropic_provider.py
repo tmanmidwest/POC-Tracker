@@ -8,7 +8,9 @@ is simpler than streaming for phase one.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import Iterator
 
 import httpx
 
@@ -67,6 +69,64 @@ def generate(
     if not text:
         raise GenerationError("The model returned an empty response.")
     return text
+
+
+def stream(
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    prompt: str,
+    max_tokens: int = 1500,
+) -> Iterator[str]:
+    """Stream text chunks from a Claude model via SSE. Raises GenerationError."""
+    if not api_key:
+        raise GenerationError("No API key is configured for this provider.")
+
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True,
+    }
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": API_VERSION,
+        "content-type": "application/json",
+    }
+
+    try:
+        with httpx.stream(
+            "POST", API_URL, json=payload, headers=headers, timeout=_TIMEOUT
+        ) as resp:
+            if resp.status_code != 200:
+                resp.read()
+                raise GenerationError(_friendly_error(resp))
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:") :].strip()
+                if not data:
+                    continue
+                try:
+                    event = json.loads(data)
+                except ValueError:
+                    continue
+                etype = event.get("type")
+                if etype == "content_block_delta":
+                    delta = event.get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        chunk = delta.get("text", "")
+                        if chunk:
+                            yield chunk
+                elif etype == "error":
+                    msg = (event.get("error") or {}).get("message", "stream error")
+                    raise GenerationError(f"Anthropic stream error: {msg}")
+                elif etype == "message_stop":
+                    break
+    except httpx.HTTPError as exc:
+        raise GenerationError(f"Could not reach Anthropic: {exc}") from exc
 
 
 def _friendly_error(resp: httpx.Response) -> str:

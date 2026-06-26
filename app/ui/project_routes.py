@@ -9,7 +9,12 @@ from datetime import UTC, date, datetime
 from itertools import groupby
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    RedirectResponse,
+    Response,
+    StreamingResponse,
+)
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -37,7 +42,13 @@ from app.services.access import (
     can_view_project,
 )
 from app.services.ai.base import GenerationError
-from app.services.ai.summaries import default_provider, generate_project_summary
+from app.services.ai.extraction import extract_use_cases
+from app.services.ai.registry import get_provider_spec
+from app.services.ai.summaries import (
+    default_provider,
+    generate_project_summary,
+    stream_project_summary,
+)
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.use_cases import (
@@ -554,6 +565,27 @@ def generate_exec_summary(
     return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
 
 
+@router.post("/{project_id}/exec-summary/stream")
+def stream_exec_summary(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Stream the summary live; the service persists it when the stream ends.
+
+    Returns 400 if no provider is configured so the client can fall back to the
+    plain (non-streaming) generate route, which surfaces a friendly flash.
+    """
+    project = _get_project(db, project_id)
+    provider = default_provider(db)
+    spec = get_provider_spec(provider.provider) if provider else None
+    if provider is None or spec is None or not spec.implemented or not provider.has_key:
+        return Response("AI provider not configured", status_code=400)
+    return StreamingResponse(
+        stream_project_summary(project.id), media_type="text/plain; charset=utf-8"
+    )
+
+
 @router.post("/{project_id}/exec-summary")
 def save_exec_summary(
     project_id: int,
@@ -587,6 +619,105 @@ def delete_exec_summary(
     db.commit()
     flash(request, "Executive summary cleared.", "success")
     return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Import use cases from a requirements document (AI extraction)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{project_id}/import")
+def import_form(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    return render(
+        request, "projects/import.html", current_user=user, active_section="projects",
+        project=project, ai_configured=default_provider(db) is not None,
+    )
+
+
+@router.post("/{project_id}/import/extract")
+async def import_extract(
+    project_id: int,
+    request: Request,
+    text: str = Form(""),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+
+    combined = text or ""
+    if file is not None and file.filename:
+        raw = await file.read()
+        try:
+            combined = (combined + "\n" + raw.decode("utf-8", errors="ignore")).strip()
+        except Exception:  # pragma: no cover - decode is best-effort
+            pass
+
+    try:
+        candidates = extract_use_cases(db, combined)
+    except GenerationError as exc:
+        flash(request, f"Could not extract use cases: {exc}", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
+
+    record_event(
+        category="project", event_type="use_case.import_extracted", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Extracted {len(candidates)} candidate use case(s) for '{project.display_name}'",
+        detail={"surface": "ui", "count": len(candidates)}, request=request,
+    )
+    return render(
+        request, "projects/import_preview.html", current_user=user,
+        active_section="projects", project=project, candidates=candidates,
+    )
+
+
+@router.post("/{project_id}/import")
+async def import_create(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    form = await request.form()
+    selected = form.getlist("select")  # type: ignore[attr-defined]
+    status_id = default_use_case_status_id(db)
+    created = 0
+    for idx in selected:
+        name = _clean(form.get(f"name_{idx}"))  # type: ignore[arg-type]
+        category = _clean(form.get(f"category_{idx}"))  # type: ignore[arg-type]
+        if not name or not category:
+            continue
+        db.add(
+            ProjectUseCase(
+                project_id=project.id,
+                source=SOURCE_CUSTOM,
+                reference_number=_clean(form.get(f"ref_{idx}")),  # type: ignore[arg-type]
+                category=category,
+                name=name,
+                description=_clean(form.get(f"desc_{idx}")),  # type: ignore[arg-type]
+                success_validation=_clean(form.get(f"sv_{idx}")),  # type: ignore[arg-type]
+                status_id=status_id,
+            )
+        )
+        created += 1
+    db.commit()
+    record_event(
+        category="project", event_type="use_case.imported", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Imported {created} use case(s) into '{project.display_name}'",
+        detail={"surface": "ui", "count": created}, request=request,
+    )
+    flash(request, f"Imported {created} use case(s).", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 
 @router.post("/{project_id}/use-case-view")

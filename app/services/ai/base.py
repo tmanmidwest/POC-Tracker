@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 
@@ -17,6 +17,8 @@ class GenerationError(Exception):
 # A provider implementation: given a key, model, system prompt, and user prompt,
 # return the generated text (or raise GenerationError).
 GenerateFn = Callable[..., str]
+# Streaming variant: yields text chunks as they arrive. Optional per provider.
+StreamFn = Callable[..., Iterator[str]]
 
 
 @dataclass(frozen=True)
@@ -29,5 +31,7 @@ class ProviderSpec:
     suggested_models: list[str] = field(default_factory=list)
     implemented: bool = False
     generate: GenerateFn | None = None
+    # Optional streaming implementation; callers fall back to ``generate``.
+    stream: StreamFn | None = None
     # Where to get a key, shown as a hint in the form.
     key_help: str = ""

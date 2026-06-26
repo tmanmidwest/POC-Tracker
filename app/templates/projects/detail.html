@@ -5,7 +5,45 @@
 {% set can_edit = current_user and current_user.is_internal %}
 {% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
 {% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
-{% block body_scripts %}{% include "_rte_scripts.html" %}{% endblock %}
+{% block body_scripts %}{% include "_rte_scripts.html" %}
+<script>
+// Progressive enhancement: stream the executive summary live. If streaming
+// isn't available (no provider → 400, or fetch error), fall back to the plain
+// form submit, which reloads with a friendly flash message.
+(function () {
+  var form = document.getElementById('exec-gen-form');
+  if (!form || !window.fetch || !window.ReadableStream) return;
+  var body = document.getElementById('exec-card-body');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var pid = form.getAttribute('data-project');
+    var btn = form.querySelector('button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    body.innerHTML = '<pre id="exec-stream" style="white-space:pre-wrap; font-family:inherit; margin:0;"></pre>';
+    var target = document.getElementById('exec-stream');
+    try {
+      var resp = await fetch('/ui/projects/' + pid + '/exec-summary/stream', {
+        method: 'POST', headers: {'X-Requested-With': 'fetch'},
+      });
+      if (!resp.ok || !resp.body) { form.submit(); return; }  // fall back to non-stream
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder();
+      while (true) {
+        var r = await reader.read();
+        if (r.done) break;
+        target.textContent += dec.decode(r.value, {stream: true});
+        body.scrollTop = body.scrollHeight;
+      }
+      // Reload to render the saved HTML summary with Edit/Clear actions.
+      window.location.reload();
+    } catch (err) {
+      form.submit();  // network/other error → non-streaming path
+    }
+  });
+})();
+</script>
+{% endblock %}
 
 {% block main %}
 <div class="page-header">
@@ -62,13 +100,14 @@
         <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
       </form>
       {% endif %}
-      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate" style="margin:0;">
+      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate"
+            id="exec-gen-form" data-project="{{ project.id }}" style="margin:0;">
         <button class="btn btn--primary btn--sm">{{ "Regenerate" if project.exec_summary_html else "✨ Generate" }}</button>
       </form>
     </div>
     {% endif %}
   </div>
-  <div class="card__body">
+  <div class="card__body" id="exec-card-body">
     {% if project.exec_summary_html %}
       {{ M.render_note(project.exec_summary_html, project.exec_summary) }}
       {% if project.exec_summary_generated_at %}
@@ -273,6 +312,7 @@
   <div class="page-header__actions">
     <button type="button" class="btn btn--ghost" onclick="pocOpen('m-uc-view')" title="Choose fields & filter">⚙ View</button>
     {% if can_edit %}
+    <a href="/ui/projects/{{ project.id }}/import" class="btn btn--secondary" title="Extract use cases from a requirements document">⬇ Import from requirements</a>
     <button type="button" class="btn btn--secondary" onclick="pocOpen('m-add-custom')">+ Add custom use case</button>
     <button type="button" class="btn btn--primary" onclick="pocOpen('m-add-library')">+ Add from library</button>
     {% endif %}

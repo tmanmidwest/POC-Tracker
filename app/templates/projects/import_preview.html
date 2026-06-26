@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set page_title = "Review extracted use cases" %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/projects/{{ project.id }}">{{ project.display_name }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>Import</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Review extracted use cases</h1>
+    <p class="page-header__subtitle">{{ candidates|length }} candidate(s) found. Uncheck any you don't want, tweak the fields, then import. They'll be added as custom use cases on {{ project.display_name }}.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/{{ project.id }}/import" class="btn btn--secondary">Start over</a>
+  </div>
+</div>
+
+{% if not candidates %}
+  <div class="empty-state"><p class="empty-state__body">Nothing was extracted. <a href="/ui/projects/{{ project.id }}/import">Try again</a>.</p></div>
+{% else %}
+<form method="post" action="/ui/projects/{{ project.id }}/import">
+  <div class="card card--flush" style="margin-bottom: var(--s-4);">
+    <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 class="card__title">Candidates</h3>
+      <label class="text-xs" style="display:flex; gap: var(--s-2); align-items:center; cursor:pointer;">
+        <input type="checkbox" id="toggle-all" checked onchange="document.querySelectorAll('.import-cb').forEach(c=>c.checked=this.checked)" />
+        Select all
+      </label>
+    </div>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th style="width:36px;"></th>
+        <th style="width:80px;">Ref</th>
+        <th style="width:200px;">Category</th>
+        <th>Use case</th>
+      </tr></thead>
+      <tbody>
+        {% for c in candidates %}
+        <tr>
+          <td><input type="checkbox" class="import-cb" name="select" value="{{ loop.index0 }}" checked /></td>
+          <td><input class="input mono" name="ref_{{ loop.index0 }}" value="{{ c.reference_number }}" style="width:70px;" /></td>
+          <td><input class="input" name="category_{{ loop.index0 }}" value="{{ c.category }}" required /></td>
+          <td>
+            <input class="input" name="name_{{ loop.index0 }}" value="{{ c.name }}" required />
+            {% if c.description %}<div class="text-muted text-xs" style="margin-top: var(--s-1);">{{ c.description }}</div>{% endif %}
+            <input type="hidden" name="desc_{{ loop.index0 }}" value="{{ c.description }}" />
+            <input type="hidden" name="sv_{{ loop.index0 }}" value="{{ c.success_validation }}" />
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="form-actions">
+    <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Import selected</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

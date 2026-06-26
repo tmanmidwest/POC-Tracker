@@ -23,6 +23,7 @@ PROVIDERS: dict[str, ProviderSpec] = {
         ],
         implemented=True,
         generate=anthropic_provider.generate,
+        stream=anthropic_provider.stream,
         key_help="Create a key at console.anthropic.com → API Keys.",
     ),
     # Registered but not yet implemented — shown as "coming soon" in the UI.

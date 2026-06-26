@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import escape
 
 from sqlalchemy.orm import Session
 
+from app.db import get_session_factory
 from app.models import AIProvider, Project
 from app.services.ai.base import GenerationError
 from app.services.ai.registry import get_provider_spec
@@ -75,6 +77,60 @@ def generate_project_summary(db: Session, project: Project) -> SummaryResult:
         html=_text_to_html(text),
         model_label=f"{provider.provider}/{provider.model}",
     )
+
+
+def stream_project_summary(project_id: int) -> Iterator[str]:
+    """Stream an executive summary and persist it when the stream completes.
+
+    Owns its own DB session so it stays valid for the life of the HTTP stream
+    (the request's session is closed once the route returns the response). Yields
+    text chunks; on completion, saves the accumulated summary to the project. A
+    provider without streaming falls back to a single non-streamed chunk.
+    """
+    db = get_session_factory()()
+    try:
+        project = db.get(Project, project_id)
+        if project is None:
+            return
+        provider = default_provider(db)
+        spec = get_provider_spec(provider.provider) if provider else None
+        if provider is None or spec is None or not spec.implemented or not provider.has_key:
+            yield "\n\n⚠️ No usable AI provider is configured."
+            return
+
+        key = decrypt_secret(provider.api_key_encrypted)
+        prompt = _build_context(project)
+        parts: list[str] = []
+        try:
+            if spec.stream is not None:
+                for chunk in spec.stream(
+                    api_key=key, model=provider.model,
+                    system=_SYSTEM_PROMPT, prompt=prompt,
+                ):
+                    parts.append(chunk)
+                    yield chunk
+            elif spec.generate is not None:
+                text = spec.generate(
+                    api_key=key, model=provider.model,
+                    system=_SYSTEM_PROMPT, prompt=prompt,
+                )
+                parts.append(text)
+                yield text
+        except GenerationError as exc:
+            yield f"\n\n⚠️ {exc}"
+            return
+
+        full = "".join(parts).strip()
+        if full:
+            now = datetime.now(UTC)
+            project.exec_summary = full
+            project.exec_summary_html = _text_to_html(full)
+            project.exec_summary_generated_at = now
+            project.exec_summary_model = f"{provider.provider}/{provider.model}"
+            provider.last_used_at = now
+            db.commit()
+    finally:
+        db.close()
 
 
 def _build_context(project: Project) -> str:

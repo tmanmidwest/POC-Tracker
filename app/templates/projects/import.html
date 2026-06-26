@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% set page_title = "Import use cases — " ~ project.display_name %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/projects/{{ project.id }}">{{ project.display_name }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>Import</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Import use cases from requirements</h1>
+    <p class="page-header__subtitle">Paste a requirements document (or upload a text file). The AI extracts categorized use cases, then you review and choose which to add to <strong>{{ project.display_name }}</strong>.</p>
+  </div>
+</div>
+
+{% if not ai_configured %}
+<div class="inline-error" style="max-width: 760px;">No AI provider is configured. Add one in <a href="/ui/settings/ai">Settings → AI Assistant</a> first.</div>
+{% endif %}
+
+<form method="post" action="/ui/projects/{{ project.id }}/import/extract" enctype="multipart/form-data"
+      class="card" style="max-width: 760px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="text">Requirements text</label>
+      <textarea class="textarea" id="text" name="text" rows="14"
+                placeholder="Paste the requirements here — numbered lists, tables, or prose all work."></textarea>
+      <div class="form-hint">Plain text works best. For PDFs/Word docs, copy the text and paste it here.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="file">…or upload a text file <span class="text-muted text-xs">(optional — .txt, .md, .csv)</span></label>
+      <input class="input" type="file" id="file" name="file" accept=".txt,.md,.csv,text/*" />
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary" {% if not ai_configured %}disabled{% endif %}>Extract use cases →</button>
+  </div>
+</form>
+{% endblock %}
