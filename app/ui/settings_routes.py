@@ -69,6 +69,25 @@ def _settings_event(
 
 
 # ===========================================================================
+# Settings hub
+# ===========================================================================
+
+
+@router.get("")
+def settings_hub(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Landing page linking out to each settings area."""
+    return render(
+        request,
+        "settings/index.html",
+        current_user=user,
+        active_subsection="settings",
+    )
+
+
+# ===========================================================================
 # Admin users
 # ===========================================================================
 

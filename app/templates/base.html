@@ -91,15 +91,14 @@
         <a href="/ui/lookups/feature-types" class="sidebar__link {% if active_subsection == 'feature_types' %}is-active{% endif %}">Feature Types</a>
         <a href="/ui/lookups/use-case-statuses" class="sidebar__link {% if active_subsection == 'use_case_statuses' %}is-active{% endif %}">Use Case Statuses</a>
 
-        <div class="sidebar__section-label">Settings</div>
-        <a href="/ui/settings/admin-users" class="sidebar__link {% if active_subsection == 'admin_users' %}is-active{% endif %}">Users</a>
-        <a href="/ui/settings/api-keys" class="sidebar__link {% if active_subsection == 'api_keys' %}is-active{% endif %}">API Keys</a>
-        <a href="/ui/settings/oauth-clients" class="sidebar__link {% if active_subsection == 'oauth_clients' %}is-active{% endif %}">OAuth Clients</a>
-        <a href="/ui/settings/mcp" class="sidebar__link {% if active_subsection == 'mcp' %}is-active{% endif %}">MCP Token</a>
-        <a href="/ui/settings/auth-providers" class="sidebar__link {% if active_subsection == 'auth_providers' %}is-active{% endif %}">Identity Providers</a>
-        <a href="/ui/settings/branding" class="sidebar__link {% if active_subsection == 'branding' %}is-active{% endif %}">Branding</a>
-        <a href="/ui/settings/system" class="sidebar__link {% if active_subsection == 'system' %}is-active{% endif %}">System</a>
-        <a href="/ui/settings/reset" class="sidebar__link {% if active_subsection == 'reset' %}is-active{% endif %}">Reset Data</a>
+        <div class="sidebar__section-label">Admin</div>
+        <a href="/ui/settings" class="sidebar__link {% if request.url.path.startswith('/ui/settings') %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="2.25"/>
+            <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/>
+          </svg>
+          Settings
+        </a>
         {% endif %}
 
         <div class="sidebar__section-label">External</div>
