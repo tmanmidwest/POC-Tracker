@@ -8,18 +8,32 @@
 
 {# ---- Project details ---- #}
 <h2>Project details</h2>
-<div class="grid">
-  <div class="field"><div class="field__label">Customer</div><div class="field__value">{{ project.customer.name }}</div></div>
-  <div class="field"><div class="field__label">POC name</div><div class="field__value">{{ project.name or "—" }}</div></div>
-  <div class="field"><div class="field__label">Status</div><div class="field__value">{{ project.status.name }}</div></div>
-  <div class="field"><div class="field__label">Use-case progress</div><div class="field__value">{{ progress.done }}/{{ progress.total }} complete ({{ progress.pct }}%)</div></div>
-  <div class="field"><div class="field__label">Sales Engineer</div><div class="field__value">{{ project.sales_engineer.username if project.sales_engineer else "—" }}</div></div>
-  <div class="field"><div class="field__label">Account Executive</div><div class="field__value">{{ project.account_executive or "—" }}{% if project.account_executive_email %} &lt;{{ project.account_executive_email }}&gt;{% endif %}</div></div>
-  <div class="field"><div class="field__label">Start date</div><div class="field__value">{{ project.start_date.strftime('%b %-d, %Y') if project.start_date else "—" }}</div></div>
-  <div class="field"><div class="field__label">End date</div><div class="field__value">{{ project.end_date.strftime('%b %-d, %Y') if project.end_date else "—" }}</div></div>
-  <div class="field full"><div class="field__label">Salesforce opportunity</div><div class="field__value">{% if project.salesforce_opp_url %}<a href="{{ project.salesforce_opp_url }}">{{ project.salesforce_opp_url }}</a>{% else %}—{% endif %}</div></div>
-  {% if project.notes %}<div class="field full"><div class="field__label">Notes</div><div class="field__value prewrap">{{ project.notes }}</div></div>{% endif %}
-</div>
+<table class="kv">
+  <colgroup><col style="width:16%" /><col style="width:34%" /><col style="width:16%" /><col style="width:34%" /></colgroup>
+  <tr>
+    <th>Status</th><td>{{ project.status.name }}</td>
+    <th>Customer</th><td>{{ project.customer.name }}</td>
+  </tr>
+  <tr>
+    <th>Use-case progress</th><td>{{ progress.done }}/{{ progress.total }} complete ({{ progress.pct }}%)</td>
+    <th>POC name</th><td>{{ project.name or "—" }}</td>
+  </tr>
+  <tr>
+    <th>Sales Engineer</th><td>{{ project.sales_engineer.username if project.sales_engineer else "—" }}</td>
+    <th>Account Executive</th><td>{{ project.account_executive or "—" }}{% if project.account_executive_email %} &lt;{{ project.account_executive_email }}&gt;{% endif %}</td>
+  </tr>
+  <tr>
+    <th>Start date</th><td>{{ project.start_date.strftime('%b %-d, %Y') if project.start_date else "—" }}</td>
+    <th>End date</th><td>{{ project.end_date.strftime('%b %-d, %Y') if project.end_date else "—" }}</td>
+  </tr>
+  <tr>
+    <th>Salesforce opportunity</th>
+    <td colspan="3">{% if project.salesforce_opp_url %}<a href="{{ project.salesforce_opp_url }}">{{ project.salesforce_opp_url }}</a>{% else %}—{% endif %}</td>
+  </tr>
+  {% if project.notes %}
+  <tr><th>Notes</th><td colspan="3" class="prewrap">{{ project.notes }}</td></tr>
+  {% endif %}
+</table>
 
 {# ---- Contacts ---- #}
 {% if project.customer.contacts %}
