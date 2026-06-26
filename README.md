@@ -17,9 +17,10 @@ an MCP server so other tools and AI assistants can read and report on the data.
   with them — ideal for giving a customer a login to their own POC.
 - **Per-project sharing** — an admin or a project's Sales Engineer can grant an external
   viewer read access to specific projects.
-- **AI assistant** — configure an AI provider in the UI (Anthropic Claude today; Gemini and
+- **AI assistant** — configure an AI provider in the UI (Anthropic Claude and Google Gemini;
   OpenAI planned) to generate **executive summaries** (streamed live) and to **import use cases
-  from a requirements document** (paste/upload → AI extracts categorized use cases → review → add).
+  from a requirements document** (paste, or upload a PDF/Word/text file → AI extracts
+  categorized use cases → review → add).
 - **API keys** and **OAuth client-credentials** for machine-to-machine access to the REST API.
 - **Customers & contacts** — contacts carry a role picked from a master list (Champion,
   Technical Stakeholder, …).
@@ -160,8 +161,8 @@ API and MCP server remain internal/machine-only.
 ## AI assistant
 
 Configure an AI provider once in **Settings → AI Assistant** (admin only): pick the provider,
-choose a model, and paste an API key. **Anthropic (Claude)** is implemented today; **Google
-(Gemini)** and **OpenAI** appear as "coming soon". Keys are stored **encrypted at rest**
+choose a model, and paste an API key. **Anthropic (Claude)** and **Google (Gemini)** are
+implemented; **OpenAI** appears as "coming soon". Keys are stored **encrypted at rest**
 (Fernet) and are never shown back — there's no environment variable to set. One enabled
 provider is the **default** used for generation. The provider layer is pluggable, so adding a
 vendor is a single implementation file.
@@ -173,9 +174,10 @@ Two features use it:
   it in the rich-text editor, and it appears at the top of the project's report and PDF. (If a
   browser can't stream, it falls back to a one-shot generation automatically.)
 - **Requirements importer.** On a project's use-cases section, **Import from requirements**:
-  paste or upload a requirements document, and the model extracts categorized use cases
-  (reference number, category, name, description, success validation). You review and edit the
-  candidates, pick which to keep, and they're added as use cases.
+  paste text or upload a **PDF, Word (.docx), or text file**, and the model extracts categorized
+  use cases (reference number, category, name, description, success validation). You review and
+  edit the candidates, pick which to keep, and they're added as use cases. (Scanned/image-only
+  PDFs have no selectable text — paste those instead.)
 
 No API call is made until you configure a provider and trigger a feature; nothing is sent to a
 vendor automatically.

@@ -51,6 +51,7 @@ from app.services.ai.summaries import (
 )
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
+from app.services.text_extract import TextExtractError, extract_text
 from app.services.use_cases import (
     added_library_ids,
     copy_library_entries_to_project,
@@ -655,9 +656,11 @@ async def import_extract(
     if file is not None and file.filename:
         raw = await file.read()
         try:
-            combined = (combined + "\n" + raw.decode("utf-8", errors="ignore")).strip()
-        except Exception:  # pragma: no cover - decode is best-effort
-            pass
+            extracted = extract_text(file.filename, raw, file.content_type)
+        except TextExtractError as exc:
+            flash(request, str(exc), "error")
+            return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
+        combined = (combined + "\n" + extracted).strip()
 
     try:
         candidates = extract_use_cases(db, combined)

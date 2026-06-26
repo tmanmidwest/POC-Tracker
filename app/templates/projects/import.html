@@ -21,11 +21,13 @@
       <label class="label" for="text">Requirements text</label>
       <textarea class="textarea" id="text" name="text" rows="14"
                 placeholder="Paste the requirements here — numbered lists, tables, or prose all work."></textarea>
-      <div class="form-hint">Plain text works best. For PDFs/Word docs, copy the text and paste it here.</div>
+      <div class="form-hint">Paste text, or upload a file below — both are combined if you provide both.</div>
     </div>
     <div class="form-row">
-      <label class="label" for="file">…or upload a text file <span class="text-muted text-xs">(optional — .txt, .md, .csv)</span></label>
-      <input class="input" type="file" id="file" name="file" accept=".txt,.md,.csv,text/*" />
+      <label class="label" for="file">…or upload a document <span class="text-muted text-xs">(optional — PDF, Word .docx, or .txt/.md/.csv)</span></label>
+      <input class="input" type="file" id="file" name="file"
+             accept=".pdf,.docx,.txt,.md,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" />
+      <div class="form-hint">Scanned/image-only PDFs have no selectable text — paste those instead.</div>
     </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">

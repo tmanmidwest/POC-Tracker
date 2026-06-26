@@ -4,7 +4,12 @@
 {# External viewers are read-only: hide every mutating control. #}
 {% set can_edit = current_user and current_user.is_internal %}
 {% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
-{% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
+{% block head_extra %}{% include "_rte_head.html" %}
+<style>
+  details.card > summary { list-style: none; }
+  details.card > summary::-webkit-details-marker { display: none; }
+</style>
+{% endblock %}
 {% block body_scripts %}{% include "_rte_scripts.html" %}
 <script>
 // Progressive enhancement: stream the executive summary live. If streaming
@@ -99,6 +104,8 @@
             onsubmit="return confirm('Clear the executive summary?');">
         <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
       </form>
+      {% else %}
+      <button type="button" class="btn btn--secondary btn--sm" onclick="pocOpen('m-edit-summary')">✎ Write / paste</button>
       {% endif %}
       <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate"
             id="exec-gen-form" data-project="{{ project.id }}" style="margin:0;">
@@ -117,9 +124,9 @@
       {% endif %}
     {% elif can_edit %}
       {% if ai_configured %}
-      <p class="text-muted text-xs" style="margin-top:0;">No summary yet. Click <strong>Generate</strong> to draft an executive summary from this project's use cases and notes. You can edit it afterward.</p>
+      <p class="text-muted text-xs" style="margin-top:0;">No summary yet. Click <strong>Generate</strong> to draft one with AI from this project's use cases and notes, or <strong>Write / paste</strong> to add your own. Either can be edited afterward.</p>
       {% else %}
-      <p class="text-muted text-xs" style="margin-top:0;">No AI provider is configured. Add one in <a href="/ui/settings/ai">Settings → AI Assistant</a> to enable summary generation.</p>
+      <p class="text-muted text-xs" style="margin-top:0;">Click <strong>Write / paste</strong> to add a summary manually. To draft one with AI, configure a provider in <a href="/ui/settings/ai">Settings → AI Assistant</a>.</p>
       {% endif %}
     {% endif %}
   </div>
@@ -128,12 +135,12 @@
 {% if can_edit %}
 <div class="ucmodal" id="m-edit-summary" hidden>
  <div class="ucmodal__box">
-  <div class="ucmodal__head"><span class="ucmodal__title">Edit executive summary</span>
+  <div class="ucmodal__head"><span class="ucmodal__title">{{ "Edit executive summary" if project.exec_summary_html else "Write executive summary" }}</span>
     <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
   <div class="ucmodal__body">
     <form method="post" action="/ui/projects/{{ project.id }}/exec-summary">
       <div class="form-row">
-        <div class="rte" data-rte-target="#exec-summary-body">{{ M.rte_seed(project.exec_summary_html, project.exec_summary) }}</div>
+        <div class="rte" data-rte-target="#exec-summary-body" data-placeholder="Write or paste an executive summary…">{{ M.rte_seed(project.exec_summary_html, project.exec_summary) }}</div>
         <input type="hidden" name="body" id="exec-summary-body" />
       </div>
       <div class="form-actions">
@@ -149,8 +156,11 @@
 
 {# ---- Share (per-project access) — only for admins / this project's SE ---- #}
 {% if can_share %}
-<div id="share" class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__header"><h3 class="card__title">Shared access</h3></div>
+<details id="share" class="card" style="margin-bottom: var(--s-5);">
+  <summary class="card__header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; list-style:none;">
+    <h3 class="card__title" style="margin:0;">Shared access{% if grants %} <span class="badge badge--neutral">{{ grants|length }}</span>{% endif %}</h3>
+    <span class="text-muted text-xs">manage ▾</span>
+  </summary>
   <div class="card__body">
     <p class="text-muted text-xs" style="margin-top:0;">
       External viewers can read this project (and its use cases, notes, and reports) but cannot edit anything.
@@ -189,7 +199,7 @@
     <p class="text-muted text-xs">No external-viewer accounts are available to add. New external users appear here after they first sign in via an external identity provider.</p>
     {% endif %}
   </div>
-</div>
+</details>
 {% endif %}
 
 {# ---- Project Notes ---- #}
@@ -268,12 +278,13 @@
   <div class="card__body">
     {% if project.note_entries %}
     {% set notes = project.note_entries %}
-    {% set visible_limit = 5 %}
+    {% set visible_limit = 1 %}
+    {% set hidden_count = notes|length - visible_limit %}
     <div>
       {% for note in notes[:visible_limit] %}{{ note_row(note) }}{% endfor %}
-      {% if notes|length > visible_limit %}
+      {% if hidden_count > 0 %}
       <details style="margin-top: var(--s-1);">
-        <summary style="cursor:pointer; padding: var(--s-3) 0; color: var(--primary); font-size:13px; font-weight:500;">Show all {{ notes|length }} notes</summary>
+        <summary style="cursor:pointer; padding: var(--s-3) 0; color: var(--primary); font-size:13px; font-weight:500;">Show {{ hidden_count }} earlier note{{ "s" if hidden_count != 1 else "" }}</summary>
         {% for note in notes[visible_limit:] %}{{ note_row(note) }}{% endfor %}
       </details>
       {% endif %}

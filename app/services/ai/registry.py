@@ -8,7 +8,7 @@ else needs to change.
 
 from __future__ import annotations
 
-from app.services.ai import anthropic_provider
+from app.services.ai import anthropic_provider, gemini_provider
 from app.services.ai.base import ProviderSpec
 
 PROVIDERS: dict[str, ProviderSpec] = {
@@ -26,15 +26,21 @@ PROVIDERS: dict[str, ProviderSpec] = {
         stream=anthropic_provider.stream,
         key_help="Create a key at console.anthropic.com → API Keys.",
     ),
-    # Registered but not yet implemented — shown as "coming soon" in the UI.
     "google": ProviderSpec(
         key="google",
         label="Google (Gemini)",
-        default_model="",
-        suggested_models=[],
-        implemented=False,
-        key_help="Coming soon.",
+        default_model="gemini-2.5-flash",
+        suggested_models=[
+            "gemini-3.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        ],
+        implemented=True,
+        generate=gemini_provider.generate,
+        stream=gemini_provider.stream,
+        key_help="Create a key at aistudio.google.com/apikey.",
     ),
+    # Registered but not yet implemented — shown as "coming soon" in the UI.
     "openai": ProviderSpec(
         key="openai",
         label="OpenAI",

@@ -76,7 +76,7 @@ def test_add_ai_provider_encrypts_key_and_sets_default(admin_ui: TestClient) -> 
 def test_unimplemented_provider_rejected(admin_ui: TestClient) -> None:
     resp = admin_ui.post(
         "/ui/settings/ai/new",
-        data={"provider": "google", "model": "gemini-x", "api_key": "k"},
+        data={"provider": "openai", "model": "gpt-x", "api_key": "k"},
         follow_redirects=False,
     )
     assert resp.status_code == 200  # re-rendered form with error
