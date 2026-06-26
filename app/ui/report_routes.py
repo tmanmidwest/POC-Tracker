@@ -48,7 +48,13 @@ def _report_context(project: Project, user: AppUser) -> dict[str, Any]:
 
 def _download_headers(filename: str, *, suffix: str) -> dict[str, str]:
     base = report_archive._safe(filename, fallback="project")
-    return {"Content-Disposition": f'attachment; filename="{base}-{suffix}"'}
+    return {
+        "Content-Disposition": f'attachment; filename="{base}-{suffix}"',
+        # These are freshly generated each request — never let a browser serve a
+        # stale cached copy (which can show an out-of-date layout).
+        "Cache-Control": "no-store, must-revalidate",
+        "Pragma": "no-cache",
+    }
 
 
 @router.get("/")
