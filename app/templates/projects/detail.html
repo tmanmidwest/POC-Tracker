@@ -48,6 +48,66 @@
   {% if project.notes_html or project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ M.render_note(project.notes_html, project.notes) }}</div>{% endif %}
 </div>
 
+{# ---- Executive Summary (AI-generated) ---- #}
+{% if can_edit or project.exec_summary_html %}
+<div id="summary" class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="card__title">Executive Summary</h3>
+    {% if can_edit %}
+    <div style="display:flex; gap: var(--s-2);">
+      {% if project.exec_summary_html %}
+      <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-edit-summary')">Edit</button>
+      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/delete" style="margin:0;"
+            onsubmit="return confirm('Clear the executive summary?');">
+        <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate" style="margin:0;">
+        <button class="btn btn--primary btn--sm">{{ "Regenerate" if project.exec_summary_html else "✨ Generate" }}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card__body">
+    {% if project.exec_summary_html %}
+      {{ M.render_note(project.exec_summary_html, project.exec_summary) }}
+      {% if project.exec_summary_generated_at %}
+      <p class="text-muted text-xs" style="margin-top: var(--s-3);">
+        Generated {{ project.exec_summary_generated_at.strftime('%b %-d, %Y') }}{% if project.exec_summary_model %} · {{ project.exec_summary_model }}{% endif %}
+      </p>
+      {% endif %}
+    {% elif can_edit %}
+      {% if ai_configured %}
+      <p class="text-muted text-xs" style="margin-top:0;">No summary yet. Click <strong>Generate</strong> to draft an executive summary from this project's use cases and notes. You can edit it afterward.</p>
+      {% else %}
+      <p class="text-muted text-xs" style="margin-top:0;">No AI provider is configured. Add one in <a href="/ui/settings/ai">Settings → AI Assistant</a> to enable summary generation.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if can_edit %}
+<div class="ucmodal" id="m-edit-summary" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Edit executive summary</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <form method="post" action="/ui/projects/{{ project.id }}/exec-summary">
+      <div class="form-row">
+        <div class="rte" data-rte-target="#exec-summary-body">{{ M.rte_seed(project.exec_summary_html, project.exec_summary) }}</div>
+        <input type="hidden" name="body" id="exec-summary-body" />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+        <button class="btn btn--primary">Save</button>
+      </div>
+    </form>
+  </div>
+ </div>
+</div>
+{% endif %}
+{% endif %}
+
 {# ---- Share (per-project access) — only for admins / this project's SE ---- #}
 {% if can_share %}
 <div id="share" class="card" style="margin-bottom: var(--s-5);">

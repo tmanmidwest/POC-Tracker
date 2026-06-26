@@ -65,6 +65,16 @@ class Project(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes_html: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # AI-generated executive summary. ``exec_summary`` is plain text; the HTML
+    # variant holds the editable rich-text rendering shown in the UI/report.
+    exec_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exec_summary_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exec_summary_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Which provider/model produced the current summary, e.g. "anthropic/claude-opus-4-8".
+    exec_summary_model: Mapped[str | None] = mapped_column(String(150), nullable=True)
+
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )

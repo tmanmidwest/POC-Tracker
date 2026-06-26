@@ -4,6 +4,7 @@ Import order matters here because of foreign keys — leaf/lookup tables first,
 then tables that reference them.
 """
 
+from app.models.ai_provider import AIProvider
 from app.models.api_key import ApiKey
 from app.models.app_branding import AppBranding
 from app.models.app_config import AppConfig
@@ -30,6 +31,7 @@ from app.models.use_case_view_pref import UseCaseViewPref
 from app.models.user_identity import UserIdentity
 
 __all__ = [
+    "AIProvider",
     "ApiKey",
     "AppBranding",
     "AppConfig",

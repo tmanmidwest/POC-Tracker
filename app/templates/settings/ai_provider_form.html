@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% set is_edit = provider is not none %}
+{% set page_title = "Edit AI Provider" if is_edit else "New AI Provider" %}
+{% block breadcrumb %}
+<a href="/ui/settings/ai">AI Assistant</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>{{ "Edit" if is_edit else "New" }}</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit AI Provider" if is_edit else "New AI Provider" }}</h1>
+    <p class="page-header__subtitle">The API key is stored encrypted and sent to the vendor only when generating content.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error" style="max-width: 640px;">{{ error }}</div>{% endif %}
+
+<form method="post"
+      action="{{ '/ui/settings/ai/' ~ provider.id ~ '/edit' if is_edit else '/ui/settings/ai/new' }}"
+      class="card" style="max-width: 640px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="provider">Provider<span class="label__required">*</span></label>
+      <select class="select" id="provider" name="provider" onchange="aiProviderChanged()">
+        {% for c in provider_choices %}
+        <option value="{{ c.key }}" {% if form.provider == c.key %}selected{% endif %} {% if not c.implemented %}disabled{% endif %}>
+          {{ c.label }}{% if not c.implemented %} — coming soon{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="display_name">Display name</label>
+      <input class="input" id="display_name" name="display_name" maxlength="100"
+             value="{{ form.display_name or '' }}" placeholder="e.g. Claude (production)" />
+      <div class="form-hint">Optional label shown in the list. Defaults to the provider name.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="model">Model<span class="label__required">*</span></label>
+      <input class="input mono" id="model" name="model" required maxlength="100" list="model-suggestions"
+             value="{{ form.model or '' }}" placeholder="e.g. claude-opus-4-8" />
+      <datalist id="model-suggestions"></datalist>
+      <div class="form-hint" id="model-hint">Pick a suggested model or type a specific model id.</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="api_key">API key{% if not is_edit %}<span class="label__required">*</span>{% endif %}</label>
+      <input class="input mono" id="api_key" name="api_key" type="password" autocomplete="new-password"
+             placeholder="{{ '•••••••• (leave blank to keep current)' if is_edit else '' }}" />
+      <div class="form-hint" id="key-hint">Stored encrypted.{% if is_edit %} Leave blank to keep the existing key.{% endif %}</div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+        <input type="checkbox" name="is_enabled" value="1" {{ "checked" if form.is_enabled else "" }} />
+        Enabled
+      </label>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/ai" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if is_edit else "Add provider" }}</button>
+  </div>
+</form>
+
+<script>
+  const AI_PROVIDER_META = {{ provider_meta | safe }};
+  function aiProviderChanged() {
+    const key = document.getElementById('provider').value;
+    const meta = AI_PROVIDER_META[key] || {default_model: '', suggested_models: [], key_help: ''};
+    const dl = document.getElementById('model-suggestions');
+    dl.innerHTML = '';
+    (meta.suggested_models || []).forEach(function (m) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      dl.appendChild(opt);
+    });
+    const modelInput = document.getElementById('model');
+    if (!modelInput.value && meta.default_model) modelInput.value = meta.default_model;
+    if (meta.key_help) document.getElementById('key-hint').textContent = meta.key_help;
+  }
+  aiProviderChanged();
+</script>
+{% endblock %}

@@ -36,6 +36,8 @@ from app.services.access import (
     can_grant_project,
     can_view_project,
 )
+from app.services.ai.base import GenerationError
+from app.services.ai.summaries import default_provider, generate_project_summary
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.use_cases import (
@@ -514,7 +516,77 @@ def detail(
         uc_fields=set(uc_view["fields"]), uc_status_filter=str(uc_view["status_filter"]),
         uc_field_options=ALL_UC_FIELDS, uc_filtered_count=len(visible),
         can_share=can_share, grants=grants, grantable_users=grantable_users,
+        ai_configured=default_provider(db) is not None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Executive summary (AI-generated)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{project_id}/exec-summary/generate")
+def generate_exec_summary(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    try:
+        result = generate_project_summary(db, project)
+    except GenerationError as exc:
+        flash(request, f"Could not generate summary: {exc}", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
+    project.exec_summary = result.text
+    project.exec_summary_html = result.html
+    project.exec_summary_generated_at = datetime.now(UTC)
+    project.exec_summary_model = result.model_label
+    db.commit()
+    record_event(
+        category="project", event_type="exec_summary.generated", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Generated executive summary for '{project.display_name}'",
+        detail={"surface": "ui", "model": result.model_label}, request=request,
+    )
+    flash(request, "Executive summary generated.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
+
+
+@router.post("/{project_id}/exec-summary")
+def save_exec_summary(
+    project_id: int,
+    request: Request,
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    html = sanitize_note_html(body)
+    text = html_to_text(html)
+    project.exec_summary_html = html or None
+    project.exec_summary = text or None
+    db.commit()
+    flash(request, "Executive summary updated.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
+
+
+@router.post("/{project_id}/exec-summary/delete")
+def delete_exec_summary(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    project.exec_summary = None
+    project.exec_summary_html = None
+    project.exec_summary_generated_at = None
+    project.exec_summary_model = None
+    db.commit()
+    flash(request, "Executive summary cleared.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
 
 
 @router.post("/{project_id}/use-case-view")

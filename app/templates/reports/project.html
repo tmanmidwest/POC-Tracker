@@ -7,6 +7,12 @@
 <p class="subtitle">{{ project.customer.name }} · {{ project.status.name }}
   {% if project.is_archived %}· Archived{% endif %}</p>
 
+{# ---- Executive summary ---- #}
+{% if project.exec_summary_html or project.exec_summary %}
+<h2>Executive summary</h2>
+{{ M.render_note(project.exec_summary_html, project.exec_summary) }}
+{% endif %}
+
 {# ---- Project details ---- #}
 <h2>Project details</h2>
 <table class="kv">

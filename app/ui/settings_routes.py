@@ -14,7 +14,15 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.models import ApiKey, AppBranding, AppUser, AuthProvider, OAuthClient, UserIdentity
+from app.models import (
+    AIProvider,
+    ApiKey,
+    AppBranding,
+    AppUser,
+    AuthProvider,
+    OAuthClient,
+    UserIdentity,
+)
 from app.models.app_branding import BRANDING_ID
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import DEFAULT_SCOPES
@@ -22,6 +30,7 @@ from app.models.backup_run import BackupRun
 from app.services import backups as backup_service
 from app.services import branding as branding_service
 from app.services import mcp_gateway, mcp_token, seed_data, system_config
+from app.services.ai import PROVIDERS, get_provider_spec
 from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
@@ -1632,3 +1641,256 @@ def secrets_token() -> str:
     import secrets
 
     return secrets.token_hex(8)
+
+
+# ===========================================================================
+# AI Assistant providers (Anthropic, etc.) — power AI features like summaries
+# ===========================================================================
+
+
+def _ai_form_context() -> dict:
+    """Provider choices + suggested models for the add/edit form."""
+    return {
+        "provider_choices": [
+            {"key": s.key, "label": s.label, "implemented": s.implemented}
+            for s in PROVIDERS.values()
+        ],
+        # provider key -> {default_model, suggested_models, key_help}
+        "provider_meta": json.dumps(
+            {
+                s.key: {
+                    "default_model": s.default_model,
+                    "suggested_models": s.suggested_models,
+                    "key_help": s.key_help,
+                }
+                for s in PROVIDERS.values()
+            }
+        ),
+    }
+
+
+@router.get("/ai")
+def list_ai_providers(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    providers = db.query(AIProvider).order_by(AIProvider.id).all()
+    return render(
+        request, "settings/ai_providers.html", current_user=user,
+        active_subsection="ai", providers=providers,
+    )
+
+
+@router.get("/ai/new")
+def show_new_ai_provider(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    return render(
+        request, "settings/ai_provider_form.html", current_user=user,
+        active_subsection="ai", provider=None,
+        form={"provider": "anthropic", "model": "claude-opus-4-8", "is_enabled": True},
+        **_ai_form_context(),
+    )
+
+
+def _clean_ai_form(provider: str, display_name: str, model: str) -> tuple[str, str | None]:
+    """Validate provider+model. Returns (error|"", normalized_display_name)."""
+    spec = get_provider_spec(provider)
+    if spec is None or not spec.implemented:
+        return "Choose a supported provider.", None
+    if not model.strip():
+        return "A model id is required.", None
+    return "", (display_name.strip() or spec.label)
+
+
+@router.post("/ai/new")
+def create_ai_provider(
+    request: Request,
+    provider: str = Form(...),
+    display_name: str = Form(""),
+    model: str = Form(...),
+    api_key: str = Form(""),
+    is_enabled: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    provider = provider.strip()
+    model = model.strip()
+    error, name = _clean_ai_form(provider, display_name, model)
+    form = {
+        "provider": provider, "display_name": display_name,
+        "model": model, "is_enabled": bool(is_enabled),
+    }
+    if error or not api_key.strip():
+        error = error or "An API key is required."
+        return render(
+            request, "settings/ai_provider_form.html", current_user=user,
+            active_subsection="ai", provider=None, form=form, error=error,
+            **_ai_form_context(),
+        )
+    # First provider becomes the default automatically.
+    is_first = db.query(AIProvider).count() == 0
+    row = AIProvider(
+        provider=provider,
+        display_name=name,
+        model=model,
+        api_key_encrypted=encrypt_secret(api_key.strip()),
+        is_enabled=bool(is_enabled),
+        is_default=is_first,
+        created_by_user_id=user.id,
+    )
+    db.add(row)
+    db.commit()
+    _settings_event(
+        request, user, category="ai_provider", event_type="ai_provider.created",
+        target_type="ai_provider", target_id=row.id, target_label=row.display_name,
+        message=f"Added AI provider '{row.display_name}' ({provider}/{model})",
+        detail={"provider": provider, "model": model},
+    )
+    flash(request, f"AI provider '{row.display_name}' added.", "success")
+    return RedirectResponse(url="/ui/settings/ai", status_code=303)
+
+
+@router.get("/ai/{provider_id}/edit")
+def show_edit_ai_provider(
+    provider_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    row = db.get(AIProvider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI provider not found.")
+    form = {
+        "provider": row.provider, "display_name": row.display_name,
+        "model": row.model, "is_enabled": row.is_enabled,
+    }
+    return render(
+        request, "settings/ai_provider_form.html", current_user=user,
+        active_subsection="ai", provider=row, form=form, **_ai_form_context(),
+    )
+
+
+@router.post("/ai/{provider_id}/edit")
+def update_ai_provider(
+    provider_id: int,
+    request: Request,
+    provider: str = Form(...),
+    display_name: str = Form(""),
+    model: str = Form(...),
+    api_key: str = Form(""),
+    is_enabled: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    row = db.get(AIProvider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI provider not found.")
+    provider = provider.strip()
+    model = model.strip()
+    error, name = _clean_ai_form(provider, display_name, model)
+    if error:
+        form = {
+            "provider": provider, "display_name": display_name,
+            "model": model, "is_enabled": bool(is_enabled),
+        }
+        return render(
+            request, "settings/ai_provider_form.html", current_user=user,
+            active_subsection="ai", provider=row, form=form, error=error,
+            **_ai_form_context(),
+        )
+    row.provider = provider
+    row.display_name = name
+    row.model = model
+    row.is_enabled = bool(is_enabled)
+    # Only replace the key when a new one is supplied.
+    if api_key.strip():
+        row.api_key_encrypted = encrypt_secret(api_key.strip())
+    db.commit()
+    _settings_event(
+        request, user, category="ai_provider", event_type="ai_provider.updated",
+        target_type="ai_provider", target_id=row.id, target_label=row.display_name,
+        message=f"Updated AI provider '{row.display_name}'",
+        detail={"provider": provider, "model": model},
+    )
+    flash(request, "AI provider updated.", "success")
+    return RedirectResponse(url="/ui/settings/ai", status_code=303)
+
+
+@router.post("/ai/{provider_id}/default")
+def set_default_ai_provider(
+    provider_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    row = db.get(AIProvider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI provider not found.")
+    db.query(AIProvider).filter(AIProvider.id != row.id).update(
+        {AIProvider.is_default: False}
+    )
+    row.is_default = True
+    row.is_enabled = True  # the default must be usable
+    db.commit()
+    _settings_event(
+        request, user, category="ai_provider", event_type="ai_provider.default_set",
+        target_type="ai_provider", target_id=row.id, target_label=row.display_name,
+        message=f"Set '{row.display_name}' as the default AI provider",
+    )
+    flash(request, f"'{row.display_name}' is now the default provider.", "success")
+    return RedirectResponse(url="/ui/settings/ai", status_code=303)
+
+
+@router.post("/ai/{provider_id}/toggle")
+def toggle_ai_provider(
+    provider_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    row = db.get(AIProvider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI provider not found.")
+    row.is_enabled = not row.is_enabled
+    if not row.is_enabled:
+        row.is_default = False  # a disabled provider can't be the default
+    db.commit()
+    flash(request, f"'{row.display_name}' {'enabled' if row.is_enabled else 'disabled'}.", "success")
+    return RedirectResponse(url="/ui/settings/ai", status_code=303)
+
+
+@router.post("/ai/{provider_id}/delete")
+def delete_ai_provider(
+    provider_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    row = db.get(AIProvider, provider_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="AI provider not found.")
+    label = row.display_name
+    was_default = row.is_default
+    db.delete(row)
+    db.flush()
+    # If we removed the default, promote the next enabled provider.
+    if was_default:
+        nxt = (
+            db.query(AIProvider)
+            .filter(AIProvider.is_enabled.is_(True))
+            .order_by(AIProvider.id)
+            .first()
+        )
+        if nxt is not None:
+            nxt.is_default = True
+    db.commit()
+    _settings_event(
+        request, user, category="ai_provider", event_type="ai_provider.deleted",
+        target_type="ai_provider", target_id=provider_id, target_label=label,
+        message=f"Deleted AI provider '{label}'",
+    )
+    flash(request, f"AI provider '{label}' deleted.", "success")
+    return RedirectResponse(url="/ui/settings/ai", status_code=303)
