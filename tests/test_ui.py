@@ -372,6 +372,28 @@ def test_dashboard_status_ordering(ui: TestClient) -> None:
     assert page.index(statuses[1].name) < page.index(statuses[0].name)
 
 
+def test_dark_mode_toggle(ui: TestClient) -> None:
+    from app.config import get_settings
+    from app.db import get_session_factory
+    from app.models import AppUser
+
+    # Default is light, rendered server-side on <html>.
+    assert 'data-theme="light"' in ui.get("/ui/dashboard").text
+
+    # Toggle to dark persists to the account and renders on subsequent loads.
+    r = ui.post("/ui/theme", data={"theme": "dark"}, follow_redirects=False)
+    assert r.status_code == 204
+    assert 'data-theme="dark"' in ui.get("/ui/dashboard").text
+
+    username = get_settings().initial_admin_username
+    db = get_session_factory()()
+    assert db.query(AppUser).filter(AppUser.username == username).one().theme == "dark"
+
+    # Toggling back to light works too.
+    ui.post("/ui/theme", data={"theme": "light"}, follow_redirects=False)
+    assert 'data-theme="light"' in ui.get("/ui/dashboard").text
+
+
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------

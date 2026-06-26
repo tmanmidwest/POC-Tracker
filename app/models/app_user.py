@@ -38,6 +38,8 @@ class AppUser(Base, TimestampMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # UI color theme preference: "light" | "dark" (None = light default).
+    theme: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     def __repr__(self) -> str:
         return f"<AppUser username={self.username!r}>"

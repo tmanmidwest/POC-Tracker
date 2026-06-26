@@ -51,6 +51,7 @@ def render(
         "app_version": __version__,
         "asset_v": _ASSET_V,
         "branding": current_branding(),
+        "theme": getattr(current_user, "theme", None) or "light",
         "active_section": context.pop("active_section", None),
         "active_subsection": context.pop("active_subsection", None),
         "page_title": context.pop("page_title", None),

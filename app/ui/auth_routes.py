@@ -22,6 +22,7 @@ from app.services.auth import (
     get_optional_user,
 )
 from app.services.passwords import verify_password
+from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
 
@@ -130,6 +131,18 @@ def do_logout(request: Request) -> Response:
             request=request,
         )
     return RedirectResponse(url="/ui/login", status_code=303)
+
+
+@router.post("/theme")
+def set_theme(
+    theme: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Persist the logged-in user's UI color theme. Returns 204 (no body)."""
+    user.theme = "dark" if theme == "dark" else "light"
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/")

@@ -1143,3 +1143,54 @@ body.poc-modal-open { overflow: hidden; }
 /* Drag-to-reorder rows (dashboard status order) */
 [data-reorder-item].is-dragging { opacity: 0.5; }
 [data-reorder-item] { background: var(--surface); }
+
+/* =================================================================
+ * Dark theme — overrides the design tokens. Higher specificity than
+ * :root, so source order doesn't matter. Components read these vars,
+ * so the whole UI follows. (Reports use their own print styles.)
+ * ================================================================= */
+html[data-theme="dark"] {
+  --bg: #0f1216;
+  --surface: #171a1f;
+  --surface-2: #1e222a;
+  --surface-3: #2a2f39;
+
+  --text: #e8e6e3;
+  --text-muted: #a9a39b;
+  --text-subtle: #8a847b;
+  --text-faint: #6a655d;
+
+  --line: #2a2f39;
+  --line-strong: #3a4150;
+
+  /* Saturated enough for white button text; readable as links on dark. */
+  --primary: #2563eb;
+  --primary-hover: #3b82f6;
+  --primary-soft: #1b2333;
+
+  --success: #34d399;
+  --success-soft: #0e261d;
+  --success-line: #1f5140;
+
+  --warning: #fbbf24;
+  --warning-soft: #2a2310;
+  --warning-line: #5a4a1a;
+
+  --danger: #dc2626;
+  --danger-hover: #ef4444;
+  --danger-soft: #2a1416;
+  --danger-line: #5a2228;
+
+  --info: #38bdf8;
+  --info-soft: #0c2230;
+  --info-line: #1c4a5e;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 32px -8px rgba(0, 0, 0, 0.55), 0 4px 8px -2px rgba(0, 0, 0, 0.35);
+}
+
+/* Dark-mode form controls: native widgets follow the page scheme (text
+ * cursor, dropdown chevrons, date pickers render dark). */
+html[data-theme="dark"] { color-scheme: dark; }

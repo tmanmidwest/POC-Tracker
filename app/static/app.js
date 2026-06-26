@@ -101,6 +101,23 @@ function setupReorder(listEl) {
 }
 document.querySelectorAll('[data-reorder]').forEach(setupReorder);
 
+// Dark-mode toggle. Flips the theme instantly client-side, then persists the
+// choice to the user's account. The server renders data-theme on <html>, so
+// there's no flash on subsequent loads.
+function toggleTheme(btn) {
+  const root = document.documentElement;
+  const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+  root.dataset.theme = next;
+  const icon = btn && btn.querySelector('span');
+  if (icon) icon.textContent = next === 'dark' ? '☀' : '☾';
+  fetch('/ui/theme', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'theme=' + encodeURIComponent(next),
+    credentials: 'same-origin',
+  }).catch(() => { /* non-blocking; the visual change already applied */ });
+}
+
 // Modal: close on Escape, close on overlay click
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
