@@ -56,6 +56,9 @@ class Project(Base, TimestampMixin):
     # Full URL to the Salesforce opportunity; shown in the UI as a short
     # "Salesforce Opp" hyperlink rather than the raw URL.
     salesforce_opp_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Full URL to a notebook (e.g. a shared analysis/notebook); shown as a
+    # "Notebook Link" hyperlink in the UI.
+    notebook_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

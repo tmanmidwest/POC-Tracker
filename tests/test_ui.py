@@ -131,14 +131,17 @@ def test_salesforce_opp_link(ui: TestClient) -> None:
         "customer_id": cid, "name": "SF POC", "status_id": "",
         "start_date": "", "end_date": "", "sales_engineer_id": "",
         "account_executive": "", "account_executive_email": "",
-        "salesforce_opp_url": "acme.lightning.force.com/opp/1", "notes": "",
+        "salesforce_opp_url": "acme.lightning.force.com/opp/1",
+        "notebook_url": "notebooks.example.com/n/42", "notes": "",
     }, follow_redirects=False)
     db = get_session_factory()()
     p = db.query(Project).filter(Project.name == "SF POC").one()
     assert p.salesforce_opp_url == "https://acme.lightning.force.com/opp/1"
+    assert p.notebook_url == "https://notebooks.example.com/n/42"
 
     detail = ui.get(f"/ui/projects/{p.id}").text
     assert "Salesforce Opp" in detail and p.salesforce_opp_url in detail
+    assert "Notebook Link" in detail and p.notebook_url in detail
     assert "Salesforce Opp" in ui.get("/ui/dashboard").text
 
     # A javascript: (or any non-http) scheme is rejected, not stored.

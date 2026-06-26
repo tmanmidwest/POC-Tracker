@@ -71,6 +71,11 @@
       <div class="form-hint">Paste the full URL — it shows as a tidy “Salesforce Opp” link on the project and dashboard.</div>
     </div>
     <div class="form-row">
+      <label class="label" for="notebook_url">Notebook URL</label>
+      <input class="input" type="url" id="notebook_url" name="notebook_url" value="{{ form.notebook_url or '' }}" maxlength="1000" placeholder="https://…" />
+      <div class="form-hint">Paste the full URL — it shows as a “Notebook Link” on the project.</div>
+    </div>
+    <div class="form-row">
       <label class="label" for="notes">Notes</label>
       <textarea class="textarea" id="notes" name="notes" rows="3">{{ form.notes or '' }}</textarea>
     </div>

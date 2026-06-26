@@ -242,6 +242,7 @@ async def _read_project_form(request: Request) -> dict:
         "account_executive": _clean(form.get("account_executive")),  # type: ignore[arg-type]
         "account_executive_email": _clean(form.get("account_executive_email")),  # type: ignore[arg-type]
         "salesforce_opp_url": _clean_url(form.get("salesforce_opp_url")),  # type: ignore[arg-type]
+        "notebook_url": _clean_url(form.get("notebook_url")),  # type: ignore[arg-type]
         "notes": _clean(form.get("notes")),  # type: ignore[arg-type]
     }
 
@@ -271,6 +272,7 @@ async def create_project(
         account_executive=data["account_executive"],
         account_executive_email=data["account_executive_email"],
         salesforce_opp_url=data["salesforce_opp_url"],
+        notebook_url=data["notebook_url"],
         notes=data["notes"],
     )
     db.add(project)
@@ -304,6 +306,7 @@ def edit_form(
         "account_executive": project.account_executive,
         "account_executive_email": project.account_executive_email,
         "salesforce_opp_url": project.salesforce_opp_url,
+        "notebook_url": project.notebook_url,
         "notes": project.notes,
     }
     return render(
@@ -337,6 +340,7 @@ async def update_project(
     project.account_executive = data["account_executive"]
     project.account_executive_email = data["account_executive_email"]
     project.salesforce_opp_url = data["salesforce_opp_url"]
+    project.notebook_url = data["notebook_url"]
     project.notes = data["notes"]
     db.commit()
     record_event(

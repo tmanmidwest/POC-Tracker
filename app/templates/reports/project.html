@@ -30,6 +30,12 @@
     <th>Salesforce opportunity</th>
     <td colspan="3">{% if project.salesforce_opp_url %}<a href="{{ project.salesforce_opp_url }}">{{ project.salesforce_opp_url }}</a>{% else %}—{% endif %}</td>
   </tr>
+  {% if project.notebook_url %}
+  <tr>
+    <th>Notebook link</th>
+    <td colspan="3"><a href="{{ project.notebook_url }}">{{ project.notebook_url }}</a></td>
+  </tr>
+  {% endif %}
   {% if project.notes %}
   <tr><th>Notes</th><td colspan="3" class="prewrap">{{ project.notes }}</td></tr>
   {% endif %}
