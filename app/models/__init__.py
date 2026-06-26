@@ -17,6 +17,7 @@ from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
 from app.models.oauth_client import OAuthClient
 from app.models.project import Project
+from app.models.project_note import ProjectNote
 from app.models.project_status import ProjectStatus
 from app.models.project_use_case import ProjectUseCase
 from app.models.screenshot import Screenshot
@@ -38,6 +39,7 @@ __all__ = [
     "FeatureType",
     "OAuthClient",
     "Project",
+    "ProjectNote",
     "ProjectStatus",
     "ProjectUseCase",
     "Screenshot",

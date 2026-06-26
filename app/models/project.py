@@ -15,6 +15,7 @@ from app.models.customer import Customer
 from app.models.project_status import ProjectStatus
 
 if TYPE_CHECKING:
+    from app.models.project_note import ProjectNote
     from app.models.project_use_case import ProjectUseCase
 
 
@@ -74,6 +75,13 @@ class Project(Base, TimestampMixin):
         "ProjectUseCase",
         back_populates="project",
         cascade="all, delete-orphan",
+    )
+    # Dated journal entries, ordered newest-first for display.
+    note_entries: Mapped[list[ProjectNote]] = relationship(
+        "ProjectNote",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectNote.note_date.desc(), ProjectNote.id.desc()",
     )
 
     @property

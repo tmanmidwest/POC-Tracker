@@ -38,6 +38,73 @@
   {% if project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ project.notes }}</div>{% endif %}
 </div>
 
+{# ---- Project Notes ---- #}
+{% macro note_row(note) %}
+<div style="display:flex; gap: var(--s-3); padding: var(--s-3) 0; border-top:1px solid var(--border);">
+  <div style="flex:none; width:120px;">
+    <div class="text-xs"><strong>{{ note.note_date.strftime('%b %-d, %Y') }}</strong></div>
+    {% if note.created_by %}<div class="text-muted text-xs">{{ note.created_by }}</div>{% endif %}
+  </div>
+  <div style="flex:1; white-space:pre-wrap;">{{ note.body }}</div>
+  <div style="flex:none; display:flex; gap: var(--s-1);">
+    <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-note-{{ note.id }}')" title="Edit note">✎</button>
+    <form method="post" action="/ui/projects/notes/{{ note.id }}/delete" style="margin:0;"
+          onsubmit="return confirm('Delete this note?');">
+      <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Delete note">×</button>
+    </form>
+  </div>
+</div>
+<div class="ucmodal" id="m-note-{{ note.id }}" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Edit note</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <form method="post" action="/ui/projects/notes/{{ note.id }}/edit">
+      <div class="form-row"><label class="label">Date</label>
+        <input class="input" type="date" name="note_date" value="{{ note.note_date.isoformat() }}" /></div>
+      <div class="form-row"><label class="label">Note</label>
+        <textarea class="textarea" name="body" rows="4" required>{{ note.body }}</textarea></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+        <button class="btn btn--primary">Save</button>
+      </div>
+    </form>
+  </div>
+ </div>
+</div>
+{% endmacro %}
+
+<div id="notes" class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header"><h3 class="card__title">Project Notes</h3></div>
+  <div class="card__body">
+    <form method="post" action="/ui/projects/{{ project.id }}/notes">
+      <div style="display:grid; grid-template-columns: 150px 1fr; gap: var(--s-3); align-items:start;">
+        <div class="form-row"><label class="label">Date</label>
+          <input class="input" type="date" name="note_date" value="{{ today }}" /></div>
+        <div class="form-row"><label class="label">Note</label>
+          <textarea class="textarea" name="body" rows="2" placeholder="Add an update…" required></textarea></div>
+      </div>
+      <div class="form-actions"><button class="btn btn--primary btn--sm">Add note</button></div>
+    </form>
+
+    {% if project.note_entries %}
+    {% set notes = project.note_entries %}
+    {% set visible_limit = 5 %}
+    <div style="margin-top: var(--s-4);">
+      {% for note in notes[:visible_limit] %}{{ note_row(note) }}{% endfor %}
+      {% if notes|length > visible_limit %}
+      <details style="margin-top: var(--s-1);">
+        <summary style="cursor:pointer; padding: var(--s-3) 0; color: var(--primary); font-size:13px; font-weight:500;">Show all {{ notes|length }} notes</summary>
+        {% for note in notes[visible_limit:] %}{{ note_row(note) }}{% endfor %}
+      </details>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted text-xs" style="margin-top: var(--s-3);">No notes yet. Add the first update above.</p>
+    {% endif %}
+  </div>
+</div>
+
 {# ---- Add use cases ---- #}
 <div id="use-cases" class="page-header">
   <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>

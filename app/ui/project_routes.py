@@ -17,6 +17,7 @@ from app.models import (
     Customer,
     FeatureType,
     Project,
+    ProjectNote,
     ProjectStatus,
     ProjectUseCase,
     Screenshot,
@@ -393,7 +394,95 @@ def detail(
         project=project, use_case_groups=_grouped_use_cases(project),
         library_groups=lib_groups, uc_statuses=uc_statuses, feature_types=feature_types,
         progress={"total": total, "done": done, "pct": round(done / total * 100) if total else 0},
+        today=date.today().isoformat(),
     )
+
+
+@router.post("/{project_id}/notes")
+def add_project_note(
+    project_id: int,
+    request: Request,
+    body: str = Form(...),
+    note_date: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    project = _get_project(db, project_id)
+    text = _clean(body)
+    if not text:
+        flash(request, "Note text is required.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project.id}#notes", status_code=303)
+    note = ProjectNote(
+        project_id=project.id,
+        note_date=_parse_date(note_date) or date.today(),
+        body=text,
+        created_by=user.username,
+    )
+    db.add(note)
+    db.commit()
+    record_event(
+        category="project", event_type="note.added", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Added a note to '{project.display_name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Note added.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project.id}#notes", status_code=303)
+
+
+@router.post("/notes/{note_id}/edit")
+def edit_project_note(
+    note_id: int,
+    request: Request,
+    body: str = Form(...),
+    note_date: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    note = db.get(ProjectNote, note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    text = _clean(body)
+    if not text:
+        flash(request, "Note text is required.", "error")
+        return RedirectResponse(url=f"/ui/projects/{note.project_id}#notes", status_code=303)
+    note.body = text
+    note.note_date = _parse_date(note_date) or note.note_date
+    db.commit()
+    record_event(
+        category="project", event_type="note.updated", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=note.project_id, target_label=note.project.display_name,
+        message=f"Edited a note on '{note.project.display_name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Note updated.", "success")
+    return RedirectResponse(url=f"/ui/projects/{note.project_id}#notes", status_code=303)
+
+
+@router.post("/notes/{note_id}/delete")
+def delete_project_note(
+    note_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    note = db.get(ProjectNote, note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    project = note.project
+    db.delete(note)
+    db.commit()
+    record_event(
+        category="project", event_type="note.deleted", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Deleted a note from '{project.display_name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Note deleted.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project.id}#notes", status_code=303)
 
 
 # ---------------------------------------------------------------------------
