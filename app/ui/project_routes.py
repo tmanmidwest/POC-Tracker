@@ -19,6 +19,7 @@ from app.models import (
     FeatureType,
     NoteAttachment,
     Project,
+    ProjectGrant,
     ProjectNote,
     ProjectStatus,
     ProjectUseCase,
@@ -30,6 +31,11 @@ from app.models import (
 from app.models.project_use_case import SOURCE_CUSTOM
 from app.services import note_attachments as note_store
 from app.services import screenshots as screenshot_store
+from app.services.access import (
+    accessible_project_ids,
+    can_grant_project,
+    can_view_project,
+)
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.use_cases import (
@@ -38,7 +44,7 @@ from app.services.use_cases import (
     default_project_status_id,
     default_use_case_status_id,
 )
-from app.ui.dependencies import require_ui_user
+from app.ui.dependencies import require_internal_ui, require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
 
@@ -163,6 +169,18 @@ def _get_project(db: Session, project_id: int) -> Project:
     return project
 
 
+def _get_viewable_project(db: Session, project_id: int, user: AppUser) -> Project:
+    """Load a project the user is allowed to view, else 404.
+
+    External viewers without a grant get a 404 (not 403) so they can't probe
+    which project ids exist.
+    """
+    project = _get_project(db, project_id)
+    if not can_view_project(db, user, project):
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return project
+
+
 def _get_use_case(db: Session, use_case_id: int) -> ProjectUseCase:
     uc = db.get(ProjectUseCase, use_case_id)
     if uc is None:
@@ -204,6 +222,10 @@ def list_projects(
         query = query.filter(Project.is_archived.is_(False))
     if status_id:
         query = query.filter(Project.status_id == status_id)
+    # External viewers only see projects shared with them; internal users see all.
+    visible_ids = accessible_project_ids(db, user)
+    if visible_ids is not None:
+        query = query.filter(Project.id.in_(visible_ids))
     projects = query.order_by(Project.updated_at.desc()).all()
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
     return render(
@@ -222,7 +244,7 @@ def new_form(
     request: Request,
     customer_id: int | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     return render(
         request, "projects/form.html", current_user=user, active_section="projects",
@@ -255,7 +277,7 @@ async def _read_project_form(request: Request) -> dict:
 async def create_project(
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     data = await _read_project_form(request)
     if not data["customer_id"]:
@@ -298,7 +320,7 @@ def edit_form(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     form = {
@@ -327,7 +349,7 @@ async def update_project(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     data = await _read_project_form(request)
@@ -366,7 +388,7 @@ def archive_project(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     project.is_archived = True
@@ -381,7 +403,7 @@ def restore_project(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     project.is_archived = False
@@ -396,7 +418,7 @@ def delete_project(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     label = project.display_name
@@ -427,7 +449,7 @@ def detail(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_viewable_project(db, project_id, user)
 
     # Library picker — entries grouped by category with an "already added" flag.
     added = added_library_ids(project)
@@ -462,6 +484,27 @@ def detail(
     uc_view = _load_uc_view(db, user)
     visible = _filter_use_cases(list(project.use_cases), str(uc_view["status_filter"]))
 
+    # "Share" panel — only for users who can grant on this project (admin or the
+    # project's SE). Loads current grantees + the external users available to add.
+    can_share = can_grant_project(user, project)
+    grants: list[ProjectGrant] = []
+    grantable_users: list[AppUser] = []
+    if can_share:
+        grants = (
+            db.query(ProjectGrant)
+            .filter(ProjectGrant.project_id == project.id)
+            .all()
+        )
+        granted_ids = {g.user_id for g in grants}
+        grantable_users = [
+            u
+            for u in db.query(AppUser)
+            .filter(AppUser.is_external.is_(True), AppUser.is_active.is_(True))
+            .order_by(AppUser.username)
+            .all()
+            if u.id not in granted_ids
+        ]
+
     return render(
         request, "projects/detail.html", current_user=user, active_section="projects",
         project=project, use_case_groups=_group_use_cases(visible),
@@ -470,6 +513,7 @@ def detail(
         today=date.today().isoformat(),
         uc_fields=set(uc_view["fields"]), uc_status_filter=str(uc_view["status_filter"]),
         uc_field_options=ALL_UC_FIELDS, uc_filtered_count=len(visible),
+        can_share=can_share, grants=grants, grantable_users=grantable_users,
     )
 
 
@@ -544,7 +588,7 @@ async def add_project_note(
     note_date: str | None = Form(None),
     files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     body_html = sanitize_note_html(body)
@@ -580,7 +624,7 @@ async def upload_note_attachments(
     request: Request,
     files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     note = db.get(ProjectNote, note_id)
     if note is None:
@@ -603,11 +647,12 @@ async def upload_note_attachments(
 def serve_note_attachment(
     att_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_ui_user),
 ) -> Response:
     att = db.get(NoteAttachment, att_id)
     if att is None:
         raise HTTPException(status_code=404, detail="Attachment not found.")
+    _get_viewable_project(db, att.note.project_id, user)
     path = note_store.path_for(att)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Attachment file missing.")
@@ -625,7 +670,7 @@ def delete_note_attachment(
     att_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     att = db.get(NoteAttachment, att_id)
     if att is None:
@@ -651,7 +696,7 @@ def edit_project_note(
     body: str = Form(...),
     note_date: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     note = db.get(ProjectNote, note_id)
     if note is None:
@@ -681,7 +726,7 @@ def delete_project_note(
     note_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     note = db.get(ProjectNote, note_id)
     if note is None:
@@ -710,7 +755,7 @@ async def add_from_library(
     project_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     form = await request.form()
@@ -740,7 +785,7 @@ def add_custom_use_case(
     success_validation: str | None = Form(None),
     feature_type_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
     if not _clean(category) or not _clean(name):
@@ -784,7 +829,7 @@ def update_use_case(
     comments: str | None = Form(None),
     completed_on: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     uc = _get_use_case(db, use_case_id)
     uc.reference_number = _clean(reference_number)
@@ -814,7 +859,7 @@ def quick_set_status(
     request: Request,
     status_id: int = Form(...),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     """Inline status change from the use-case list."""
     uc = _get_use_case(db, use_case_id)
@@ -835,7 +880,7 @@ def delete_use_case(
     use_case_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     uc = _get_use_case(db, use_case_id)
     project_id = uc.project_id
@@ -866,7 +911,7 @@ async def upload_screenshot(
     file: UploadFile = File(...),
     caption: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     uc = _get_use_case(db, use_case_id)
     content = await file.read()
@@ -906,11 +951,12 @@ async def upload_screenshot(
 def serve_screenshot(
     shot_id: int,
     db: Session = Depends(get_db),
-    _user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_ui_user),
 ) -> Response:
     shot = db.get(Screenshot, shot_id)
     if shot is None:
         raise HTTPException(status_code=404, detail="Screenshot not found.")
+    _get_viewable_project(db, shot.use_case.project_id, user)
     path = screenshot_store.path_for(shot)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Screenshot file missing.")
@@ -930,7 +976,7 @@ def delete_screenshot(
     shot_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     shot = db.get(Screenshot, shot_id)
     if shot is None:

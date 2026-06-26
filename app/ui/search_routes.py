@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser
 from app.services import search as search_service
+from app.services.access import accessible_project_ids
 from app.ui.dependencies import require_ui_user
 from app.ui.templating import render
 
@@ -27,7 +28,10 @@ def suggest(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """HTMX fragment: top hits grouped by type for the live dropdown."""
-    groups = search_service.search(db, q, per_type_limit=5, overall_cap=30)
+    groups = search_service.search(
+        db, q, per_type_limit=5, overall_cap=30,
+        visible_project_ids=accessible_project_ids(db, user),
+    )
     return render(
         request,
         "search/_suggest.html",
@@ -46,7 +50,10 @@ def results(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """Full results page, grouped by entity type."""
-    groups = search_service.search(db, q, per_type_limit=20, overall_cap=120)
+    groups = search_service.search(
+        db, q, per_type_limit=20, overall_cap=120,
+        visible_project_ids=accessible_project_ids(db, user),
+    )
     return render(
         request,
         "search/results.html",

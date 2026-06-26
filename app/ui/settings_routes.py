@@ -155,6 +155,7 @@ def create_admin(
         is_active=True,
         is_seeded=False,
         is_admin=(role == "admin"),
+        is_external=(role == "external"),
     )
     db.add(new_user)
     try:
@@ -366,6 +367,9 @@ def change_role(
         return back  # no change
 
     target.is_admin = make_admin
+    if make_admin:
+        # Admins are full internal users — never read-only external viewers.
+        target.is_external = False
     db.commit()
     _settings_event(
         request, user,
@@ -808,7 +812,7 @@ def show_new_auth_provider(
         current_user=user,
         active_subsection="auth_providers",
         provider=None,
-        form={"scopes": DEFAULT_SCOPES, "is_enabled": True},
+        form={"scopes": DEFAULT_SCOPES, "is_enabled": True, "default_user_tier": "standard"},
         # Show the callback pattern so the user can register it at the IdP.
         callback_base=callback_url(request, "SLUG").replace("/SLUG/", "/<slug>/"),
     )
@@ -838,6 +842,7 @@ def create_auth_provider(
     client_id: str = Form(...),
     client_secret: str = Form(""),
     scopes: str = Form(DEFAULT_SCOPES),
+    default_user_tier: str = Form("standard"),
     is_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
@@ -847,6 +852,7 @@ def create_auth_provider(
     issuer_url = issuer_url.strip()
     client_id = client_id.strip()
     scopes = scopes.strip() or DEFAULT_SCOPES
+    default_user_tier = "external" if default_user_tier == "external" else "standard"
 
     form = {
         "display_name": display_name,
@@ -854,6 +860,7 @@ def create_auth_provider(
         "issuer_url": issuer_url,
         "client_id": client_id,
         "scopes": scopes,
+        "default_user_tier": default_user_tier,
         "is_enabled": bool(is_enabled),
     }
 
@@ -877,6 +884,7 @@ def create_auth_provider(
         client_id=client_id,
         client_secret_encrypted=encrypt_secret(client_secret) if client_secret else "",
         scopes=scopes,
+        default_user_tier=default_user_tier,
         is_enabled=bool(is_enabled),
         created_by_user_id=user.id,
     )
@@ -929,6 +937,7 @@ def show_edit_auth_provider(
         "issuer_url": provider.issuer_url,
         "client_id": provider.client_id,
         "scopes": provider.scopes,
+        "default_user_tier": provider.default_user_tier,
         "is_enabled": provider.is_enabled,
     }
     return render(
@@ -952,6 +961,7 @@ def update_auth_provider(
     client_id: str = Form(...),
     client_secret: str = Form(""),
     scopes: str = Form(DEFAULT_SCOPES),
+    default_user_tier: str = Form("standard"),
     is_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
@@ -965,6 +975,7 @@ def update_auth_provider(
     issuer_url = issuer_url.strip()
     client_id = client_id.strip()
     scopes = scopes.strip() or DEFAULT_SCOPES
+    default_user_tier = "external" if default_user_tier == "external" else "standard"
 
     form = {
         "display_name": display_name,
@@ -972,6 +983,7 @@ def update_auth_provider(
         "issuer_url": issuer_url,
         "client_id": client_id,
         "scopes": scopes,
+        "default_user_tier": default_user_tier,
         "is_enabled": bool(is_enabled),
     }
 
@@ -993,6 +1005,7 @@ def update_auth_provider(
     provider.issuer_url = issuer_url
     provider.client_id = client_id
     provider.scopes = scopes
+    provider.default_user_tier = default_user_tier
     provider.is_enabled = bool(is_enabled)
     # Only replace the stored secret when a new one is supplied.
     if client_secret:

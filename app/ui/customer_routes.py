@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser, Contact, ContactRole, Customer, Project
 from app.services.audit import record_event
-from app.ui.dependencies import require_ui_user
+from app.ui.dependencies import require_internal_ui
 from app.ui.flash import flash
 from app.ui.templating import render
 
@@ -32,7 +32,7 @@ def _clean(value: str | None) -> str | None:
 def list_customers(
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customers = db.query(Customer).order_by(Customer.name).all()
     return render(
@@ -47,7 +47,7 @@ def list_customers(
 @router.get("/new")
 def new_form(
     request: Request,
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     return render(
         request,
@@ -67,7 +67,7 @@ def create_customer(
     website: str | None = Form(None),
     notes: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = Customer(name=_clean(name), website=_clean(website), notes=_clean(notes))
     if not customer.name:
@@ -105,7 +105,7 @@ def detail(
     customer_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -133,7 +133,7 @@ def edit_form(
     customer_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -154,7 +154,7 @@ def update_customer(
     website: str | None = Form(None),
     notes: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -184,7 +184,7 @@ def delete_customer(
     customer_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -226,7 +226,7 @@ def add_contact(
     phone: str | None = Form(None),
     role_id: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -259,7 +259,7 @@ def delete_contact(
     contact_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
+    user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     contact = db.get(Contact, contact_id)
     if contact is None:

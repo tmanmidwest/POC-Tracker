@@ -20,6 +20,11 @@ from app.models.app_user import AppUser
 
 DEFAULT_SCOPES = "openid email profile"
 
+# Tier assigned to users provisioned (JIT) through this provider. "standard" =
+# full internal user; "external" = read-only viewer scoped to granted projects.
+TIER_STANDARD = "standard"
+TIER_EXTERNAL = "external"
+
 
 class AuthProvider(Base, TimestampMixin):
     """A configured OIDC provider for UI single sign-on."""
@@ -38,6 +43,10 @@ class AuthProvider(Base, TimestampMixin):
     # Fernet-encrypted; may be empty for public (PKCE-only) clients.
     client_secret_encrypted: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     scopes: Mapped[str] = mapped_column(String(255), nullable=False, default=DEFAULT_SCOPES)
+    # Tier for users provisioned through this provider: "standard" | "external".
+    default_user_tier: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=TIER_STANDARD
+    )
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("app_users.id"), nullable=True

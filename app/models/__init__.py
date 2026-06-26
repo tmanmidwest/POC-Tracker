@@ -9,8 +9,8 @@ from app.models.app_branding import AppBranding
 from app.models.app_config import AppConfig
 from app.models.app_user import AppUser
 from app.models.audit_event import AuditEvent
-from app.models.backup_run import BackupRun
 from app.models.auth_provider import AuthProvider
+from app.models.backup_run import BackupRun
 from app.models.contact import Contact
 from app.models.contact_role import ContactRole
 from app.models.customer import Customer
@@ -19,6 +19,7 @@ from app.models.feature_type import FeatureType
 from app.models.note_attachment import NoteAttachment
 from app.models.oauth_client import OAuthClient
 from app.models.project import Project
+from app.models.project_grant import ProjectGrant
 from app.models.project_note import ProjectNote
 from app.models.project_status import ProjectStatus
 from app.models.project_use_case import ProjectUseCase
@@ -34,8 +35,8 @@ __all__ = [
     "AppConfig",
     "AppUser",
     "AuditEvent",
-    "BackupRun",
     "AuthProvider",
+    "BackupRun",
     "Contact",
     "ContactRole",
     "Customer",
@@ -44,6 +45,7 @@ __all__ = [
     "NoteAttachment",
     "OAuthClient",
     "Project",
+    "ProjectGrant",
     "ProjectNote",
     "ProjectStatus",
     "ProjectUseCase",

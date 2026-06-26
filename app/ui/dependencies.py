@@ -60,6 +60,19 @@ def require_admin_ui(
     return user
 
 
+def require_internal_ui(
+    request: Request, user: AppUser = Depends(require_ui_user)
+) -> AppUser:
+    """Like require_ui_user but rejects external (read-only) viewers.
+
+    Gates every mutating UI route so external viewers cannot create, edit, or
+    delete anything even by POSTing directly.
+    """
+    if user.is_external:
+        raise _Forbidden()
+    return user
+
+
 def redirect_to_login_handler(
     _request: Request, exc: _RedirectToLogin
 ) -> RedirectResponse:

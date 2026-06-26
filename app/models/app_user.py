@@ -35,6 +35,9 @@ class AppUser(Base, TimestampMixin):
     is_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # External viewer: read-only, and only sees projects explicitly shared with
+    # them (see ProjectGrant). Internal users (admin or standard) ignore grants.
+    is_external: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -47,6 +50,11 @@ class AppUser(Base, TimestampMixin):
     def display_label(self) -> str:
         """The name to show in the UI — display_name if set, else the username."""
         return self.display_name or self.username
+
+    @property
+    def is_internal(self) -> bool:
+        """Internal users (admin or standard) see all projects and can edit."""
+        return not self.is_external
 
     def __repr__(self) -> str:
         return f"<AppUser username={self.username!r}>"

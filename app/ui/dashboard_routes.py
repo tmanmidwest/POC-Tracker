@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, DashboardPref, Project, ProjectStatus
+from app.services.access import accessible_project_ids
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
@@ -94,6 +95,9 @@ def dashboard(
     ]
     visible_statuses = _order_statuses(visible_statuses, prefs.get("status_order"))
 
+    # External viewers only see projects shared with them; internal users see all.
+    visible_ids = accessible_project_ids(db, user)
+
     sort = prefs.get("sort", DEFAULT_SORT)
     groups = []
     for status in visible_statuses:
@@ -101,6 +105,8 @@ def dashboard(
             db.query(Project)
             .filter(Project.status_id == status.id, Project.is_archived.is_(False))
         )
+        if visible_ids is not None:
+            q = q.filter(Project.id.in_(visible_ids))
         if sort == "start_date":
             q = q.order_by(Project.start_date.is_(None), Project.start_date)
         elif sort == "name":
@@ -117,9 +123,10 @@ def dashboard(
             }
         )
 
-    total_active = (
-        db.query(Project).filter(Project.is_archived.is_(False)).count()
-    )
+    total_q = db.query(Project).filter(Project.is_archived.is_(False))
+    if visible_ids is not None:
+        total_q = total_q.filter(Project.id.in_(visible_ids))
+    total_active = total_q.count()
     return render(
         request,
         "dashboard/index.html",

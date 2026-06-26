@@ -179,7 +179,9 @@ def create_app() -> FastAPI:
         forbidden_handler,
         redirect_to_login_handler,
         require_admin_ui,
+        require_internal_ui,
     )
+    from app.ui.grant_routes import router as ui_grant_router
     from app.ui.library_routes import router as ui_library_router
     from app.ui.lookup_routes import router as ui_lookup_router
     from app.ui.oidc_routes import router as ui_oidc_router
@@ -188,15 +190,20 @@ def create_app() -> FastAPI:
     from app.ui.search_routes import router as ui_search_router
     from app.ui.settings_routes import router as ui_settings_router
 
-    # Open to any logged-in user (standard or admin).
+    # Open to any logged-in user (standard, admin, or external viewer). The
+    # routes themselves scope what an external viewer can see.
     app.include_router(ui_auth_router)
     app.include_router(ui_oidc_router)
     app.include_router(ui_dashboard_router)
     app.include_router(ui_project_router)
-    app.include_router(ui_customer_router)
     app.include_router(ui_report_router)
-    app.include_router(ui_audit_router)
     app.include_router(ui_search_router)
+
+    # Open to internal users only (standard or admin) — hidden from external viewers.
+    internal_only = [Depends(require_internal_ui)]
+    app.include_router(ui_customer_router, dependencies=internal_only)
+    app.include_router(ui_audit_router, dependencies=internal_only)
+    app.include_router(ui_grant_router)  # routes self-check can_grant_project
 
     # Admin-only surfaces — gated at the router level.
     admin_only = [Depends(require_admin_ui)]

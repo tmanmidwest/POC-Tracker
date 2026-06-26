@@ -9,7 +9,9 @@
     <p class="page-header__subtitle">All POC engagements.</p>
   </div>
   <div class="page-header__actions">
+    {% if current_user and current_user.is_internal %}
     <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+    {% endif %}
   </div>
 </div>
 
@@ -38,9 +40,14 @@
 <div class="card card--flush">
 {% if not projects %}
   <div class="empty-state">
+    {% if current_user and current_user.is_internal %}
     <h3 class="empty-state__title">No projects</h3>
     <p class="empty-state__body">Create a project to start tracking use cases.</p>
     <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+    {% else %}
+    <h3 class="empty-state__title">Nothing shared yet</h3>
+    <p class="empty-state__body">No projects have been shared with you yet.</p>
+    {% endif %}
   </div>
 {% else %}
 <div class="table-wrap">

@@ -203,14 +203,44 @@ _BUILDERS = {
 }
 
 
+# Entity types scoped to a single project, and how to find that project's id.
+# Types not listed here (customer, contact, library) are not project-scoped and
+# are hidden entirely from external viewers.
+_PROJECT_ID_OF = {
+    "project": lambda o: o.id,
+    "use_case": lambda o: o.project_id,
+    "note": lambda o: o.project_id,
+    "attachment": lambda o: o.note.project_id if o.note else None,
+    "screenshot": lambda o: o.use_case.project_id if o.use_case else None,
+}
+
+
+def _visible_to(etype: str, obj: object, visible_project_ids: set[int] | None) -> bool:
+    """Whether a hit may be shown given an external viewer's accessible projects.
+
+    ``visible_project_ids`` is None for internal users (everything visible).
+    """
+    if visible_project_ids is None:
+        return True
+    resolver = _PROJECT_ID_OF.get(etype)
+    if resolver is None:
+        return False  # not project-scoped → hidden from external viewers
+    return resolver(obj) in visible_project_ids
+
+
 def search(
     db: Session,
     raw: str | None,
     *,
     per_type_limit: int = DEFAULT_PER_TYPE,
     overall_cap: int = OVERALL_CAP,
+    visible_project_ids: set[int] | None = None,
 ) -> dict[str, list[SearchHit]]:
-    """Run a bounded, ranked full-text search; return hits grouped by entity type."""
+    """Run a bounded, ranked full-text search; return hits grouped by entity type.
+
+    Pass ``visible_project_ids`` (the set of project ids an external viewer may
+    see) to scope results; leave it None for internal users to search everything.
+    """
     match = build_match_query(raw)
     if not match:
         return {}
@@ -245,6 +275,8 @@ def search(
         obj = loaded.get((etype, eid))
         if obj is None:
             continue  # stale index row (e.g. cascade-deleted) — skip
+        if not _visible_to(etype, obj, visible_project_ids):
+            continue  # external viewer: not in a granted project
         bucket = grouped.setdefault(etype, [])
         if len(bucket) >= per_type_limit:
             continue

@@ -18,9 +18,13 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser, Project, ProjectStatus
 from app.services import report_archive, report_pdf
+from app.services.access import accessible_project_ids
 from app.services.branding import current_branding
 from app.ui.dependencies import require_ui_user
-from app.ui.project_routes import _get_project, _grouped_use_cases
+from app.ui.project_routes import (
+    _get_viewable_project,
+    _grouped_use_cases,
+)
 from app.ui.templating import render
 
 log = logging.getLogger(__name__)
@@ -71,6 +75,10 @@ def all_pocs(
     query = db.query(Project)
     if not include_archived:
         query = query.filter(Project.is_archived.is_(False))
+    # External viewers only see projects shared with them; internal users see all.
+    visible_ids = accessible_project_ids(db, user)
+    if visible_ids is not None:
+        query = query.filter(Project.id.in_(visible_ids))
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
     order = {s.id: s.sort_order for s in statuses}
     projects = sorted(
@@ -93,7 +101,7 @@ def project_report(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """Standalone, nav-free report page (opened in a new tab)."""
-    project = _get_project(db, project_id)
+    project = _get_viewable_project(db, project_id, user)
     return render(
         request, "reports/project.html", current_user=user,
         **_report_context(project, user),
@@ -107,7 +115,7 @@ def project_report_pdf(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """Server-rendered PDF of the full project report."""
-    project = _get_project(db, project_id)
+    project = _get_viewable_project(db, project_id, user)
     html = report_pdf.render_report_html(_report_context(project, user))
     try:
         pdf = report_pdf.project_report_pdf(project, html)
@@ -127,7 +135,7 @@ def project_report_archive(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """A single zip with the report PDF, all screenshots, and all attachments."""
-    project = _get_project(db, project_id)
+    project = _get_viewable_project(db, project_id, user)
     html = report_pdf.render_report_html(_report_context(project, user))
     pdf: bytes | None = None
     try:

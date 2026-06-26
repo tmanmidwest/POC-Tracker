@@ -134,11 +134,15 @@ def find_or_create_user(
         return user
 
     username = _unique_username(db, _candidate_username(claims, provider.slug))
+    # The provider decides whether new users are full internal users or
+    # read-only external viewers (scoped to projects later granted to them).
+    is_external = provider.default_user_tier == "external"
     user = AppUser(
         username=username,
         password_hash=None,
         is_active=True,
         is_seeded=False,
+        is_external=is_external,
         last_login_at=now,
         display_name=_display_name_from_claims(claims),
     )
@@ -174,6 +178,11 @@ def find_or_create_user(
         target_id=user.id,
         target_label=username,
         message=f"Provisioned new user '{username}' from {provider.display_name} (JIT)",
-        detail={"provider": provider.slug, "subject": subject, "email": email},
+        detail={
+            "provider": provider.slug,
+            "subject": subject,
+            "email": email,
+            "tier": "external" if is_external else "standard",
+        },
     )
     return user
