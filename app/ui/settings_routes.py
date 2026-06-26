@@ -128,22 +128,25 @@ def create_admin(
     username: str = Form(...),
     password: str = Form(...),
     role: str = Form("standard"),
+    display_name: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     username = username.strip()
+    display = display_name.strip() or None
     if len(password) < 8:
         return render(
             request,
             "settings/admin_user_new.html",
             current_user=user,
             active_subsection="admin_users",
-            form={"username": username, "role": role},
+            form={"username": username, "role": role, "display_name": display},
             error="Password must be at least 8 characters.",
         )
 
     new_user = AppUser(
         username=username,
+        display_name=display,
         password_hash=hash_password(password),
         is_active=True,
         is_seeded=False,
@@ -159,7 +162,7 @@ def create_admin(
             "settings/admin_user_new.html",
             current_user=user,
             active_subsection="admin_users",
-            form={"username": username},
+            form={"username": username, "role": role, "display_name": display},
             error=f"Username '{username}' is already taken.",
         )
     log.info(
@@ -196,6 +199,52 @@ def show_password_form(
         active_subsection="admin_users",
         target_user=target,
     )
+
+
+@router.get("/admin-users/{user_id}/edit")
+def show_edit_user(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    target = db.get(AppUser, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return render(
+        request,
+        "settings/admin_user_edit.html",
+        current_user=user,
+        active_subsection="admin_users",
+        target_user=target,
+    )
+
+
+@router.post("/admin-users/{user_id}/edit")
+def update_user(
+    user_id: int,
+    request: Request,
+    display_name: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    target = db.get(AppUser, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    target.display_name = display_name.strip() or None
+    db.commit()
+    _settings_event(
+        request, user,
+        category="admin_user",
+        event_type="admin_user.updated",
+        target_type="app_user",
+        target_id=target.id,
+        target_label=target.username,
+        message=f"Updated display name for '{target.username}'",
+        detail={"display_name": target.display_name},
+    )
+    flash(request, f"Updated display name for '{target.username}'.", "success")
+    return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
 
 
 @router.post("/admin-users/{user_id}/password")
@@ -282,6 +331,54 @@ def delete_admin(
     )
     flash(request, f"Deleted admin user '{target.username}'.", "success")
     return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+
+@router.post("/admin-users/{user_id}/role")
+def change_role(
+    user_id: int,
+    request: Request,
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    target = db.get(AppUser, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    make_admin = role == "admin"
+    back = RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+    if target.id == user.id:
+        flash(request, "You can't change your own role.", "error")
+        return back
+    if not make_admin and target.is_seeded:
+        flash(request, "The seeded admin must remain an admin.", "error")
+        return back
+    if not make_admin and target.is_admin:
+        admin_count = db.query(AppUser).filter(AppUser.is_admin.is_(True)).count()
+        if admin_count <= 1:
+            flash(request, "There must be at least one admin.", "error")
+            return back
+    if target.is_admin == make_admin:
+        return back  # no change
+
+    target.is_admin = make_admin
+    db.commit()
+    _settings_event(
+        request, user,
+        category="admin_user",
+        event_type="admin_user.role_changed",
+        target_type="app_user",
+        target_id=target.id,
+        target_label=target.username,
+        message=f"Changed role of '{target.username}' to {'admin' if make_admin else 'standard'}",
+        detail={"is_admin": make_admin},
+    )
+    flash(
+        request,
+        f"'{target.username}' is now {'an admin' if make_admin else 'a standard user'}.",
+        "success",
+    )
+    return back
 
 
 # ===========================================================================

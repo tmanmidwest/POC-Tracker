@@ -30,7 +30,7 @@
 {# ---- Overview ---- #}
 <div class="card" style="margin-bottom: var(--s-5);">
   <div class="card__body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4);">
-    <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.username if project.sales_engineer else "—" }}</div></div>
+    <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.display_label if project.sales_engineer else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Account Exec</div><div class="stat__value">{{ project.account_executive or "—" }}</div></div>
     <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Use-case progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} ({{ progress.pct }}%)</div></div>

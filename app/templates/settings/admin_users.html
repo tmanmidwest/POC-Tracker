@@ -29,10 +29,23 @@
   <tbody>
     {% for u in users %}
     <tr>
-      <td>{{ u.username }} {% if u.is_seeded %}<span class="badge badge--neutral text-xs">Seeded</span>{% endif %}</td>
       <td>
-        {% if u.is_admin %}<span class="badge badge--warning">Admin</span>
-        {% else %}<span class="badge badge--neutral">Standard</span>{% endif %}
+        {% if u.display_name %}<strong>{{ u.display_name }}</strong><br><span class="text-muted text-xs mono">{{ u.username }}</span>
+        {% else %}{{ u.username }}{% endif %}
+        {% if u.is_seeded %}<span class="badge badge--neutral text-xs">Seeded</span>{% endif %}
+      </td>
+      <td>
+        {% if u.is_seeded or u.id == current_user.id %}
+          {% if u.is_admin %}<span class="badge badge--warning">Admin</span>
+          {% else %}<span class="badge badge--neutral">Standard</span>{% endif %}
+        {% else %}
+          <form action="/ui/settings/admin-users/{{ u.id }}/role" method="post" style="margin:0;">
+            <select class="select" name="role" onchange="this.form.submit()" aria-label="Role for {{ u.username }}" style="width:auto; padding-top:4px; padding-bottom:4px;">
+              <option value="standard" {% if not u.is_admin %}selected{% endif %}>Standard</option>
+              <option value="admin" {% if u.is_admin %}selected{% endif %}>Admin</option>
+            </select>
+          </form>
+        {% endif %}
       </td>
       <td>
         {% if u.is_active %}<span class="badge badge--success">Active</span>
@@ -41,6 +54,7 @@
       <td class="mono text-muted">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
       <td class="mono text-muted">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
       <td class="table__actions">
+        <a href="/ui/settings/admin-users/{{ u.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
         <a href="/ui/settings/admin-users/{{ u.id }}/password" class="btn btn--ghost btn--sm">Change Password</a>
         {% if not u.is_seeded and u.id != current_user.id %}
         <form action="/ui/settings/admin-users/{{ u.id }}/delete" method="post" style="margin:0;"

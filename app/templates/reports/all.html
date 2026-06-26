@@ -31,7 +31,7 @@
       <td><strong>{{ p.customer.name }}</strong></td>
       <td><a href="/ui/reports/projects/{{ p.id }}">{{ p.name or "—" }}</a></td>
       <td><span class="badge badge--neutral">{{ p.status.name }}</span></td>
-      <td class="text-muted">{{ p.sales_engineer.username if p.sales_engineer else "—" }}</td>
+      <td class="text-muted">{{ p.sales_engineer.display_label if p.sales_engineer else "—" }}</td>
       <td class="text-muted">{{ p.account_executive or "—" }}</td>
       <td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }} → {{ p.end_date.isoformat() if p.end_date else "—" }}</td>
       <td>{{ row.progress.done }}/{{ row.progress.total }} ({{ row.progress.pct }}%)</td>

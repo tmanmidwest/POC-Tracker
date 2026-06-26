@@ -23,6 +23,11 @@
       <input class="input" id="username" name="username" value="{{ form.username or '' }}" required maxlength="100" autocomplete="username" />
     </div>
     <div class="form-row">
+      <label class="label" for="display_name">Display name</label>
+      <input class="input" id="display_name" name="display_name" value="{{ form.display_name or '' }}" maxlength="200" placeholder="e.g. Robby Smith" />
+      <div class="form-hint">Shown in the UI (e.g. the Sales Engineer field). Defaults to the username.</div>
+    </div>
+    <div class="form-row">
       <label class="label" for="password">Password<span class="label__required">*</span></label>
       <input class="input" type="password" id="password" name="password" required minlength="8" autocomplete="new-password" />
       <div class="form-hint">Minimum 8 characters.</div>

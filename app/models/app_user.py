@@ -40,6 +40,13 @@ class AppUser(Base, TimestampMixin):
     )
     # UI color theme preference: "light" | "dark" (None = light default).
     theme: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Friendly name shown in the UI (e.g. "Robby Smith"); falls back to username.
+    display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    @property
+    def display_label(self) -> str:
+        """The name to show in the UI — display_name if set, else the username."""
+        return self.display_name or self.username
 
     def __repr__(self) -> str:
         return f"<AppUser username={self.username!r}>"

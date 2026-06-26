@@ -394,6 +394,72 @@ def test_dark_mode_toggle(ui: TestClient) -> None:
     assert 'data-theme="light"' in ui.get("/ui/dashboard").text
 
 
+def test_user_display_name(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import AppUser, Project
+
+    # Create a user with a display name, then assign them as Sales Engineer.
+    ui.post("/ui/settings/admin-users/new",
+            data={"username": "rsmith", "password": "password123",
+                  "role": "standard", "display_name": "Robby Smith"},
+            follow_redirects=False)
+    db = get_session_factory()()
+    se = db.query(AppUser).filter(AppUser.username == "rsmith").one()
+    assert se.display_name == "Robby Smith"
+
+    cid = _create_customer(ui, "Display Co")
+    pid = _create_project(ui, cid, "Display POC")
+    p = db.get(Project, pid)
+    p.sales_engineer_id = se.id
+    db.commit()
+
+    # The project page shows the display name, not the username.
+    page = ui.get(f"/ui/projects/{pid}").text
+    assert "Robby Smith" in page
+
+    # The project edit form's SE dropdown also shows the display name.
+    assert "Robby Smith" in ui.get(f"/ui/projects/{pid}/edit").text
+
+    # Editing the display name updates it everywhere (falls back to username when blank).
+    ui.post(f"/ui/settings/admin-users/{se.id}/edit",
+            data={"display_name": "  "}, follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, se.id).display_name is None
+    assert "rsmith" in ui.get(f"/ui/projects/{pid}").text  # falls back to username
+
+
+def test_admin_user_role_change(ui: TestClient) -> None:
+    from app.config import get_settings
+    from app.db import get_session_factory
+    from app.models import AppUser
+
+    _make_standard_user("roleuser")
+    db = get_session_factory()()
+    target = db.query(AppUser).filter(AppUser.username == "roleuser").one()
+    assert target.is_admin is False
+
+    # Promote to admin.
+    r = ui.post(f"/ui/settings/admin-users/{target.id}/role",
+                data={"role": "admin"}, follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    assert db.get(AppUser, target.id).is_admin is True
+
+    # Demote back to standard.
+    ui.post(f"/ui/settings/admin-users/{target.id}/role",
+            data={"role": "standard"}, follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, target.id).is_admin is False
+
+    # Guard: you can't change your own role (no self lock-out).
+    me = db.query(AppUser).filter(
+        AppUser.username == get_settings().initial_admin_username).one()
+    ui.post(f"/ui/settings/admin-users/{me.id}/role",
+            data={"role": "standard"}, follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, me.id).is_admin is True  # unchanged
+
+
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------

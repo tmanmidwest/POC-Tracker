@@ -83,6 +83,16 @@ def _candidate_username(claims: dict[str, Any], slug: str) -> str:
     return cleaned or f"{slug}-user"
 
 
+def _display_name_from_claims(claims: dict[str, Any]) -> str | None:
+    """Best display name from OIDC claims: 'name', else given + family."""
+    name = (claims.get("name") or "").strip()
+    if name:
+        return name[:200]
+    parts = [str(claims.get("given_name") or "").strip(), str(claims.get("family_name") or "").strip()]
+    combined = " ".join(p for p in parts if p)
+    return combined[:200] or None
+
+
 def _unique_username(db: Session, base: str) -> str:
     """Return `base`, or `base-2`, `base-3`, … if it's already taken."""
     candidate = base
@@ -130,6 +140,7 @@ def find_or_create_user(
         is_active=True,
         is_seeded=False,
         last_login_at=now,
+        display_name=_display_name_from_claims(claims),
     )
     db.add(user)
     db.flush()  # assign user.id

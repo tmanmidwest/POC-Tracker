@@ -48,7 +48,7 @@
       <tr onclick="window.location='/ui/projects/{{ p.id }}'" style="cursor:pointer;">
         <td><strong>{{ p.customer.name }}</strong></td>
         {% if 'name' in cols %}<td>{{ p.name or "—" }}</td>{% endif %}
-        {% if 'sales_engineer' in cols %}<td class="text-muted">{{ p.sales_engineer.username if p.sales_engineer else "—" }}</td>{% endif %}
+        {% if 'sales_engineer' in cols %}<td class="text-muted">{{ p.sales_engineer.display_label if p.sales_engineer else "—" }}</td>{% endif %}
         {% if 'account_executive' in cols %}<td class="text-muted">{{ p.account_executive or "—" }}</td>{% endif %}
         {% if 'salesforce' in cols %}<td>{% if p.salesforce_opp_url %}<a href="{{ p.salesforce_opp_url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Salesforce Opp ↗</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
         {% if 'start_date' in cols %}<td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>{% endif %}

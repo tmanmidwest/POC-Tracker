@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set page_title = "Edit User" %}
+{% block breadcrumb %}
+<a href="/ui/settings/admin-users">Admin Users</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>{{ target_user.username }}</span>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>Edit</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Edit User</h1>
+    <p class="page-header__subtitle">
+      <strong>{{ target_user.username }}</strong>
+      {% if target_user.id == current_user.id %}<span class="badge badge--neutral text-xs">You</span>{% endif %}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/admin-users" class="btn btn--ghost">← Back</a>
+  </div>
+</div>
+
+<form method="post" action="/ui/settings/admin-users/{{ target_user.id }}/edit" class="card" style="max-width: 480px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="display_name">Display name</label>
+      <input class="input" id="display_name" name="display_name" value="{{ target_user.display_name or '' }}" maxlength="200" placeholder="e.g. Robby Smith" autofocus />
+      <div class="form-hint">Shown in the UI (e.g. the Sales Engineer field). Leave blank to use the username ({{ target_user.username }}).</div>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/admin-users" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save</button>
+  </div>
+</form>
+{% endblock %}

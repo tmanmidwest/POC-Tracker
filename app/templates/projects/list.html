@@ -54,7 +54,7 @@
       <td><strong>{{ p.customer.name }}</strong></td>
       <td>{{ p.name or "—" }}{% if p.is_archived %} <span class="badge badge--neutral">Archived</span>{% endif %}</td>
       <td><span class="badge badge--neutral">{{ p.status.name }}</span></td>
-      <td class="text-muted">{{ p.sales_engineer.username if p.sales_engineer else "—" }}</td>
+      <td class="text-muted">{{ p.sales_engineer.display_label if p.sales_engineer else "—" }}</td>
       <td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>
       <td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>
     </tr>

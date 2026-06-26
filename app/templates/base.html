@@ -105,7 +105,7 @@
         <a href="/docs" target="_blank" class="sidebar__link">API Docs ↗</a>
       </nav>
 
-      <div class="sidebar__footer">v{{ app_version }} · {{ current_user.username if current_user else "" }}</div>
+      <div class="sidebar__footer">v{{ app_version }} · {{ current_user.display_label if current_user else "" }}</div>
     </aside>
 
     <header class="topbar">
@@ -118,7 +118,7 @@
           <span aria-hidden="true">{{ '☀' if theme == 'dark' else '☾' }}</span>
         </button>
         {% if current_user %}
-          <span class="topbar__user-name">{{ current_user.username }}</span>
+          <span class="topbar__user-name">{{ current_user.display_label }}</span>
           <form action="/ui/logout" method="post" style="margin:0;">
             <button type="submit" class="btn btn--ghost btn--sm">Sign out</button>
           </form>

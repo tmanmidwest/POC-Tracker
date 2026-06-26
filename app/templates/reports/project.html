@@ -19,7 +19,7 @@
     <th>POC name</th><td>{{ project.name or "—" }}</td>
   </tr>
   <tr>
-    <th>Sales Engineer</th><td>{{ project.sales_engineer.username if project.sales_engineer else "—" }}</td>
+    <th>Sales Engineer</th><td>{{ project.sales_engineer.display_label if project.sales_engineer else "—" }}</td>
     <th>Account Executive</th><td>{{ project.account_executive or "—" }}{% if project.account_executive_email %} &lt;{{ project.account_executive_email }}&gt;{% endif %}</td>
   </tr>
   <tr>
