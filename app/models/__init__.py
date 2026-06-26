@@ -9,6 +9,7 @@ from app.models.app_branding import AppBranding
 from app.models.app_config import AppConfig
 from app.models.app_user import AppUser
 from app.models.audit_event import AuditEvent
+from app.models.backup_run import BackupRun
 from app.models.auth_provider import AuthProvider
 from app.models.contact import Contact
 from app.models.contact_role import ContactRole
@@ -33,6 +34,7 @@ __all__ = [
     "AppConfig",
     "AppUser",
     "AuditEvent",
+    "BackupRun",
     "AuthProvider",
     "Contact",
     "ContactRole",

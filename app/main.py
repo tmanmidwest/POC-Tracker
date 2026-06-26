@@ -53,6 +53,14 @@ async def lifespan(_app: FastAPI) -> Any:
     settings = get_settings()
     settings.ensure_data_dir()
 
+    # Apply any staged restore BEFORE the engine/migrations touch the DB, so the
+    # restored files are swapped in first; migrations then bring the restored
+    # schema up to head. Safe here because nothing has opened the DB yet.
+    from app.services.backups import apply_pending_restore
+
+    if apply_pending_restore():
+        log.info("startup_restore_applied")
+
     # Run migrations FIRST (before any DB access), then seed
     from app.db import get_session_factory
     from app.services.audit import prune_old_events

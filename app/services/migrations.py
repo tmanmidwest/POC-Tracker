@@ -42,3 +42,29 @@ def run_migrations() -> None:
     log.info("running_migrations", extra={"database_url": settings.database_url})
     command.upgrade(cfg, "head")
     log.info("migrations_complete")
+
+
+def head_revision() -> str | None:
+    """Return the latest migration revision known to this codebase (the head)."""
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(_build_alembic_config())
+    return script.get_current_head()
+
+
+def is_known_revision(revision: str | None) -> bool:
+    """Whether the given revision exists in this codebase's migration history.
+
+    Used to reject restoring a backup taken from a *newer* app version, whose
+    schema revision this code wouldn't know how to handle.
+    """
+    if not revision:
+        # No revision recorded — treat as restorable (migrations will bring it up).
+        return True
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(_build_alembic_config())
+    try:
+        return script.get_revision(revision) is not None
+    except Exception:
+        return False

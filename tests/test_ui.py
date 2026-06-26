@@ -299,7 +299,13 @@ def test_project_report_html_and_zip(ui: TestClient) -> None:
 
 
 def test_project_report_pdf(ui: TestClient) -> None:
-    pytest.importorskip("weasyprint")  # needs system libs; runs in the container
+    # Needs system libs (pango/glib); runs in the container/CI. Importing
+    # WeasyPrint raises ImportError when the Python package is missing and
+    # OSError when its native libraries can't be loaded — skip on either.
+    try:
+        import weasyprint  # noqa: F401
+    except (ImportError, OSError):
+        pytest.skip("WeasyPrint or its native libraries are unavailable")
 
     cid = _create_customer(ui, "PDF Co")
     pid = _create_project(ui, cid, "PDF POC")

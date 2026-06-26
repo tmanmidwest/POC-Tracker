@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.models import ApiKey, AppBranding, AppUser, AuthProvider, OAuthClient, UserIdentity
 from app.models.app_branding import BRANDING_ID
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import DEFAULT_SCOPES
+from app.models.backup_run import BackupRun
+from app.services import backups as backup_service
 from app.services import branding as branding_service
 from app.services import mcp_gateway, mcp_token, seed_data, system_config
 from app.services.audit import prune_old_events, record_event
@@ -1388,3 +1392,230 @@ def do_reset(
     )
     flash(request, "Reset complete: " + ", ".join(actions) + ".", "success")
     return RedirectResponse(url="/ui/settings/reset", status_code=303)
+
+
+# ===========================================================================
+# Backups
+# ===========================================================================
+
+# Cap restore uploads defensively. Backups can be large (they bundle uploaded
+# files), so this is generous; it only guards against absurd inputs.
+_MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+
+
+def _backup_row(run: BackupRun) -> dict:
+    """Shape a BackupRun for the template (parse stored counts JSON)."""
+    counts = {}
+    if run.counts_json:
+        try:
+            counts = json.loads(run.counts_json)
+        except (ValueError, TypeError):
+            counts = {}
+    return {"run": run, "counts": counts}
+
+
+@router.get("/backups")
+def backups_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    runs = [_backup_row(r) for r in backup_service.list_runs(db)]
+    return render(
+        request,
+        "settings/backups.html",
+        current_user=user,
+        active_subsection="backups",
+        backups=runs,
+        retention=get_settings().backup_retention_count,
+        pending_restore=backup_service.pending_restore_info(),
+    )
+
+
+@router.post("/backups/create")
+def create_backup(
+    request: Request,
+    passphrase: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    phrase = passphrase.strip() or None
+    try:
+        run = backup_service.create_backup(db, created_by=user.username, passphrase=phrase)
+    except Exception as exc:
+        flash(request, f"Backup failed: {exc}", "error")
+        return RedirectResponse(url="/ui/settings/backups", status_code=303)
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="backup.created",
+        target_type="backup", target_id=run.id, target_label=run.filename,
+        message=f"Created backup '{run.filename}'",
+        detail={"encrypted": run.encrypted, "size_bytes": run.size_bytes},
+    )
+    flash(
+        request,
+        "Backup created" + (" (encrypted)." if phrase else ".") + " Download it below.",
+        "success",
+    )
+    return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+
+@router.get("/backups/{run_id}/download")
+def download_backup(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    run = db.get(BackupRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Backup not found.")
+    path = backup_service.archive_path(run)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Backup file is missing.")
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="backup.downloaded",
+        target_type="backup", target_id=run.id, target_label=run.filename,
+        message=f"Downloaded backup '{run.filename}'",
+    )
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=run.filename,
+        content_disposition_type="attachment",
+    )
+
+
+@router.post("/backups/{run_id}/delete")
+def delete_backup(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    run = db.get(BackupRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Backup not found.")
+    label = run.filename
+    backup_service.delete_run(db, run)
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="backup.deleted",
+        target_type="backup", target_id=run_id, target_label=label,
+        message=f"Deleted backup '{label}'",
+    )
+    flash(request, "Backup deleted.", "success")
+    return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+
+@router.post("/backups/restore")
+async def restore_backup(
+    request: Request,
+    backup_file: UploadFile = File(...),
+    passphrase: str = Form(""),
+    confirm: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    if confirm.strip() != "RESTORE":
+        flash(request, "Type RESTORE to confirm before restoring.", "error")
+        return RedirectResponse(url="/ui/settings/backups", status_code=303)
+    if not backup_file or not backup_file.filename:
+        flash(request, "Choose a backup file to restore.", "error")
+        return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+    # Buffer the upload to a temp file so the validator can open it as a zip.
+    settings = get_settings()
+    settings.ensure_data_dir()
+    tmp = settings.data_dir / f".restore-upload-{secrets_token()}.zip"
+    try:
+        size = 0
+        with tmp.open("wb") as out:
+            while chunk := await backup_file.read(1024 * 1024):
+                size += len(chunk)
+                if size > _MAX_RESTORE_BYTES:
+                    raise backup_service.BackupError("Upload is too large.")
+                out.write(chunk)
+        manifest = backup_service.stage_restore(tmp, passphrase.strip() or None)
+    except backup_service.BackupError as exc:
+        flash(request, f"Restore rejected: {exc}", "error")
+        return RedirectResponse(url="/ui/settings/backups", status_code=303)
+    except Exception as exc:
+        log.exception("ui_restore_stage_failed", extra={"by": user.username})
+        flash(request, f"Restore failed: {exc}", "error")
+        return RedirectResponse(url="/ui/settings/backups", status_code=303)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="restore.staged",
+        message=f"Staged a restore from a backup ({backup_file.filename})",
+        detail={"manifest": {k: manifest.get(k) for k in ("app_version", "created_at")}},
+    )
+    flash(
+        request,
+        "Restore staged and verified. Restart the app to apply it — a safety "
+        "backup of the current data will be taken automatically first.",
+        "success",
+    )
+    return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+
+@router.post("/backups/restore/cancel")
+def cancel_restore(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    if backup_service.cancel_pending_restore():
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="restore.cancelled",
+            message="Cancelled a staged restore",
+        )
+        flash(request, "Staged restore cancelled.", "success")
+    return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+
+@router.post("/backups/restart")
+def restart_app(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Trigger a process exit so a supervisor (Docker `restart: unless-stopped`,
+    systemd, etc.) starts a fresh process — which applies any staged restore.
+
+    No-op-safe if unsupervised: the process simply exits. We send the signal a
+    beat after responding so this redirect still reaches the browser.
+    """
+    import os
+    import signal
+    import threading
+
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="app.restart_requested",
+        message="Requested an app restart from the UI",
+    )
+    threading.Timer(1.0, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    flash(
+        request,
+        "Restart requested. The app will be back shortly if it runs under a "
+        "process supervisor; refresh in a few seconds.",
+        "info",
+    )
+    return RedirectResponse(url="/ui/settings/backups", status_code=303)
+
+
+def secrets_token() -> str:
+    """Short random token for temp upload filenames."""
+    import secrets
+
+    return secrets.token_hex(8)

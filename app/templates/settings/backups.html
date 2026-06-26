@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% set page_title = "Backups" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Backups</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Backups</h1>
+    <p class="page-header__subtitle">Create a downloadable backup of the database, uploaded files, and keys — and restore from one.</p>
+  </div>
+</div>
+
+{# ---- Staged-restore banner ---- #}
+{% if pending_restore %}
+<div class="card" style="margin-bottom: var(--s-5); border-color: var(--danger-line);">
+  <div class="card__header" style="background: var(--danger-soft); border-bottom-color: var(--danger-line);">
+    <h2 class="card__title" style="color: var(--danger);">⚠ Restore staged — pending restart</h2>
+  </div>
+  <div class="card__body">
+    <p class="text-muted mb-4">
+      A restore was uploaded and verified
+      {% if pending_restore.manifest and pending_restore.manifest.created_at %}
+        (backup from {{ pending_restore.manifest.created_at[:10] }}{% if pending_restore.manifest.app_version %}, app v{{ pending_restore.manifest.app_version }}{% endif %})
+      {% endif %}.
+      It will be applied on the next app start — the current data is automatically
+      saved as a safety backup first. Until then, nothing has changed.
+    </p>
+    <div style="display:flex; gap: var(--s-3);">
+      <form method="post" action="/ui/settings/backups/restart" style="margin:0;"
+            onsubmit="return confirm('Restart now to apply the restore? The app will be briefly unavailable.');">
+        <button class="btn btn--danger">Restart now to apply</button>
+      </form>
+      <form method="post" action="/ui/settings/backups/restore/cancel" style="margin:0;"
+            onsubmit="return confirm('Discard the staged restore? Nothing will be changed.');">
+        <button class="btn btn--secondary">Cancel staged restore</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ---- Create backup ---- #}
+<div class="card" style="margin-bottom: var(--s-5); max-width: 720px;">
+  <div class="card__header"><h2 class="card__title">Create a backup</h2></div>
+  <form method="post" action="/ui/settings/backups/create" class="card__body">
+    <p class="text-muted mb-4">
+      Bundles a consistent database snapshot, all note attachments and screenshots,
+      and the instance's secret keys into a single <code>.zip</code> you can download.
+      The newest {{ retention }} backup{{ "s" if retention != 1 else "" }} are kept on the server; older ones are pruned automatically.
+    </p>
+    <div class="form-row">
+      <label class="label" for="passphrase">Passphrase <span class="text-muted text-xs">(optional)</span></label>
+      <input class="input" type="password" id="passphrase" name="passphrase" autocomplete="new-password"
+             placeholder="Encrypt the backup with AES-256" />
+      <div class="form-hint">
+        If set, the archive is encrypted (AES-256) and this passphrase is required to restore it.
+        <strong>It is not stored anywhere</strong> — if you lose it, the backup is unrecoverable.
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn--primary">Create backup</button>
+    </div>
+  </form>
+</div>
+
+{# ---- History ---- #}
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header"><h2 class="card__title">Backup history</h2></div>
+  <div class="card__body" style="padding:0;">
+    {% if backups %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>Created</th><th>By</th><th>Contents</th><th>Size</th><th>Type</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for b in backups %}
+        {% set run = b.run %}
+        <tr>
+          <td>{{ run.created_at.strftime('%b %-d, %Y %-I:%M %p') }}</td>
+          <td>{{ run.created_by or "—" }}</td>
+          <td class="text-xs text-muted">
+            {% if b.counts %}
+              {{ b.counts.get('projects', 0) }} projects · {{ b.counts.get('notes', 0) }} notes ·
+              {{ b.counts.get('attachments', 0) }} files · {{ b.counts.get('screenshots', 0) }} shots
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ run.size_bytes | filesizeformat if run.size_bytes else "—" }}</td>
+          <td>
+            {% if run.encrypted %}<span class="badge badge--neutral">🔒 encrypted</span>
+            {% else %}<span class="badge badge--neutral">plain</span>{% endif %}
+          </td>
+          <td>
+            {% if run.status == 'success' %}<span class="badge badge--success">success</span>
+            {% else %}<span class="badge badge--warning" title="{{ run.error }}">failed</span>{% endif %}
+          </td>
+          <td class="table__actions">
+            {% if run.status == 'success' and run.filename %}
+            <a href="/ui/settings/backups/{{ run.id }}/download" class="btn btn--secondary btn--sm">Download</a>
+            {% endif %}
+            <form method="post" action="/ui/settings/backups/{{ run.id }}/delete" style="margin:0; display:inline;"
+                  onsubmit="return confirm('Delete this backup record{% if run.filename %} and its file{% endif %}?');">
+              <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Delete">×</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-muted text-xs" style="padding: var(--s-5);">No backups yet. Create one above.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- Restore ---- #}
+<div class="card" style="max-width: 720px; border-color: var(--danger-line);">
+  <div class="card__header" style="background: var(--danger-soft); border-bottom-color: var(--danger-line);">
+    <h2 class="card__title" style="color: var(--danger);">⚠ Restore from a backup</h2>
+  </div>
+  <form method="post" action="/ui/settings/backups/restore" enctype="multipart/form-data" class="card__body">
+    <p class="text-muted mb-4">
+      Restoring <strong>replaces all current data</strong> — projects, notes, files, users, and keys —
+      with the contents of the uploaded backup. The upload is verified now and applied on the next
+      restart; a safety backup of the current data is taken automatically before anything is overwritten.
+    </p>
+    <div class="form-row">
+      <label class="label" for="backup_file">Backup file (.zip)<span class="label__required">*</span></label>
+      <input class="input" type="file" id="backup_file" name="backup_file" accept=".zip" required />
+    </div>
+    <div class="form-row">
+      <label class="label" for="restore_passphrase">Passphrase</label>
+      <input class="input" type="password" id="restore_passphrase" name="passphrase"
+             autocomplete="off" placeholder="Required only if the backup is encrypted" />
+    </div>
+    {# Reuses the global typed-confirmation handler (#reset-confirm-input / #reset-submit). #}
+    <div data-reset-phrase="RESTORE" style="margin-top: var(--s-4);">
+      <label class="label" for="reset-confirm-input">
+        To confirm, type <span class="kbd">RESTORE</span> below:<span class="label__required">*</span>
+      </label>
+      <input class="input mono" id="reset-confirm-input" name="confirm" autocomplete="off"
+             placeholder="Type RESTORE to enable the button" />
+    </div>
+    <div class="form-actions">
+      <a href="/ui/settings" class="btn btn--secondary">Cancel</a>
+      <button type="submit" id="reset-submit" class="btn btn--danger" disabled>Stage restore</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

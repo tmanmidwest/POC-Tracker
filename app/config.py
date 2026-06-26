@@ -82,6 +82,15 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Backups ---
+    backup_retention_count: int = Field(
+        default=2,
+        description=(
+            "How many generated backup archives to keep on disk under "
+            "<data_dir>/backups. Older ones are pruned after each new backup."
+        ),
+    )
+
     # --- App metadata ---
     app_name: str = Field(default="POC Tracker")
     app_version: str = Field(default="0.1.0")
@@ -117,6 +126,32 @@ class Settings(BaseSettings):
     def initial_credentials_path(self) -> Path:
         """Path to the initial credentials marker file."""
         return self.data_dir / "INITIAL_CREDENTIALS.txt"
+
+    @property
+    def backups_dir(self) -> Path:
+        """Directory holding generated backup archives (kept on the data volume)."""
+        return self.data_dir / "backups"
+
+    @property
+    def restore_staging_dir(self) -> Path:
+        """Directory where an uploaded restore archive is unpacked and held until
+        the next startup applies it."""
+        return self.data_dir / "restore_pending"
+
+    @property
+    def restore_marker_path(self) -> Path:
+        """Marker file signalling a staged restore to apply on next startup."""
+        return self.data_dir / "RESTORE_PENDING.json"
+
+    @property
+    def secret_key_paths(self) -> list[Path]:
+        """The persisted secret-key files included in a backup so a restored
+        instance can still decrypt provider secrets and validate sessions."""
+        return [
+            self.session_secret_path,
+            self.jwt_signing_key_path,
+            self.provider_secret_key_path,
+        ]
 
     # --- Helpers ---
 

@@ -26,6 +26,8 @@ an MCP server so other tools and AI assistants can read and report on the data.
   statuses to show, sort).
 - **Reporting** — an all-POCs overview and a print-friendly single-POC report.
 - **Activity log** — persisted audit events with a viewer and JSON/CSV export.
+- **Backups** — create a downloadable, optionally AES-256-encrypted archive of the whole
+  instance (database + uploaded files + keys) and restore from one, all in the UI.
 - **REST API** (`/api/v1`, OpenAPI at `/docs`) and an **MCP server** for AI-driven queries/reports.
 
 ## Quick start (local)
@@ -80,7 +82,39 @@ All settings are environment variables prefixed `POCT_` (see `app/config.py`):
 | `POCT_INITIAL_ADMIN_USERNAME` / `POCT_INITIAL_ADMIN_PASSWORD` | `robbytheadmin` / … | Seeded admin |
 | `POCT_PUBLIC_BASE_URL` | — | External URL for OIDC redirect URIs behind a proxy |
 | `POCT_AUDIT_RETENTION_DAYS` | `30` | Activity-log retention (0 = keep forever) |
+| `POCT_BACKUP_RETENTION_COUNT` | `2` | How many generated backup archives to keep on disk |
 | `POCT_HOST_PORT` | `8010` | Host port mapping for docker-compose |
+
+## Backups & restore
+
+Admins manage backups under **Settings → Backups**.
+
+**Create a backup.** Click **Create backup** to produce a single `.zip` containing a
+*consistent* SQLite snapshot, all note attachments and screenshots, and the instance's
+secret keys. Provide an optional **passphrase** to encrypt the archive (AES-256) — the
+passphrase is required to restore and is **never stored**, so keep it safe. Download the
+archive from the history table. The newest `POCT_BACKUP_RETENTION_COUNT` archives (default
+**2**) are kept on the data volume; older ones are pruned automatically.
+
+> Archives contain secrets (password hashes, API keys, signing keys). They are written
+> `0600` on the data volume — store downloaded copies somewhere safe, and prefer the
+> passphrase option.
+
+**Restore.** Upload a backup `.zip` (with its passphrase, if encrypted) and type `RESTORE`
+to confirm. The upload is **verified immediately** (checksum, schema compatibility,
+passphrase) but applied on the **next app start** — restoring overwrites *all* current data
+(projects, files, users, keys). Before anything is overwritten, a `pre-restore-*.zip` safety
+snapshot of the current state is written to the backups directory automatically.
+
+After staging a restore, restart the app to apply it:
+
+- **Docker / supervised:** click **Restart now to apply** (the app exits and the supervisor
+  starts a fresh process), or restart the container yourself.
+- **Manual runs:** stop and re-run `python -m app.main`.
+
+Everything lives on the `POCT_DATA_DIR` volume (`/data` in Docker). For off-box durability,
+download backups regularly or snapshot the volume — keeping archives only on the same volume
+is convenience, not disaster recovery.
 
 ## REST API
 
