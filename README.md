@@ -25,6 +25,8 @@ an MCP server so other tools and AI assistants can read and report on the data.
 - **Dashboard** — projects grouped by status, with per-user preferences (columns, which
   statuses to show, sort).
 - **Reporting** — an all-POCs overview and a print-friendly single-POC report.
+- **Global search** — one search box (in the top bar) over projects, use cases, the library,
+  notes, customers, contacts, and files, with live as-you-type results and a full results page.
 - **Activity log** — persisted audit events with a viewer and JSON/CSV export.
 - **Backups** — create a downloadable, optionally AES-256-encrypted archive of the whole
   instance (database + uploaded files + keys) and restore from one, all in the UI.
@@ -115,6 +117,18 @@ After staging a restore, restart the app to apply it:
 Everything lives on the `POCT_DATA_DIR` volume (`/data` in Docker). For off-box durability,
 download backups regularly or snapshot the volume — keeping archives only on the same volume
 is convenience, not disaster recovery.
+
+## Search
+
+A search box in the top bar runs a **full-text search across everything** — projects, use
+cases, the use-case library, dated notes, customers, contacts, and uploaded files (by name
+/ caption). Results stream in **as you type** (grouped by type, with the match highlighted),
+and pressing Enter opens a full results page.
+
+Under the hood it's a single SQLite **FTS5** index (`search_index`) kept in sync by database
+triggers, ranked with `bm25`. Notes are indexed on their plain text, not the rich-text HTML.
+The index lives inside the database file, so it's covered by backup/restore automatically and
+needs no separate maintenance. Tune nothing to use it; it's built and populated by migration.
 
 ## REST API
 

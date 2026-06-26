@@ -189,3 +189,19 @@ document.addEventListener('keydown', (e) => {
     document.querySelectorAll('.ucmodal:not([hidden])').forEach(pocClose);
   }
 });
+
+// Global search dropdown: clear/hide the suggestions when clicking outside the
+// topbar search, and on Escape. The dropdown content itself is filled by HTMX.
+(function () {
+  const search = document.querySelector('.topbar__search');
+  if (!search) return;
+  const panel = search.querySelector('#search-suggest');
+  const input = search.querySelector('input[name="q"]');
+  const clear = () => { if (panel) panel.innerHTML = ''; };
+  document.addEventListener('click', (e) => {
+    if (!search.contains(e.target)) clear();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { clear(); if (input) input.blur(); }
+  });
+})();

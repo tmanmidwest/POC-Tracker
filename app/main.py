@@ -185,6 +185,7 @@ def create_app() -> FastAPI:
     from app.ui.oidc_routes import router as ui_oidc_router
     from app.ui.project_routes import router as ui_project_router
     from app.ui.report_routes import router as ui_report_router
+    from app.ui.search_routes import router as ui_search_router
     from app.ui.settings_routes import router as ui_settings_router
 
     # Open to any logged-in user (standard or admin).
@@ -195,6 +196,7 @@ def create_app() -> FastAPI:
     app.include_router(ui_customer_router)
     app.include_router(ui_report_router)
     app.include_router(ui_audit_router)
+    app.include_router(ui_search_router)
 
     # Admin-only surfaces — gated at the router level.
     admin_only = [Depends(require_admin_ui)]

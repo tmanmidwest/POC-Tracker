@@ -40,6 +40,9 @@ def _build_engine() -> Engine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        # Make ON DELETE CASCADE fire row triggers too, so the full-text
+        # search index is cleaned up when a parent (e.g. a project) is deleted.
+        cursor.execute("PRAGMA recursive_triggers=ON")
         cursor.close()
 
     return engine

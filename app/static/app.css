@@ -1196,6 +1196,85 @@ html[data-theme="dark"] {
 html[data-theme="dark"] { color-scheme: dark; }
 
 /* ---------------------------------------------------------------------------
+ * Global search — topbar box + as-you-type dropdown + results.
+ * ------------------------------------------------------------------------- */
+.topbar__search {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 460px;
+  margin: 0 var(--s-4);
+}
+.topbar__search-input { width: 100%; }
+
+.search-suggest { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 60; }
+.search-suggest__panel {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg, 0 16px 32px -8px rgba(0,0,0,0.18));
+  overflow: hidden;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.search-suggest__group {
+  padding: var(--s-2) var(--s-3) 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-subtle);
+}
+.search-suggest__item {
+  display: block;
+  padding: 6px var(--s-3);
+  text-decoration: none;
+  color: var(--text);
+  border-top: 1px solid var(--line);
+}
+.search-suggest__item:first-of-type { border-top: none; }
+.search-suggest__item:hover { background: var(--surface-2); }
+.search-suggest__title { display: block; font-size: 13px; font-weight: 500; }
+.search-suggest__snippet,
+.search-result__snippet {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-suggest__all {
+  display: block;
+  padding: var(--s-2) var(--s-3);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: none;
+}
+.search-suggest__all:hover { background: var(--surface-2); }
+.search-suggest__empty { padding: var(--s-3); font-size: 13px; color: var(--text-muted); }
+
+.search-result {
+  display: block;
+  padding: var(--s-3);
+  text-decoration: none;
+  color: var(--text);
+  border-top: 1px solid var(--line);
+}
+.search-result:first-child { border-top: none; }
+.search-result:hover { background: var(--surface-2); }
+.search-result__title { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
+.search-result__snippet { white-space: normal; }
+
+mark {
+  background: var(--primary-soft);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------------------
  * Rich-text editor (Quill) — style the snow theme to match the app's inputs.
  * ------------------------------------------------------------------------- */
 .rte {

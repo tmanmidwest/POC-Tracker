@@ -1,0 +1,19 @@
+{# Live search dropdown fragment (HTMX target). Standalone — no base layout. #}
+{% if total %}
+<div class="search-suggest__panel">
+  {% for type, hits in groups.items() %}
+  <div class="search-suggest__group">{{ hits[0].type_label }}</div>
+  {% for h in hits %}
+  <a class="search-suggest__item" href="{{ h.url }}">
+    <span class="search-suggest__title">{{ h.title }}</span>
+    {% if h.subtitle %}<span class="search-suggest__snippet">{{ h.subtitle }}</span>{% endif %}
+  </a>
+  {% endfor %}
+  {% endfor %}
+  <a class="search-suggest__all" href="/ui/search?q={{ query | urlencode }}">See all results for “{{ query }}” →</a>
+</div>
+{% elif query and query | trim | length >= 2 %}
+<div class="search-suggest__panel">
+  <div class="search-suggest__empty">No matches for “{{ query }}”.</div>
+</div>
+{% endif %}

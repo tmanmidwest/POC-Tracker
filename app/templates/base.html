@@ -113,6 +113,15 @@
       <div class="topbar__breadcrumb">
         {% block breadcrumb %}{% endblock %}
       </div>
+      {% if current_user %}
+      <form class="topbar__search" action="/ui/search" method="get" role="search" autocomplete="off">
+        <input class="input topbar__search-input" type="search" name="q" placeholder="Search projects, use cases, notes…"
+               aria-label="Search"
+               hx-get="/ui/search/suggest" hx-trigger="keyup changed delay:200ms, focus"
+               hx-target="#search-suggest" hx-swap="innerHTML" />
+        <div id="search-suggest" class="search-suggest"></div>
+      </form>
+      {% endif %}
       <div class="topbar__user">
         <button type="button" class="btn btn--ghost btn--sm" id="theme-toggle"
                 title="Toggle dark mode" aria-label="Toggle dark mode" onclick="toggleTheme(this)">
