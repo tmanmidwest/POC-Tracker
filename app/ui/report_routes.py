@@ -7,6 +7,7 @@ report shows everything captured for one POC in a clean layout.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
 from typing import Any
 
@@ -43,6 +44,9 @@ def _report_context(project: Project, user: AppUser) -> dict[str, Any]:
         "generated_on": date.today().strftime("%b %-d, %Y"),
         "has_artifacts": report_archive.project_has_artifacts(project),
         "branding": current_branding(),
+        # Per-render token appended to the PDF/zip download links so the browser
+        # can never serve a cached copy from a previous (pre-fix) download.
+        "cache_bust": str(int(time.time())),
     }
 
 

@@ -282,11 +282,14 @@ def test_project_report_html_and_zip(ui: TestClient) -> None:
     assert "Journal entry one" in r.text
     assert "/ui/projects/screenshots/" in r.text
     assert "Download all (.zip)" in r.text  # has_artifacts -> zip button shown
+    assert "artifacts.zip?v=" in r.text  # cache-busted download link
+    assert "/pdf?v=" in r.text
 
     # Zip bundles screenshots + attachments (and the PDF when WeasyPrint is present).
     z = ui.get(f"/ui/reports/projects/{pid}/artifacts.zip")
     assert z.status_code == 200
     assert z.headers["content-type"] == "application/zip"
+    assert "no-store" in z.headers.get("cache-control", "")  # never browser-cached
     names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
     assert any("/screenshots/" in n for n in names), names
     assert any("/attachments/" in n for n in names), names
