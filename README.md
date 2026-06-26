@@ -10,9 +10,16 @@ an MCP server so other tools and AI assistants can read and report on the data.
 ## Features
 
 - **Local authentication** out of the box, plus optional **OIDC single sign-on** (add any
-  OAuth/OIDC identity provider in the UI).
-- **Two groups:** **Admins** can do anything; **standard users** can add/edit POC
-  projects and their use cases.
+  OAuth/OIDC provider — e.g. Okta, Authentik, or Google — in the UI). Each provider chooses
+  whether new users land as full internal users or read-only **external viewers**.
+- **Three roles:** **Admins** can do anything; **standard users** add/edit POC projects and
+  use cases; **external viewers** are read-only and see only the projects explicitly shared
+  with them — ideal for giving a customer a login to their own POC.
+- **Per-project sharing** — an admin or a project's Sales Engineer can grant an external
+  viewer read access to specific projects.
+- **AI assistant** — configure an AI provider in the UI (Anthropic Claude today; Gemini and
+  OpenAI planned) to generate **executive summaries** (streamed live) and to **import use cases
+  from a requirements document** (paste/upload → AI extracts categorized use cases → review → add).
 - **API keys** and **OAuth client-credentials** for machine-to-machine access to the REST API.
 - **Customers & contacts** — contacts carry a role picked from a master list (Champion,
   Technical Stakeholder, …).
@@ -129,6 +136,49 @@ Under the hood it's a single SQLite **FTS5** index (`search_index`) kept in sync
 triggers, ranked with `bm25`. Notes are indexed on their plain text, not the rich-text HTML.
 The index lives inside the database file, so it's covered by backup/restore automatically and
 needs no separate maintenance. Tune nothing to use it; it's built and populated by migration.
+
+## Roles & sharing
+
+There are **three roles**:
+
+| Role | Can do | Where it comes from |
+|---|---|---|
+| **Admin** | Everything, including settings, lookups, the library, and user management. | Created in **Settings → Users**, or seeded. |
+| **Standard user** | Add/edit projects, use cases, notes, customers — but not admin surfaces. | Created in **Settings → Users**, or provisioned by an internal SSO provider. |
+| **External viewer** | **Read-only**, and sees **only the projects shared with them** (plus their reports). No customers list, no editing. | Created in **Settings → Users**, or auto-provisioned by an SSO provider configured for external users (e.g. Google). |
+
+**Sharing a project.** On a project's page, an **admin** or that project's assigned **Sales
+Engineer** sees a **Shared access** panel to grant or revoke read access for external viewers.
+A viewer with no grants sees an empty "nothing shared yet" state.
+
+**Federated customer logins.** When you add an OIDC provider in **Settings → Identity
+Providers**, set **New-user access** to *External viewer* so customer/partner logins (e.g.
+Google) are provisioned read-only and scoped to shared projects — while an internal provider
+(Okta/Authentik) can still provision standard users. Enforcement lives in the web UI; the REST
+API and MCP server remain internal/machine-only.
+
+## AI assistant
+
+Configure an AI provider once in **Settings → AI Assistant** (admin only): pick the provider,
+choose a model, and paste an API key. **Anthropic (Claude)** is implemented today; **Google
+(Gemini)** and **OpenAI** appear as "coming soon". Keys are stored **encrypted at rest**
+(Fernet) and are never shown back — there's no environment variable to set. One enabled
+provider is the **default** used for generation. The provider layer is pluggable, so adding a
+vendor is a single implementation file.
+
+Two features use it:
+
+- **Executive summaries.** On a project, click **Generate** to draft an exec-ready summary from
+  the project's use cases, statuses, progress, and notes. It **streams in live**, you can edit
+  it in the rich-text editor, and it appears at the top of the project's report and PDF. (If a
+  browser can't stream, it falls back to a one-shot generation automatically.)
+- **Requirements importer.** On a project's use-cases section, **Import from requirements**:
+  paste or upload a requirements document, and the model extracts categorized use cases
+  (reference number, category, name, description, success validation). You review and edit the
+  candidates, pick which to keep, and they're added as use cases.
+
+No API call is made until you configure a provider and trigger a feature; nothing is sent to a
+vendor automatically.
 
 ## REST API
 
