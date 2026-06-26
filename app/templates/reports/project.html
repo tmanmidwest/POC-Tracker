@@ -1,79 +1,97 @@
-{% extends "base.html" %}
-{% set page_title = project.display_name + " — Report" %}
-{% block breadcrumb %}<a href="/ui/reports">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
+{% extends "reports/base_report.html" %}
+{% set page_title = project.display_name ~ " — Report" %}
 
-{% block main %}
-<div class="page-header">
-  <div class="page-header__text">
-    <h1 class="page-header__title">{{ project.display_name }}</h1>
-    <p class="page-header__subtitle">{{ project.customer.name }} · {{ project.status.name }}</p>
-  </div>
-  <div class="page-header__actions">
-    <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Open project</a>
-    <button onclick="window.print()" class="btn btn--primary">Print / Save PDF</button>
-  </div>
+{% block content %}
+<h1>{{ project.display_name }}</h1>
+<p class="subtitle">{{ project.customer.name }} · {{ project.status.name }}
+  {% if project.is_archived %}· Archived{% endif %}</p>
+
+{# ---- Project details ---- #}
+<h2>Project details</h2>
+<div class="grid">
+  <div class="field"><div class="field__label">Customer</div><div class="field__value">{{ project.customer.name }}</div></div>
+  <div class="field"><div class="field__label">POC name</div><div class="field__value">{{ project.name or "—" }}</div></div>
+  <div class="field"><div class="field__label">Status</div><div class="field__value">{{ project.status.name }}</div></div>
+  <div class="field"><div class="field__label">Use-case progress</div><div class="field__value">{{ progress.done }}/{{ progress.total }} complete ({{ progress.pct }}%)</div></div>
+  <div class="field"><div class="field__label">Sales Engineer</div><div class="field__value">{{ project.sales_engineer.username if project.sales_engineer else "—" }}</div></div>
+  <div class="field"><div class="field__label">Account Executive</div><div class="field__value">{{ project.account_executive or "—" }}{% if project.account_executive_email %} &lt;{{ project.account_executive_email }}&gt;{% endif %}</div></div>
+  <div class="field"><div class="field__label">Start date</div><div class="field__value">{{ project.start_date.strftime('%b %-d, %Y') if project.start_date else "—" }}</div></div>
+  <div class="field"><div class="field__label">End date</div><div class="field__value">{{ project.end_date.strftime('%b %-d, %Y') if project.end_date else "—" }}</div></div>
+  <div class="field full"><div class="field__label">Salesforce opportunity</div><div class="field__value">{% if project.salesforce_opp_url %}<a href="{{ project.salesforce_opp_url }}">{{ project.salesforce_opp_url }}</a>{% else %}—{% endif %}</div></div>
+  {% if project.notes %}<div class="field full"><div class="field__label">Notes</div><div class="field__value prewrap">{{ project.notes }}</div></div>{% endif %}
 </div>
 
-<div class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__body" style="display:grid; grid-template-columns: repeat(2, 1fr); gap: var(--s-4);">
-    <div class="stat"><div class="stat__label">Customer</div><div class="stat__value">{{ project.customer.name }}</div></div>
-    <div class="stat"><div class="stat__label">Status</div><div class="stat__value">{{ project.status.name }}</div></div>
-    <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.username if project.sales_engineer else "—" }}</div></div>
-    <div class="stat"><div class="stat__label">Account Executive</div><div class="stat__value">{{ project.account_executive or "—" }}{% if project.account_executive_email %} ({{ project.account_executive_email }}){% endif %}</div></div>
-    <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
-    <div class="stat"><div class="stat__label">Progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} use cases complete ({{ progress.pct }}%)</div></div>
-    {% if project.salesforce_opp_url %}
-    <div class="stat"><div class="stat__label">Salesforce</div><div class="stat__value"><a href="{{ project.salesforce_opp_url }}" target="_blank" rel="noopener noreferrer">Salesforce Opp ↗</a></div></div>
-    {% endif %}
-  </div>
-  {% if project.notes %}<div class="card__body" style="border-top:1px solid var(--border);"><strong>Notes:</strong> {{ project.notes }}</div>{% endif %}
-</div>
-
+{# ---- Contacts ---- #}
 {% if project.customer.contacts %}
-<div class="card card--flush" style="margin-bottom: var(--s-5);">
-  <div class="card__header"><h3 class="card__title">Contacts</h3></div>
-  <div class="table-wrap"><table class="table">
-    <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th></tr></thead>
-    <tbody>
-      {% for ct in project.customer.contacts %}
-      <tr><td>{{ ct.name }}</td><td>{{ ct.role.name if ct.role else "—" }}</td><td>{{ ct.email or "—" }}</td><td>{{ ct.phone or "—" }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table></div>
-</div>
+<h2>Contacts</h2>
+<table>
+  <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th></tr></thead>
+  <tbody>
+    {% for c in project.customer.contacts %}
+    <tr><td>{{ c.name }}</td><td>{{ c.role.name if c.role else "—" }}</td><td>{{ c.email or "—" }}</td><td>{{ c.phone or "—" }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 
-{% for group in use_case_groups %}
-<div class="card card--flush" style="margin-bottom: var(--s-4);">
-  <div class="card__header"><h3 class="card__title">{{ group.category }}</h3></div>
-  <div class="table-wrap"><table class="table">
-    <thead><tr><th style="width:60px;">Ref</th><th>Use case</th><th>Status</th><th>Validation</th></tr></thead>
-    <tbody>
-      {% for uc in group.use_cases %}
-      <tr>
-        <td class="mono">{{ uc.reference_number or "—" }}</td>
-        <td>
-          <strong>{{ uc.name }}</strong>
-          {% if uc.description %}<br><span class="text-muted text-xs">{{ uc.description }}</span>{% endif %}
-          {% if uc.comments %}<br><span class="text-xs">💬 {{ uc.comments }}</span>{% endif %}
-          {% if uc.screenshots %}
-          <div style="display:flex; gap: var(--s-2); margin-top: var(--s-2); flex-wrap:wrap;">
-            {% for shot in uc.screenshots %}
-            <img src="/ui/projects/screenshots/{{ shot.id }}" alt="screenshot" style="height:90px; border-radius:6px; border:1px solid var(--border);" />
-            {% endfor %}
-          </div>
-          {% endif %}
-        </td>
-        <td><span class="badge {% if uc.status.is_complete_status %}badge--success{% else %}badge--neutral{% endif %}">{{ uc.status.name }}</span></td>
-        <td class="text-muted text-xs">{{ uc.success_validation or "—" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table></div>
-</div>
+{# ---- Project notes / journal ---- #}
+<h2>Project notes &amp; journal</h2>
+{% if project.note_entries %}
+  {% for note in project.note_entries %}
+  <div class="note">
+    <div class="note__head">
+      <span class="note__date">{{ note.note_date.strftime('%b %-d, %Y') }}</span>
+      {% if note.created_by %}<span class="muted xs">{{ note.created_by }}</span>{% endif %}
+    </div>
+    <div class="prewrap">{{ note.body }}</div>
+    {% if note.attachments %}
+    <div class="muted xs" style="margin-top:6px;">📎 Attachments:
+      {% for att in note.attachments %}<a href="/ui/projects/note-attachments/{{ att.id }}">{{ att.original_filename or att.stored_filename }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
 {% else %}
-  <div class="empty-state"><p class="empty-state__body">No use cases recorded for this POC.</p></div>
+  <p class="empty">No notes recorded.</p>
+{% endif %}
+
+{# ---- Use cases ---- #}
+<h2>Use cases</h2>
+{% if not use_case_groups %}
+  <p class="empty">No use cases.</p>
+{% endif %}
+{% for group in use_case_groups %}
+<h3 style="margin-top:14px;">{{ group.category }}</h3>
+{% for uc in group.use_cases %}
+<div class="uc">
+  <h3>{{ uc.reference_number ~ " · " if uc.reference_number }}{{ uc.name }}
+    {% if uc.status and uc.status.is_complete_status %}<span class="badge badge--ok">{{ uc.status.name }}</span>{% else %}<span class="badge">{{ uc.status.name if uc.status else "—" }}</span>{% endif %}
+  </h3>
+  <div class="uc__meta">
+    <span>Category: {{ uc.category }}</span>
+    <span>Feature: {{ uc.feature_type.name if uc.feature_type else "—" }}</span>
+    <span>Source: {{ uc.source }}</span>
+    <span>Completed on: {{ uc.completed_on.strftime('%b %-d, %Y') if uc.completed_on else "—" }}</span>
+  </div>
+  {% if uc.description %}<div class="uc__detail"><div class="lbl">Description</div><div class="prewrap">{{ uc.description }}</div></div>{% endif %}
+  {% if uc.success_validation %}<div class="uc__detail"><div class="lbl">Success validation</div><div class="prewrap">{{ uc.success_validation }}</div></div>{% endif %}
+  {% if uc.comments %}<div class="uc__detail"><div class="lbl">Comments</div><div class="prewrap">{{ uc.comments }}</div></div>{% endif %}
+  {% if uc.screenshots %}
+  <div class="shots">
+    <div class="lbl muted xs">Screenshots</div>
+    {% for shot in uc.screenshots %}
+    <div class="shot">
+      <img src="/ui/projects/screenshots/{{ shot.id }}" alt="{{ shot.caption or shot.original_filename or 'screenshot' }}" />
+      {% if shot.caption %}<div class="shot__cap">{{ shot.caption }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
 {% endfor %}
 
-<p class="text-muted text-xs" style="margin-top: var(--s-5);">Generated by {{ generated_for }} · {{ branding.name }}</p>
+<div class="report-footer">
+  Generated by {{ generated_for }} on {{ generated_on }} · {{ branding.name }}
+</div>
 {% endblock %}

@@ -17,7 +17,7 @@
     </p>
   </div>
   <div class="page-header__actions">
-    <a href="/ui/reports/projects/{{ project.id }}" class="btn btn--secondary">Report</a>
+    <a href="/ui/reports/projects/{{ project.id }}" target="_blank" rel="noopener" class="btn btn--secondary">Report</a>
     <a href="/ui/projects/{{ project.id }}/edit" class="btn btn--secondary">Edit</a>
     {% if project.is_archived %}
       <form action="/ui/projects/{{ project.id }}/restore" method="post" style="margin:0;"><button class="btn btn--primary">Restore</button></form>

@@ -41,10 +41,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     POCT_BIND_HOST=0.0.0.0 \
     POCT_BIND_PORT=8010
 
-# Install runtime-only dependencies (curl for healthcheck)
+# Install runtime-only dependencies:
+#  - curl/ca-certificates for the healthcheck
+#  - Pango + font packages are WeasyPrint's runtime requirement for PDF export
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libpangoft2-1.0-0 \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1000 poct \
     && useradd --system --uid 1000 --gid poct --home-dir /app --shell /usr/sbin/nologin poct

@@ -255,6 +255,54 @@ def test_project_notes_crud_and_attachments(ui: TestClient) -> None:
     assert db.query(NoteAttachment).filter(NoteAttachment.project_note_id == note.id).count() == 0
 
 
+def test_project_report_html_and_zip(ui: TestClient) -> None:
+    import io
+    import zipfile
+
+    from app.db import get_session_factory
+    from app.models import ProjectUseCase
+
+    cid = _create_customer(ui, "Report Co")
+    pid = _create_project(ui, cid, "Report POC")
+    ui.post(f"/ui/projects/{pid}/use-cases/from-library",
+            data={"library_ids": ["1"]}, follow_redirects=False)
+    db = get_session_factory()()
+    uc = db.query(ProjectUseCase).filter(ProjectUseCase.project_id == pid).first()
+    ui.post(f"/ui/projects/use-cases/{uc.id}/screenshots",
+            files={"file": ("shot.png", _png(), "image/png")}, follow_redirects=False)
+    ui.post(f"/ui/projects/{pid}/notes",
+            data={"body": "Journal entry one", "note_date": "2026-06-20"},
+            files=[("files", ("brief.pdf", b"%PDF-1.4 x", "application/pdf"))],
+            follow_redirects=False)
+
+    # Standalone report page: no nav sidebar, shows journal + screenshot + zip button.
+    r = ui.get(f"/ui/reports/projects/{pid}")
+    assert r.status_code == 200
+    assert "sidebar__nav" not in r.text  # navigation bar omitted
+    assert "Journal entry one" in r.text
+    assert "/ui/projects/screenshots/" in r.text
+    assert "Download all (.zip)" in r.text  # has_artifacts -> zip button shown
+
+    # Zip bundles screenshots + attachments (and the PDF when WeasyPrint is present).
+    z = ui.get(f"/ui/reports/projects/{pid}/artifacts.zip")
+    assert z.status_code == 200
+    assert z.headers["content-type"] == "application/zip"
+    names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+    assert any("/screenshots/" in n for n in names), names
+    assert any("/attachments/" in n for n in names), names
+
+
+def test_project_report_pdf(ui: TestClient) -> None:
+    pytest.importorskip("weasyprint")  # needs system libs; runs in the container
+
+    cid = _create_customer(ui, "PDF Co")
+    pid = _create_project(ui, cid, "PDF POC")
+    r = ui.get(f"/ui/reports/projects/{pid}/pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-"
+
+
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------

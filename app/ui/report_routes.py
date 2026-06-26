@@ -7,13 +7,17 @@ report shows everything captured for one POC in a clean layout.
 from __future__ import annotations
 
 import logging
+from datetime import date
+from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, Project, ProjectStatus
+from app.services import report_archive, report_pdf
+from app.services.branding import current_branding
 from app.ui.dependencies import require_ui_user
 from app.ui.project_routes import _get_project, _grouped_use_cases
 from app.ui.templating import render
@@ -27,6 +31,24 @@ def _progress(project: Project) -> dict[str, int]:
     total = len(project.use_cases)
     done = sum(1 for uc in project.use_cases if uc.status and uc.status.is_complete_status)
     return {"total": total, "done": done, "pct": round(done / total * 100) if total else 0}
+
+
+def _report_context(project: Project, user: AppUser) -> dict[str, Any]:
+    """Context shared by the on-screen report, the PDF, and the zip."""
+    return {
+        "project": project,
+        "use_case_groups": _grouped_use_cases(project),
+        "progress": _progress(project),
+        "generated_for": user.username,
+        "generated_on": date.today().strftime("%b %-d, %Y"),
+        "has_artifacts": report_archive.project_has_artifacts(project),
+        "branding": current_branding(),
+    }
+
+
+def _download_headers(filename: str, *, suffix: str) -> dict[str, str]:
+    base = report_archive._safe(filename, fallback="project")
+    return {"Content-Disposition": f'attachment; filename="{base}-{suffix}"'}
 
 
 @router.get("/")
@@ -60,9 +82,50 @@ def project_report(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    """Standalone, nav-free report page (opened in a new tab)."""
     project = _get_project(db, project_id)
     return render(
-        request, "reports/project.html", current_user=user, active_section="reports",
-        project=project, use_case_groups=_grouped_use_cases(project),
-        progress=_progress(project), generated_for=user.username,
+        request, "reports/project.html", current_user=user,
+        **_report_context(project, user),
+    )
+
+
+@router.get("/projects/{project_id}/pdf")
+def project_report_pdf(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Server-rendered PDF of the full project report."""
+    project = _get_project(db, project_id)
+    html = report_pdf.render_report_html(_report_context(project, user))
+    try:
+        pdf = report_pdf.project_report_pdf(project, html)
+    except Exception:  # pragma: no cover - depends on system libs
+        log.exception("report_pdf_failed", extra={"project_id": project_id})
+        raise HTTPException(status_code=500, detail="PDF generation failed.") from None
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers=_download_headers(project.display_name, suffix="report.pdf"),
+    )
+
+
+@router.get("/projects/{project_id}/artifacts.zip")
+def project_report_archive(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """A single zip with the report PDF, all screenshots, and all attachments."""
+    project = _get_project(db, project_id)
+    html = report_pdf.render_report_html(_report_context(project, user))
+    pdf: bytes | None = None
+    try:
+        pdf = report_pdf.project_report_pdf(project, html)
+    except Exception:  # pragma: no cover - still bundle files even if PDF fails
+        log.exception("report_pdf_failed_in_zip", extra={"project_id": project_id})
+    data = report_archive.build_project_archive(project, pdf)
+    return Response(
+        content=data, media_type="application/zip",
+        headers=_download_headers(project.display_name, suffix="artifacts.zip"),
     )
