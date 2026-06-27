@@ -19,7 +19,7 @@ an MCP server so other tools and AI assistants can read and report on the data.
   viewer read access to specific projects.
 - **AI assistant** — configure an AI provider in the UI (Anthropic Claude and Google Gemini;
   OpenAI planned) to generate **executive summaries** (streamed live) and to **import use cases
-  from a requirements document** (paste, or upload a PDF/Word/text file → AI extracts
+  from a requirements document** (paste, or upload a PDF/Word/Excel/text file → AI extracts
   categorized use cases → review → add).
 - **API keys** and **OAuth client-credentials** for machine-to-machine access to the REST API.
 - **Customers & contacts** — contacts carry a role picked from a master list (Champion,
@@ -174,10 +174,11 @@ Two features use it:
   it in the rich-text editor, and it appears at the top of the project's report and PDF. (If a
   browser can't stream, it falls back to a one-shot generation automatically.)
 - **Requirements importer.** On a project's use-cases section, **Import from requirements**:
-  paste text or upload a **PDF, Word (.docx), or text file**, and the model extracts categorized
-  use cases (reference number, category, name, description, success validation). You review and
-  edit the candidates, pick which to keep, and they're added as use cases. (Scanned/image-only
-  PDFs have no selectable text — paste those instead.)
+  paste text or upload a **PDF, Word (.docx), Excel (.xlsx), or text/CSV file**, and the model
+  extracts categorized use cases (reference number, category, name, description, success
+  validation). You review and edit the candidates, pick which to keep, and they're added as use
+  cases. (Scanned/image-only PDFs have no selectable text — paste those instead; legacy `.xls`
+  should be re-saved as `.xlsx`.)
 
 No API call is made until you configure a provider and trigger a feature; nothing is sent to a
 vendor automatically.

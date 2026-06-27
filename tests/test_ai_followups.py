@@ -39,6 +39,24 @@ def test_extract_docx() -> None:
     assert "MFA required" in text
 
 
+def test_extract_xlsx() -> None:
+    from openpyxl import Workbook
+
+    from app.services.text_extract import extract_text
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Ref", "Category", "Requirement"])
+    ws.append(["1.1", "Access", "SSO via Okta"])
+    ws.append(["1.2", "Access", "MFA required"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    text = extract_text("requirements.xlsx", buf.getvalue(), None)
+    assert "SSO via Okta" in text
+    assert "1.2 | Access | MFA required" in text
+
+
 def test_extract_plain_text_passthrough() -> None:
     from app.services.text_extract import extract_text
 

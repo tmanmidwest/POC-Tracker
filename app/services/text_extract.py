@@ -1,8 +1,9 @@
 """Extract plain text from an uploaded document for the requirements importer.
 
-Supports PDF (via ``pypdf``) and Word ``.docx`` (via stdlib ``zipfile``/XML — no
-extra dependency). Anything else is decoded as UTF-8 text. Raises
-:class:`TextExtractError` with a user-facing message on failure.
+Supports PDF (via ``pypdf``), Word ``.docx`` (via stdlib ``zipfile``/XML — no
+extra dependency), and Excel ``.xlsx`` (via ``openpyxl``). Anything else is
+decoded as UTF-8 text. Raises :class:`TextExtractError` with a user-facing
+message on failure.
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ def extract_text(filename: str | None, content: bytes, content_type: str | None)
         return _from_pdf(content)
     if name.endswith(".docx") or "wordprocessingml" in ctype:
         return _from_docx(content)
+    if name.endswith((".xlsx", ".xlsm")) or "spreadsheetml" in ctype:
+        return _from_xlsx(content)
     # Plain text (or unknown) — best-effort decode.
     return content.decode("utf-8", errors="ignore")
 
@@ -55,6 +58,43 @@ def _from_pdf(content: bytes) -> str:
         raise TextExtractError(
             "No selectable text found in that PDF (it may be a scan). Paste the text instead."
         )
+    return text
+
+
+def _from_xlsx(content: bytes) -> str:
+    """Flatten an .xlsx workbook to text: one line per non-empty row, cells
+    joined with ' | ', each sheet prefixed with its name when there's more than one."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:  # pragma: no cover - dependency is declared
+        raise TextExtractError("Excel support is not installed on the server.") from exc
+    try:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    except Exception as exc:
+        log.warning("xlsx_extract_failed", extra={"error": str(exc)})
+        raise TextExtractError(
+            "Could not read that Excel file. Save it as .xlsx, or export to CSV and paste it."
+        ) from exc
+
+    lines: list[str] = []
+    try:
+        multi = len(wb.worksheets) > 1
+        for ws in wb.worksheets:
+            sheet_lines: list[str] = []
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                if cells:
+                    sheet_lines.append(" | ".join(cells))
+            if sheet_lines:
+                if multi:
+                    lines.append(f"# Sheet: {ws.title}")
+                lines.extend(sheet_lines)
+    finally:
+        wb.close()
+
+    text = "\n".join(lines)
+    if not text.strip():
+        raise TextExtractError("That Excel file appears to have no data.")
     return text
 
 

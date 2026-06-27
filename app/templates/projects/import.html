@@ -24,10 +24,10 @@
       <div class="form-hint">Paste text, or upload a file below — both are combined if you provide both.</div>
     </div>
     <div class="form-row">
-      <label class="label" for="file">…or upload a document <span class="text-muted text-xs">(optional — PDF, Word .docx, or .txt/.md/.csv)</span></label>
+      <label class="label" for="file">…or upload a document <span class="text-muted text-xs">(optional — PDF, Word .docx, Excel .xlsx, or .txt/.md/.csv)</span></label>
       <input class="input" type="file" id="file" name="file"
-             accept=".pdf,.docx,.txt,.md,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" />
-      <div class="form-hint">Scanned/image-only PDFs have no selectable text — paste those instead.</div>
+             accept=".pdf,.docx,.xlsx,.xlsm,.txt,.md,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/*" />
+      <div class="form-hint">Scanned/image-only PDFs have no selectable text — paste those instead. Legacy <code>.xls</code> isn't supported — save as <code>.xlsx</code>.</div>
     </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
