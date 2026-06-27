@@ -1342,6 +1342,14 @@ async def bulk_use_cases(
         for uc in ucs:
             uc.feature_type_id = ft_id
         summary = f"set the feature type on {count} use case(s)"
+    elif action == "category":
+        new_category = _clean(form.get("category"))  # type: ignore[arg-type]
+        if not new_category:
+            flash(request, "Enter a category to apply.", "error")
+            return back
+        for uc in ucs:
+            uc.category = new_category
+        summary = f"set the category on {count} use case(s) to '{new_category}'"
     elif action == "completed_on":
         when = _parse_date(form.get("completed_on"))  # type: ignore[arg-type]
         for uc in ucs:

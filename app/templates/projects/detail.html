@@ -91,6 +91,7 @@
     var a = document.getElementById('bulk-action').value;
     document.getElementById('bulk-status').style.display = a === 'status' ? '' : 'none';
     document.getElementById('bulk-stamp-wrap').style.display = a === 'status' ? 'inline-flex' : 'none';
+    document.getElementById('bulk-category').style.display = a === 'category' ? '' : 'none';
     document.getElementById('bulk-feature').style.display = a === 'feature_type' ? '' : 'none';
     document.getElementById('bulk-date').style.display = a === 'completed_on' ? '' : 'none';
   };
@@ -101,11 +102,13 @@
     var a = document.getElementById('bulk-action').value;
     if (!a) { alert('Choose a bulk action.'); return; }
     if (a === 'status' && !document.getElementById('bulk-status').value) { alert('Choose a status.'); return; }
+    if (a === 'category' && !document.getElementById('bulk-category').value.trim()) { alert('Enter a category.'); return; }
     if (a === 'delete' && !confirm('Delete ' + ids.length + ' use case(s)? This also removes their screenshots.')) return;
 
     document.getElementById('bf-action').value = a;
     document.getElementById('bf-status').value = document.getElementById('bulk-status').value;
     document.getElementById('bf-stamp').value = document.getElementById('bulk-stamp').checked ? '1' : '';
+    document.getElementById('bf-category').value = document.getElementById('bulk-category').value;
     document.getElementById('bf-feature').value = document.getElementById('bulk-feature').value;
     document.getElementById('bf-date').value = document.getElementById('bulk-date').value;
 
@@ -510,6 +513,7 @@
     <select id="bulk-action" class="select" style="width:auto;" onchange="bulkActionChanged()">
       <option value="">Bulk action…</option>
       <option value="status">Set status</option>
+      <option value="category">Set category</option>
       <option value="feature_type">Set feature type</option>
       <option value="completed_on">Set completed date</option>
       <option value="delete">Delete</option>
@@ -517,6 +521,7 @@
     <select id="bulk-status" class="select" style="width:auto; display:none;">
       {% for s in uc_statuses %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
     </select>
+    <input type="text" id="bulk-category" class="input" placeholder="New category" maxlength="150" style="width:auto; display:none;" />
     <label id="bulk-stamp-wrap" class="text-xs" style="display:none; align-items:center; gap: var(--s-1);">
       <input type="checkbox" id="bulk-stamp" /> also stamp today as completed date
     </label>
@@ -535,6 +540,7 @@
   <input type="hidden" name="action" id="bf-action" />
   <input type="hidden" name="status_id" id="bf-status" />
   <input type="hidden" name="stamp_today" id="bf-stamp" />
+  <input type="hidden" name="category" id="bf-category" />
   <input type="hidden" name="feature_type_id" id="bf-feature" />
   <input type="hidden" name="completed_on" id="bf-date" />
   <span id="bf-ids"></span>

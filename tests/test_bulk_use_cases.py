@@ -95,6 +95,22 @@ def test_bulk_set_status_with_stamp(admin_ui: TestClient) -> None:
         db.close()
 
 
+def test_bulk_set_category(admin_ui: TestClient) -> None:
+    pid, ids = _project_with_use_cases(2)
+    resp = admin_ui.post(
+        f"/ui/projects/{pid}/use-cases/bulk",
+        data={"ids": ids, "action": "category", "category": "Lifecycle Management"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    db = get_session_factory()()
+    try:
+        ucs = db.query(ProjectUseCase).filter(ProjectUseCase.project_id == pid).all()
+        assert all(uc.category == "Lifecycle Management" for uc in ucs)
+    finally:
+        db.close()
+
+
 def test_bulk_set_feature_type(admin_ui: TestClient) -> None:
     pid, ids = _project_with_use_cases(2)
     db = get_session_factory()()
