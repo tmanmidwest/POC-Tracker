@@ -176,9 +176,12 @@ Two features use it:
 - **Requirements importer.** On a project's use-cases section, **Import from requirements**:
   paste text or upload a **PDF, Word (.docx), Excel (.xlsx), or text/CSV file**, and the model
   extracts categorized use cases (reference number, category, name, description, success
-  validation). You review and edit the candidates, pick which to keep, and they're added as use
-  cases. (Scanned/image-only PDFs have no selectable text — paste those instead; legacy `.xls`
-  should be re-saved as `.xlsx`.)
+  validation). **PDFs and images are sent to the model natively** (tables and layout intact);
+  other formats are converted to text. The project's **existing use cases are passed along so the
+  model avoids duplicates**. You review and edit the candidates, pick which to keep, and they're
+  added as use cases. (Scanned/image-only PDFs may have no selectable text; legacy `.xls` should
+  be re-saved as `.xlsx`.) For the most thorough results, you can also connect POC Tracker as an
+  **MCP server** and ask Claude to add use cases directly — the import page links to setup.
 
 No API call is made until you configure a provider and trigger a feature; nothing is sent to a
 vendor automatically.

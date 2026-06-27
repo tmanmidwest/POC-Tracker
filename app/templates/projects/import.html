@@ -6,7 +6,7 @@
 <div class="page-header">
   <div class="page-header__text">
     <h1 class="page-header__title">Import use cases from requirements</h1>
-    <p class="page-header__subtitle">Paste a requirements document (or upload a text file). The AI extracts categorized use cases, then you review and choose which to add to <strong>{{ project.display_name }}</strong>.</p>
+    <p class="page-header__subtitle">Paste requirements or upload a document (PDFs are read natively, with tables and layout intact). The AI extracts categorized use cases, then you review and choose which to add to <strong>{{ project.display_name }}</strong>. Existing use cases on this project are passed along so it avoids duplicates.</p>
   </div>
 </div>
 
@@ -14,8 +14,27 @@
 <div class="inline-error" style="max-width: 760px;">No AI provider is configured. Add one in <a href="/ui/settings/ai">Settings → AI Assistant</a> first.</div>
 {% endif %}
 
+<details class="card" style="max-width: 760px; margin-bottom: var(--s-4);">
+  <summary style="cursor:pointer; padding: var(--s-4) var(--s-5); font-weight:500;">💡 Prefer to use Claude directly? (often more thorough)</summary>
+  <div class="card__body" style="border-top:1px solid var(--border);">
+    <p class="text-muted text-xs" style="margin-top:0;">
+      This importer makes a single AI pass over the document. If you've connected POC Tracker as an
+      <strong>MCP server</strong> in Claude (Desktop, claude.ai, or an IDE), you can instead attach the
+      document there and ask Claude to add the use cases — for example:
+      <em>“Read this requirements doc and add any new use cases to the {{ project.display_name }} POC.”</em>
+    </p>
+    <p class="text-muted text-xs">
+      That route is usually more thorough because Claude works as an agent: it can read the whole document,
+      call <code>get_project</code> to see what's already there and de-duplicate, ask you clarifying questions,
+      and add the use cases directly via <code>add_custom_use_cases</code> — all in one conversation. The
+      trade-off is that it needs the MCP set up and a Claude client; this in-app importer needs neither.
+      An admin configures the connection under <a href="/ui/settings/mcp">Settings → MCP</a>.
+    </p>
+  </div>
+</details>
+
 <form method="post" action="/ui/projects/{{ project.id }}/import/extract" enctype="multipart/form-data"
-      class="card" style="max-width: 760px;">
+      id="extract-form" class="card" style="max-width: 760px;">
   <div class="card__body">
     <div class="form-row">
       <label class="label" for="text">Requirements text</label>
@@ -30,9 +49,42 @@
       <div class="form-hint">Scanned/image-only PDFs have no selectable text — paste those instead. Legacy <code>.xls</code> isn't supported — save as <code>.xlsx</code>.</div>
     </div>
   </div>
-  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6); align-items:center;">
+    <div id="extract-status" class="text-muted text-xs" style="flex:1; display:none;">
+      <span class="spinner" aria-hidden="true"></span>
+      Extracting use cases with AI… this can take 10–30 seconds. Please don't refresh or click again.
+    </div>
     <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Cancel</a>
-    <button type="submit" class="btn btn--primary" {% if not ai_configured %}disabled{% endif %}>Extract use cases →</button>
+    <button type="submit" id="extract-btn" class="btn btn--primary" {% if not ai_configured %}disabled{% endif %}>Extract use cases →</button>
   </div>
 </form>
+
+<style>
+  .spinner {
+    display:inline-block; width:12px; height:12px; margin-right:6px;
+    border:2px solid var(--border); border-top-color: var(--primary);
+    border-radius:50%; vertical-align:-2px; animation: poc-spin 0.7s linear infinite;
+  }
+  @keyframes poc-spin { to { transform: rotate(360deg); } }
+</style>
+<script>
+  (function () {
+    var form = document.getElementById('extract-form');
+    if (!form) return;
+    var btn = document.getElementById('extract-btn');
+    var status = document.getElementById('extract-status');
+    var submitting = false;
+    form.addEventListener('submit', function (e) {
+      // Guard against double-submit while the AI call is in flight.
+      if (submitting) { e.preventDefault(); return; }
+      // Require some input so we don't show a spinner for an empty submit.
+      var text = (document.getElementById('text').value || '').trim();
+      var hasFile = document.getElementById('file').files.length > 0;
+      if (!text && !hasFile) return;  // let the server flash the "paste something" error
+      submitting = true;
+      if (btn) { btn.disabled = true; btn.textContent = 'Extracting…'; }
+      if (status) { status.style.display = 'block'; }
+    });
+  })();
+</script>
 {% endblock %}

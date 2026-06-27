@@ -21,10 +21,16 @@ _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
-def _payload(system: str, prompt: str, max_tokens: int) -> dict:
+def _payload(
+    system: str, prompt: str, max_tokens: int, documents: list[dict] | None = None
+) -> dict:
+    parts: list[dict] = []
+    for doc in documents or []:
+        parts.append({"inlineData": {"mimeType": doc.get("media_type", ""), "data": doc["data"]}})
+    parts.append({"text": prompt})
     return {
         "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {"maxOutputTokens": max_tokens},
     }
 
@@ -40,15 +46,20 @@ def generate(
     system: str,
     prompt: str,
     max_tokens: int = 1500,
+    documents: list[dict] | None = None,
 ) -> str:
-    """Generate text with a Gemini model. Raises GenerationError on failure."""
+    """Generate text with a Gemini model. Raises GenerationError on failure.
+
+    ``documents`` is an optional list of ``{"media_type", "data"}`` (base64)
+    attachments sent natively (PDFs/images) via ``inlineData``.
+    """
     if not api_key:
         raise GenerationError("No API key is configured for this provider.")
 
     url = f"{_BASE}/{model}:generateContent"
     try:
         resp = httpx.post(
-            url, json=_payload(system, prompt, max_tokens),
+            url, json=_payload(system, prompt, max_tokens, documents),
             headers=_headers(api_key), timeout=_TIMEOUT,
         )
     except httpx.HTTPError as exc:

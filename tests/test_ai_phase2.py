@@ -111,8 +111,9 @@ def test_import_extract_and_create(admin_ui: TestClient, monkeypatch) -> None:
     pid = _make_project("H-E-B POC")
     _add_provider()
 
-    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000):
+    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None):
         assert "Okta" in prompt  # the requirements text reached the model
+        assert documents is None  # text path sends no native documents
         return (
             '[{"reference_number":"1.1","category":"Access","name":"SSO via Okta",'
             '"description":"Okta SSO","success_validation":"login ok"},'
@@ -154,6 +155,49 @@ def test_import_extract_and_create(admin_ui: TestClient, monkeypatch) -> None:
         assert ucs[0].reference_number == "1.1"
     finally:
         db.close()
+
+
+def test_import_native_pdf_and_dedup_context(admin_ui: TestClient, monkeypatch) -> None:
+    """A PDF upload is sent natively; existing use cases are passed for dedup."""
+    pid = _make_project("Native POC")
+    _add_provider()
+
+    # Seed an existing use case so the dedup context appears in the prompt.
+    db = get_session_factory()()
+    try:
+        status = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).first()
+        db.add(
+            ProjectUseCase(
+                project_id=pid, source="custom", category="Access",
+                name="Existing SSO", reference_number="1.1",
+                status_id=status.id,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    captured = {}
+
+    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None):
+        captured["documents"] = documents
+        captured["prompt"] = prompt
+        return '[{"reference_number":"2.1","category":"Reporting","name":"Dashboards"}]'
+
+    _install_fake_anthropic(monkeypatch, generate=fake_generate)
+
+    resp = admin_ui.post(
+        f"/ui/projects/{pid}/import/extract",
+        files={"file": ("reqs.pdf", b"%PDF-1.4 fake bytes", "application/pdf")},
+        data={"text": ""},
+    )
+    assert resp.status_code == 200
+
+    # The PDF was passed natively (base64), not flattened to text.
+    assert captured["documents"] and captured["documents"][0]["media_type"] == "application/pdf"
+    assert captured["documents"][0]["data"]  # base64 payload present
+    # The existing use case was included so the model can avoid duplicates.
+    assert "Existing SSO" in captured["prompt"]
 
 
 # ---------------------------------------------------------------------------

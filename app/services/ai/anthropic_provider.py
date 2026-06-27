@@ -30,8 +30,14 @@ def generate(
     system: str,
     prompt: str,
     max_tokens: int = 1500,
+    documents: list[dict] | None = None,
 ) -> str:
-    """Generate text with a Claude model. Raises GenerationError on failure."""
+    """Generate text with a Claude model. Raises GenerationError on failure.
+
+    ``documents`` is an optional list of ``{"media_type", "data"}`` (base64)
+    attachments — PDFs and images are sent natively so the model reads tables and
+    layout directly, rather than from pre-flattened text.
+    """
     if not api_key:
         raise GenerationError("No API key is configured for this provider.")
 
@@ -39,7 +45,7 @@ def generate(
         "model": model,
         "max_tokens": max_tokens,
         "system": system,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": _user_content(prompt, documents)}],
     }
     headers = {
         "x-api-key": api_key,
@@ -69,6 +75,22 @@ def generate(
     if not text:
         raise GenerationError("The model returned an empty response.")
     return text
+
+
+def _user_content(prompt: str, documents: list[dict] | None) -> object:
+    """Build the user message content: native doc/image blocks, then the text."""
+    if not documents:
+        return prompt
+    blocks: list[dict] = []
+    for doc in documents:
+        media = doc.get("media_type", "")
+        source = {"type": "base64", "media_type": media, "data": doc["data"]}
+        if media.startswith("image/"):
+            blocks.append({"type": "image", "source": source})
+        else:  # PDFs (application/pdf) and anything else → document block
+            blocks.append({"type": "document", "source": source})
+    blocks.append({"type": "text", "text": prompt})
+    return blocks
 
 
 def stream(

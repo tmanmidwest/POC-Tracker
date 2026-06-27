@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -97,6 +98,42 @@ def _parse_date(value: str | None) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+# Files the AI providers can read natively (no pre-flattening). ~20 MB cap keeps
+# the base64 request body within provider limits; larger files fall back to text.
+_MAX_NATIVE_BYTES = 20 * 1024 * 1024
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+
+def _is_native_doc(filename: str, content_type: str | None) -> bool:
+    name = (filename or "").lower()
+    ctype = (content_type or "").lower()
+    return (
+        name.endswith(".pdf")
+        or ctype == "application/pdf"
+        or name.endswith(_IMAGE_EXTS)
+        or ctype.startswith("image/")
+    )
+
+
+def _native_media_type(filename: str, content_type: str | None) -> str:
+    name = (filename or "").lower()
+    ctype = (content_type or "").lower()
+    if name.endswith(".pdf") or ctype == "application/pdf":
+        return "application/pdf"
+    if ctype.startswith("image/"):
+        return ctype
+    # Infer an image type from the extension when the browser didn't send one.
+    if name.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if name.endswith(".png"):
+        return "image/png"
+    if name.endswith(".webp"):
+        return "image/webp"
+    if name.endswith(".gif"):
+        return "image/gif"
+    return "application/pdf"
 
 
 def _ref_sort_key(ref: str | None) -> tuple:
@@ -653,17 +690,29 @@ async def import_extract(
     project = _get_project(db, project_id)
 
     combined = text or ""
+    documents: list[dict] = []
     if file is not None and file.filename:
         raw = await file.read()
-        try:
-            extracted = extract_text(file.filename, raw, file.content_type)
-        except TextExtractError as exc:
-            flash(request, str(exc), "error")
-            return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
-        combined = (combined + "\n" + extracted).strip()
+        if _is_native_doc(file.filename, file.content_type) and len(raw) <= _MAX_NATIVE_BYTES:
+            # Send PDFs/images to the model natively — preserves tables and layout.
+            documents.append(
+                {
+                    "media_type": _native_media_type(file.filename, file.content_type),
+                    "data": base64.standard_b64encode(raw).decode("ascii"),
+                }
+            )
+        else:
+            try:
+                extracted = extract_text(file.filename, raw, file.content_type)
+            except TextExtractError as exc:
+                flash(request, str(exc), "error")
+                return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
+            combined = (combined + "\n" + extracted).strip()
 
     try:
-        candidates = extract_use_cases(db, combined)
+        candidates = extract_use_cases(
+            db, combined, project=project, documents=documents or None
+        )
     except GenerationError as exc:
         flash(request, f"Could not extract use cases: {exc}", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
