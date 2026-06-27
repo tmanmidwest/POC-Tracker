@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set page_title = "Review spreadsheet import" %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/projects/{{ project.id }}">{{ project.display_name }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>Import</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Review spreadsheet import</h1>
+    <p class="page-header__subtitle">
+      <span class="badge badge--success">{{ new_count }} new</span>
+      <span class="badge badge--neutral">{{ update_count }} update{{ "s" if update_count != 1 else "" }}</span>
+      — uncheck any you don't want, tweak fields, then apply. Updates change an existing use case in place; new ones are added to {{ project.display_name }}.
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/{{ project.id }}/use-cases/spreadsheet" class="btn btn--secondary">Start over</a>
+  </div>
+</div>
+
+<form method="post" action="/ui/projects/{{ project.id }}/use-cases/spreadsheet/apply">
+  <div class="card card--flush" style="margin-bottom: var(--s-4);">
+    <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 class="card__title">Rows</h3>
+      <label class="text-xs" style="display:flex; gap: var(--s-2); align-items:center; cursor:pointer;">
+        <input type="checkbox" id="toggle-all" checked onchange="document.querySelectorAll('.imp-cb').forEach(function(c){ if(!c.disabled) c.checked=this.checked; }.bind(this))" />
+        Select all valid
+      </label>
+    </div>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th style="width:34px;"></th>
+        <th style="width:90px;">Action</th>
+        <th style="width:80px;">Ref</th>
+        <th style="width:180px;">Category</th>
+        <th>Use case</th>
+        <th style="width:150px;">Status</th>
+        <th style="width:120px;">Feature</th>
+      </tr></thead>
+      <tbody>
+        {% for c in candidates %}
+        <tr {% if not c.valid %}style="opacity:0.55;"{% endif %}>
+          <td><input type="checkbox" class="imp-cb" name="select" value="{{ c.index }}" {% if c.valid %}checked{% else %}disabled{% endif %} /></td>
+          <td>
+            {% if not c.valid %}<span class="badge badge--warning">skip</span>
+            {% elif c.action == 'update' %}<span class="badge badge--neutral">update</span>
+            {% else %}<span class="badge badge--success">new</span>{% endif %}
+          </td>
+          <td><input class="input mono" name="ref_{{ c.index }}" value="{{ c.reference_number }}" style="width:70px;" /></td>
+          <td><input class="input" name="category_{{ c.index }}" value="{{ c.category }}" /></td>
+          <td>
+            <input class="input" name="name_{{ c.index }}" value="{{ c.name }}" />
+            {% if c.description %}<div class="text-muted text-xs" style="margin-top: var(--s-1);">{{ c.description }}</div>{% endif %}
+            {% if c.warnings %}<div class="text-xs" style="color: var(--warning, #b97); margin-top: var(--s-1);">⚠ {{ c.warnings | join('; ') }}</div>{% endif %}
+            <input type="hidden" name="id_{{ c.index }}" value="{{ c.target_id or '' }}" />
+            <input type="hidden" name="desc_{{ c.index }}" value="{{ c.description }}" />
+            <input type="hidden" name="sv_{{ c.index }}" value="{{ c.success_validation }}" />
+            <input type="hidden" name="comments_{{ c.index }}" value="{{ c.comments }}" />
+            <input type="hidden" name="status_id_{{ c.index }}" value="{{ c.status_id or '' }}" />
+            <input type="hidden" name="feature_type_id_{{ c.index }}" value="{{ c.feature_type_id or '' }}" />
+            <input type="hidden" name="completed_{{ c.index }}" value="{{ c.completed_on.isoformat() if c.completed_on else '' }}" />
+          </td>
+          <td class="text-xs">{{ c.status_name or "—" }}{% if c.status_name and not c.status_id %} <span class="text-muted">(default)</span>{% endif %}</td>
+          <td class="text-xs">{{ c.feature_name or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="form-actions">
+    <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Apply import</button>
+  </div>
+</form>
+{% endblock %}

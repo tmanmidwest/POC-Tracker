@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set page_title = "Import / export use cases — " ~ project.display_name %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/projects/{{ project.id }}">{{ project.display_name }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>Import / export</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Import / export use cases</h1>
+    <p class="page-header__subtitle">Round-trip <strong>{{ project.display_name }}</strong>'s use cases through a spreadsheet — export, edit offline in Excel, and re-import. This is deterministic (no AI); for extracting use cases from a requirements document, use <a href="/ui/projects/{{ project.id }}/import">Import from requirements</a>.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 760px; margin-bottom: var(--s-4);">
+  <div class="card__header"><h3 class="card__title">Export</h3></div>
+  <div class="card__body" style="display:flex; gap: var(--s-3); flex-wrap:wrap; align-items:center;">
+    <a href="/ui/projects/{{ project.id }}/use-cases/export.xlsx" class="btn btn--primary">⬇ Export current use cases (.xlsx)</a>
+    <a href="/ui/projects/{{ project.id }}/use-cases/template.xlsx" class="btn btn--secondary">⬇ Download blank template (.xlsx)</a>
+    <p class="text-muted text-xs" style="flex-basis:100%; margin:0;">The export keeps each use case's <code>Id</code> so re-importing updates it in place. The template leaves <code>Id</code> blank (every row imports as new) and includes dropdowns for Status and Feature Type.</p>
+  </div>
+</div>
+
+<form method="post" action="/ui/projects/{{ project.id }}/use-cases/spreadsheet/preview" enctype="multipart/form-data"
+      id="ss-form" class="card" style="max-width: 760px;">
+  <div class="card__header"><h3 class="card__title">Import</h3></div>
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="file">Spreadsheet file <span class="text-muted text-xs">(.xlsx or .csv matching the template columns)</span></label>
+      <input class="input" type="file" id="file" name="file" required
+             accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
+      <div class="form-hint">You'll review the rows (new vs. updates) before anything is saved.</div>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6); align-items:center;">
+    <div id="ss-status" class="text-muted text-xs" style="flex:1; display:none;">Reading spreadsheet…</div>
+    <a href="/ui/projects/{{ project.id }}" class="btn btn--secondary">Cancel</a>
+    <button type="submit" id="ss-btn" class="btn btn--primary">Review import →</button>
+  </div>
+</form>
+
+<script>
+  (function () {
+    var form = document.getElementById('ss-form');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+      if (!document.getElementById('file').files.length) return;
+      var b = document.getElementById('ss-btn');
+      if (b) { b.disabled = true; b.textContent = 'Reading…'; }
+      document.getElementById('ss-status').style.display = 'block';
+    });
+  })();
+</script>
+{% endblock %}

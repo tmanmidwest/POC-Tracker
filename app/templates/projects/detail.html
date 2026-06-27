@@ -395,6 +395,7 @@
   <div class="page-header__actions">
     <button type="button" class="btn btn--ghost" onclick="pocOpen('m-uc-view')" title="Choose fields & filter">⚙ View</button>
     {% if can_edit %}
+    <a href="/ui/projects/{{ project.id }}/use-cases/spreadsheet" class="btn btn--ghost" title="Export/import use cases as a spreadsheet">⇆ Import/Export</a>
     <a href="/ui/projects/{{ project.id }}/import" class="btn btn--secondary" title="Extract use cases from a requirements document">⬇ Import from requirements</a>
     <button type="button" class="btn btn--secondary" onclick="pocOpen('m-add-custom')">+ Add custom use case</button>
     <button type="button" class="btn btn--primary" onclick="pocOpen('m-add-library')">+ Add from library</button>

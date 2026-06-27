@@ -53,6 +53,13 @@ from app.services.ai.summaries import (
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.text_extract import TextExtractError, extract_text
+from app.services.use_case_io import (
+    SpreadsheetError,
+    build_export_xlsx,
+    build_template_xlsx,
+    classify_rows,
+    parse_spreadsheet,
+)
 from app.services.use_cases import (
     added_library_ids,
     copy_library_entries_to_project,
@@ -769,6 +776,136 @@ async def import_create(
         detail={"surface": "ui", "count": created}, request=request,
     )
     flash(request, f"Imported {created} use case(s).", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheet export / import of use cases (deterministic, no AI)
+# ---------------------------------------------------------------------------
+
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _xlsx_response(data: bytes, filename: str) -> Response:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or "use-cases"
+    return Response(
+        content=data, media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )
+
+
+@router.get("/{project_id}/use-cases/export.xlsx")
+def export_use_cases(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    return _xlsx_response(
+        build_export_xlsx(project), f"{project.display_name}-use-cases.xlsx"
+    )
+
+
+@router.get("/{project_id}/use-cases/template.xlsx")
+def use_case_template(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    _get_project(db, project_id)
+    return _xlsx_response(build_template_xlsx(db), "use-case-import-template.xlsx")
+
+
+@router.get("/{project_id}/use-cases/spreadsheet")
+def spreadsheet_hub(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    return render(
+        request, "projects/spreadsheet.html", current_user=user,
+        active_section="projects", project=project,
+    )
+
+
+@router.post("/{project_id}/use-cases/spreadsheet/preview")
+async def spreadsheet_preview(
+    project_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    if not file or not file.filename:
+        flash(request, "Choose a spreadsheet to import.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}/use-cases/spreadsheet", status_code=303)
+    raw = await file.read()
+    try:
+        rows = parse_spreadsheet(file.filename, raw)
+    except SpreadsheetError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}/use-cases/spreadsheet", status_code=303)
+    candidates = classify_rows(db, project, rows)
+    if not candidates:
+        flash(request, "No rows found in that file. Check it matches the template.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}/use-cases/spreadsheet", status_code=303)
+    return render(
+        request, "projects/spreadsheet_preview.html", current_user=user,
+        active_section="projects", project=project, candidates=candidates,
+        new_count=sum(1 for c in candidates if c.action == "new" and c.valid),
+        update_count=sum(1 for c in candidates if c.action == "update" and c.valid),
+    )
+
+
+@router.post("/{project_id}/use-cases/spreadsheet/apply")
+async def spreadsheet_apply(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    form = await request.form()
+    selected = form.getlist("select")  # type: ignore[attr-defined]
+    default_status = default_use_case_status_id(db)
+    created = updated = 0
+    for idx in selected:
+        name = _clean(form.get(f"name_{idx}"))  # type: ignore[arg-type]
+        category = _clean(form.get(f"category_{idx}"))  # type: ignore[arg-type]
+        if not name or not category:
+            continue
+        tid_raw = str(form.get(f"id_{idx}") or "")
+        uc = db.get(ProjectUseCase, int(tid_raw)) if tid_raw.isdigit() else None
+        if uc is None or uc.project_id != project.id:
+            uc = ProjectUseCase(project_id=project.id, source=SOURCE_CUSTOM, status_id=default_status)
+            db.add(uc)
+            created += 1
+        else:
+            updated += 1
+        uc.reference_number = _clean(form.get(f"ref_{idx}"))  # type: ignore[arg-type]
+        uc.category = category
+        uc.name = name
+        uc.description = _clean(form.get(f"desc_{idx}"))  # type: ignore[arg-type]
+        uc.success_validation = _clean(form.get(f"sv_{idx}"))  # type: ignore[arg-type]
+        uc.comments = _clean(form.get(f"comments_{idx}"))  # type: ignore[arg-type]
+        sid = str(form.get(f"status_id_{idx}") or "")
+        if sid.isdigit():
+            uc.status_id = int(sid)
+        ft = str(form.get(f"feature_type_id_{idx}") or "")
+        uc.feature_type_id = int(ft) if ft.isdigit() else None
+        uc.completed_on = _parse_date(form.get(f"completed_{idx}"))  # type: ignore[arg-type]
+    db.commit()
+    record_event(
+        category="project", event_type="use_case.spreadsheet_imported", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Spreadsheet import: {created} added, {updated} updated in '{project.display_name}'",
+        detail={"surface": "ui", "created": created, "updated": updated}, request=request,
+    )
+    flash(request, f"Imported spreadsheet: {created} added, {updated} updated.", "success")
     return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 

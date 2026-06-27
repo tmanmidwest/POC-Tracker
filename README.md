@@ -29,7 +29,10 @@ an MCP server so other tools and AI assistants can read and report on the data.
 - **Use cases** — pull from a master **library** when building a project, add the customer's
   own **ad-hoc** ones, per-project reference numbers, status, comments, and **screenshot uploads**.
   Library entries are copied in as **snapshots**, so editing the library never changes a POC
-  that's already in flight.
+  that's already in flight. **Bulk-edit** selected use cases (status, feature type, completed
+  date, delete), and **export/import** them as an Excel/CSV spreadsheet — export, edit offline,
+  and re-import (the `Id` column updates rows in place); a downloadable template (with dropdowns)
+  makes importing from scratch easy.
 - **Dashboard** — projects grouped by status, with per-user preferences (columns, which
   statuses to show, sort).
 - **Reporting** — an all-POCs overview and a print-friendly single-POC report.
