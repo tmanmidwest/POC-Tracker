@@ -21,6 +21,16 @@ _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
+def _set_usage(usage: dict | None, meta: dict) -> None:
+    """Populate a caller-provided usage dict from Gemini's usageMetadata."""
+    if usage is None or not meta:
+        return
+    inp = int(meta.get("promptTokenCount") or 0)
+    out = int(meta.get("candidatesTokenCount") or 0)
+    total = int(meta.get("totalTokenCount") or (inp + out))
+    usage.update(input_tokens=inp, output_tokens=out, total_tokens=total)
+
+
 def _payload(
     system: str, prompt: str, max_tokens: int, documents: list[dict] | None = None
 ) -> dict:
@@ -47,11 +57,13 @@ def generate(
     prompt: str,
     max_tokens: int = 1500,
     documents: list[dict] | None = None,
+    usage: dict | None = None,
 ) -> str:
     """Generate text with a Gemini model. Raises GenerationError on failure.
 
     ``documents`` is an optional list of ``{"media_type", "data"}`` (base64)
-    attachments sent natively (PDFs/images) via ``inlineData``.
+    attachments sent natively (PDFs/images). If ``usage`` is given, it's filled
+    with token counts.
     """
     if not api_key:
         raise GenerationError("No API key is configured for this provider.")
@@ -69,6 +81,7 @@ def generate(
         raise GenerationError(_friendly_error(resp))
 
     data = resp.json()
+    _set_usage(usage, data.get("usageMetadata") or {})
     _raise_if_blocked(data)
     text = _candidate_text(data)
     if not text:
@@ -84,12 +97,14 @@ def stream(
     prompt: str,
     max_tokens: int = 1500,
     documents: list[dict] | None = None,
+    usage: dict | None = None,
 ) -> Iterator[str]:
     """Stream text chunks from a Gemini model via SSE. Raises GenerationError."""
     if not api_key:
         raise GenerationError("No API key is configured for this provider.")
 
     url = f"{_BASE}/{model}:streamGenerateContent?alt=sse"
+    last_meta: dict = {}
     try:
         with httpx.stream(
             "POST", url, json=_payload(system, prompt, max_tokens, documents),
@@ -109,9 +124,12 @@ def stream(
                 except ValueError:
                     continue
                 _raise_if_blocked(event)
+                if event.get("usageMetadata"):
+                    last_meta = event["usageMetadata"]  # cumulative; last wins
                 chunk = _candidate_text(event)
                 if chunk:
                     yield chunk
+        _set_usage(usage, last_meta)
     except httpx.HTTPError as exc:
         raise GenerationError(f"Could not reach Google Gemini: {exc}") from exc
 

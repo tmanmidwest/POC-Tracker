@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -74,6 +74,8 @@ class Project(Base, TimestampMixin):
     )
     # Which provider/model produced the current summary, e.g. "anthropic/claude-opus-4-8".
     exec_summary_model: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Total tokens the AI used to produce the current summary (input + output).
+    exec_summary_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True

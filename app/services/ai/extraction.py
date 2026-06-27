@@ -54,18 +54,32 @@ class CandidateUseCase:
     success_validation: str
 
 
+@dataclass
+class ExtractionResult:
+    candidates: list[CandidateUseCase]
+    provider: str        # registry key, e.g. "anthropic"
+    provider_label: str  # human label, e.g. "Anthropic (Claude)"
+    model: str           # e.g. "claude-opus-4-8"
+    usage: dict          # {"input_tokens", "output_tokens", "total_tokens"} (may be empty)
+
+    @property
+    def total_tokens(self) -> int:
+        return int(self.usage.get("total_tokens") or 0)
+
+
 def extract_use_cases(
     db: Session,
     text: str,
     *,
     project: Project | None = None,
     documents: list[dict] | None = None,
-) -> list[CandidateUseCase]:
+) -> ExtractionResult:
     """Extract candidate use cases from pasted ``text`` and/or native ``documents``.
 
     ``documents`` is a list of ``{"media_type", "data"}`` (base64) attachments
     (PDFs/images) passed natively to the model. ``project``, if given, supplies the
-    existing use cases so the model can avoid duplicates. Raises GenerationError.
+    existing use cases so the model can avoid duplicates. Returns the candidates
+    plus the provider/model used and token usage. Raises GenerationError.
     """
     text = (text or "").strip()
     if not text and not documents:
@@ -84,7 +98,7 @@ def extract_use_cases(
     if not provider.has_key:
         raise GenerationError("The selected provider has no API key configured.")
 
-    raw = _collect(
+    raw, usage = _collect(
         spec,
         api_key=decrypt_secret(provider.api_key_encrypted),
         model=provider.model,
@@ -93,19 +107,28 @@ def extract_use_cases(
         max_tokens=MAX_OUTPUT_TOKENS,
         documents=documents or None,
     )
-    return _parse(raw)
+    return ExtractionResult(
+        candidates=_parse(raw),
+        provider=provider.provider,
+        provider_label=spec.label,
+        model=provider.model,
+        usage=usage,
+    )
 
 
-def _collect(spec, **kwargs) -> str:
-    """Get the model's full reply, streaming when supported.
+def _collect(spec, **kwargs) -> tuple[str, dict]:
+    """Get the model's full reply (and token usage), streaming when supported.
 
     Streaming keeps the connection fed during a long extraction, so a large
     output doesn't trip the HTTP idle-read timeout the way a single blocking
     response would. Falls back to one-shot generation otherwise.
     """
+    usage: dict = {}
     if spec.stream is not None:
-        return "".join(spec.stream(**kwargs))
-    return spec.generate(**kwargs)
+        text = "".join(spec.stream(usage=usage, **kwargs))
+    else:
+        text = spec.generate(usage=usage, **kwargs)
+    return text, usage
 
 
 def _build_prompt(text: str, project: Project | None, *, has_documents: bool) -> str:

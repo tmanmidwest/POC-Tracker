@@ -598,13 +598,15 @@ def generate_exec_summary(
     project.exec_summary_html = result.html
     project.exec_summary_generated_at = datetime.now(UTC)
     project.exec_summary_model = result.model_label
+    project.exec_summary_tokens = result.total_tokens or None
     db.commit()
     record_event(
         category="project", event_type="exec_summary.generated", actor_type="user",
         actor_label=user.username, actor_id=user.id, target_type="project",
         target_id=project.id, target_label=project.display_name,
         message=f"Generated executive summary for '{project.display_name}'",
-        detail={"surface": "ui", "model": result.model_label}, request=request,
+        detail={"surface": "ui", "model": result.model_label, "total_tokens": result.total_tokens},
+        request=request,
     )
     flash(request, "Executive summary generated.", "success")
     return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
@@ -717,23 +719,31 @@ async def import_extract(
             combined = (combined + "\n" + extracted).strip()
 
     try:
-        candidates = extract_use_cases(
+        result = extract_use_cases(
             db, combined, project=project, documents=documents or None
         )
     except GenerationError as exc:
         flash(request, f"Could not extract use cases: {exc}", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
 
+    candidates = result.candidates
     record_event(
         category="project", event_type="use_case.import_extracted", actor_type="user",
         actor_label=user.username, actor_id=user.id, target_type="project",
         target_id=project.id, target_label=project.display_name,
         message=f"Extracted {len(candidates)} candidate use case(s) for '{project.display_name}'",
-        detail={"surface": "ui", "count": len(candidates)}, request=request,
+        detail={
+            "surface": "ui", "count": len(candidates),
+            "provider": result.provider, "model": result.model,
+            "tokens": result.usage or None,
+        },
+        request=request,
     )
     return render(
         request, "projects/import_preview.html", current_user=user,
         active_section="projects", project=project, candidates=candidates,
+        ai_provider_label=result.provider_label, ai_model=result.model,
+        ai_usage=result.usage,
     )
 
 
@@ -768,14 +778,30 @@ async def import_create(
         )
         created += 1
     db.commit()
+
+    # Carried over from the extract step so the result records how it was produced.
+    provider_label = _clean(form.get("_provider_label"))  # type: ignore[arg-type]
+    model = _clean(form.get("_model"))  # type: ignore[arg-type]
+    total_tokens = str(form.get("_total_tokens") or "")
+    via = ""
+    if provider_label:
+        via = f" using {provider_label}"
+        if total_tokens.isdigit():
+            via += f" ({int(total_tokens):,} tokens)"
+
     record_event(
         category="project", event_type="use_case.imported", actor_type="user",
         actor_label=user.username, actor_id=user.id, target_type="project",
         target_id=project.id, target_label=project.display_name,
-        message=f"Imported {created} use case(s) into '{project.display_name}'",
-        detail={"surface": "ui", "count": created}, request=request,
+        message=f"Imported {created} use case(s) into '{project.display_name}'{via}",
+        detail={
+            "surface": "ui", "count": created,
+            "provider_label": provider_label, "model": model,
+            "total_tokens": int(total_tokens) if total_tokens.isdigit() else None,
+        },
+        request=request,
     )
-    flash(request, f"Imported {created} use case(s).", "success")
+    flash(request, f"Imported {created} use case(s){via}.", "success")
     return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 

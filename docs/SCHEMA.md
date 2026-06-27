@@ -30,7 +30,7 @@ projects ──< project_grants ──> app_users (per-project read access for e
   `account_executive` / `account_executive_email` (reference only), `notes` / `notes_html`,
   `is_archived` / `archived_at`. AI executive summary: `exec_summary` (plain text),
   `exec_summary_html` (editable rendering), `exec_summary_generated_at`,
-  `exec_summary_model` (e.g. `anthropic/claude-opus-4-8`).
+  `exec_summary_model` (e.g. `anthropic/claude-opus-4-8`), `exec_summary_tokens` (tokens used).
 - **project_use_cases** — a use case attached to a project:
   - `source` — `"library"` (a snapshot of a library entry) or `"custom"` (ad-hoc).
   - `library_id` — provenance only; `SET NULL` if the library entry is deleted.

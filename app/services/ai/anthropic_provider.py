@@ -23,6 +23,15 @@ API_VERSION = "2023-06-01"
 _TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
+def _set_usage(usage: dict | None, input_tokens, output_tokens) -> None:
+    """Populate a caller-provided usage dict with token counts."""
+    if usage is None:
+        return
+    inp = int(input_tokens or 0)
+    out = int(output_tokens or 0)
+    usage.update(input_tokens=inp, output_tokens=out, total_tokens=inp + out)
+
+
 def generate(
     *,
     api_key: str,
@@ -31,12 +40,13 @@ def generate(
     prompt: str,
     max_tokens: int = 1500,
     documents: list[dict] | None = None,
+    usage: dict | None = None,
 ) -> str:
     """Generate text with a Claude model. Raises GenerationError on failure.
 
     ``documents`` is an optional list of ``{"media_type", "data"}`` (base64)
     attachments — PDFs and images are sent natively so the model reads tables and
-    layout directly, rather than from pre-flattened text.
+    layout directly. If ``usage`` is given, it's filled with token counts.
     """
     if not api_key:
         raise GenerationError("No API key is configured for this provider.")
@@ -62,6 +72,8 @@ def generate(
         raise GenerationError(_friendly_error(resp))
 
     data = resp.json()
+    u = data.get("usage") or {}
+    _set_usage(usage, u.get("input_tokens"), u.get("output_tokens"))
     if data.get("stop_reason") == "refusal":
         raise GenerationError(
             "The model declined to generate this summary. Try rephrasing the project notes."
@@ -101,6 +113,7 @@ def stream(
     prompt: str,
     max_tokens: int = 1500,
     documents: list[dict] | None = None,
+    usage: dict | None = None,
 ) -> Iterator[str]:
     """Stream text chunks from a Claude model via SSE. Raises GenerationError."""
     if not api_key:
@@ -119,6 +132,7 @@ def stream(
         "content-type": "application/json",
     }
 
+    in_tok = out_tok = 0
     try:
         with httpx.stream(
             "POST", API_URL, json=payload, headers=headers, timeout=_TIMEOUT
@@ -143,11 +157,18 @@ def stream(
                         chunk = delta.get("text", "")
                         if chunk:
                             yield chunk
+                elif etype == "message_start":
+                    mu = (event.get("message") or {}).get("usage") or {}
+                    in_tok = mu.get("input_tokens", in_tok) or in_tok
+                elif etype == "message_delta":
+                    du = event.get("usage") or {}
+                    out_tok = du.get("output_tokens", out_tok) or out_tok
                 elif etype == "error":
                     msg = (event.get("error") or {}).get("message", "stream error")
                     raise GenerationError(f"Anthropic stream error: {msg}")
                 elif etype == "message_stop":
                     break
+        _set_usage(usage, in_tok, out_tok)
     except httpx.HTTPError as exc:
         raise GenerationError(f"Could not reach Anthropic: {exc}") from exc
 

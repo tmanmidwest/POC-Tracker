@@ -119,10 +119,12 @@ def test_generate_exec_summary(admin_ui: TestClient, monkeypatch: pytest.MonkeyP
 
     captured = {}
 
-    def fake_generate(*, api_key, model, system, prompt, max_tokens=1500):
+    def fake_generate(*, api_key, model, system, prompt, max_tokens=1500, usage=None):
         captured["api_key"] = api_key
         captured["model"] = model
         captured["prompt"] = prompt
+        if usage is not None:
+            usage.update(input_tokens=900, output_tokens=300, total_tokens=1200)
         return "The POC is going well.\n\nAll core use cases passed."
 
     # Patch the registry's anthropic spec generate function.
@@ -154,11 +156,14 @@ def test_generate_exec_summary(admin_ui: TestClient, monkeypatch: pytest.MonkeyP
         assert "<p>" in project.exec_summary_html
         assert project.exec_summary_model == "anthropic/claude-opus-4-8"
         assert project.exec_summary_generated_at is not None
+        assert project.exec_summary_tokens == 1200  # usage captured
     finally:
         db.close()
 
-    # The summary renders on the project page and the report.
-    assert "Executive Summary" in admin_ui.get(f"/ui/projects/{pid}").text
+    # The summary (and its token usage) renders on the project page.
+    page = admin_ui.get(f"/ui/projects/{pid}").text
+    assert "Executive Summary" in page
+    assert "1,200 tokens" in page
     assert "going well" in admin_ui.get(f"/ui/reports/projects/{pid}").text
 
 

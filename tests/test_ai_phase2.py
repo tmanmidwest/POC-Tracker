@@ -126,11 +126,13 @@ def test_extraction_prefers_streaming(monkeypatch) -> None:
 
     used = {"stream": False, "generate": False}
 
-    def fake_stream(*, api_key, model, system, prompt, max_tokens, documents=None):
+    def fake_stream(*, api_key, model, system, prompt, max_tokens, documents=None, usage=None):
         used["stream"] = True
+        if usage is not None:
+            usage.update(input_tokens=10, output_tokens=20, total_tokens=30)
         yield '[{"name":"Streamed UC","category":"X"}]'
 
-    def fake_generate(*, api_key, model, system, prompt, max_tokens, documents=None):
+    def fake_generate(*, api_key, model, system, prompt, max_tokens, documents=None, usage=None):
         used["generate"] = True
         return "[]"
 
@@ -140,9 +142,10 @@ def test_extraction_prefers_streaming(monkeypatch) -> None:
     )
     from app.services.ai.extraction import _collect
 
-    raw = _collect(spec, api_key="k", model="m", system="s", prompt="p", max_tokens=100)
+    raw, usage = _collect(spec, api_key="k", model="m", system="s", prompt="p", max_tokens=100)
     assert used["stream"] and not used["generate"]
     assert "Streamed UC" in raw
+    assert usage["total_tokens"] == 30  # usage captured from the stream
 
 
 # ---------------------------------------------------------------------------
@@ -154,9 +157,11 @@ def test_import_extract_and_create(admin_ui: TestClient, monkeypatch) -> None:
     pid = _make_project("H-E-B POC")
     _add_provider()
 
-    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None):
+    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None, usage=None):
         assert "Okta" in prompt  # the requirements text reached the model
         assert documents is None  # text path sends no native documents
+        if usage is not None:
+            usage.update(input_tokens=1200, output_tokens=800, total_tokens=2000)
         return (
             '[{"reference_number":"1.1","category":"Access","name":"SSO via Okta",'
             '"description":"Okta SSO","success_validation":"login ok"},'
@@ -174,6 +179,9 @@ def test_import_extract_and_create(admin_ui: TestClient, monkeypatch) -> None:
     assert preview.status_code == 200
     assert "SSO via Okta" in preview.text
     assert "MFA" in preview.text
+    # Token usage + provider are surfaced to the user.
+    assert "Anthropic (Claude)" in preview.text
+    assert "2,000" in preview.text and "tokens" in preview.text
 
     # Import only the first candidate.
     resp = admin_ui.post(
@@ -222,7 +230,7 @@ def test_import_native_pdf_and_dedup_context(admin_ui: TestClient, monkeypatch) 
 
     captured = {}
 
-    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None):
+    def fake_generate(*, api_key, model, system, prompt, max_tokens=8000, documents=None, usage=None):
         captured["documents"] = documents
         captured["prompt"] = prompt
         return '[{"reference_number":"2.1","category":"Reporting","name":"Dashboards"}]'
@@ -252,10 +260,12 @@ def test_stream_exec_summary_saves_at_end(admin_ui: TestClient, monkeypatch) -> 
     pid = _make_project("Streaming POC")
     _add_provider()
 
-    def fake_stream(*, api_key, model, system, prompt, max_tokens=1500):
+    def fake_stream(*, api_key, model, system, prompt, max_tokens=1500, usage=None):
         assert api_key == "sk-test"
         yield "The POC "
         yield "is going well."
+        if usage is not None:
+            usage.update(input_tokens=500, output_tokens=100, total_tokens=600)
 
     _install_fake_anthropic(monkeypatch, stream=fake_stream)
 
@@ -269,6 +279,7 @@ def test_stream_exec_summary_saves_at_end(admin_ui: TestClient, monkeypatch) -> 
         assert project.exec_summary == "The POC is going well."
         assert "<p>" in project.exec_summary_html
         assert project.exec_summary_model == "anthropic/claude-opus-4-8"
+        assert project.exec_summary_tokens == 600  # usage captured from the stream
     finally:
         db.close()
 

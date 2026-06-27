@@ -191,7 +191,7 @@
       {{ M.render_note(project.exec_summary_html, project.exec_summary) }}
       {% if project.exec_summary_generated_at %}
       <p class="text-muted text-xs" style="margin-top: var(--s-3);">
-        Generated {{ project.exec_summary_generated_at.strftime('%b %-d, %Y') }}{% if project.exec_summary_model %} · {{ project.exec_summary_model }}{% endif %}
+        🤖 Generated {{ project.exec_summary_generated_at.strftime('%b %-d, %Y') }}{% if project.exec_summary_model %} · {{ project.exec_summary_model }}{% endif %}{% if project.exec_summary_tokens %} · {{ "{:,}".format(project.exec_summary_tokens) }} tokens{% endif %}
       </p>
       {% endif %}
     {% elif can_edit %}

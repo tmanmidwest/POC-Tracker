@@ -13,10 +13,29 @@
   </div>
 </div>
 
+{% if ai_provider_label %}
+<div class="card" style="max-width: 920px; margin-bottom: var(--s-4); border-color: var(--primary);">
+  <div class="card__body" style="display:flex; gap: var(--s-2); align-items:center; flex-wrap:wrap;">
+    <span>🤖 Extracted using <strong>{{ ai_provider_label }}</strong> <span class="badge badge--neutral mono">{{ ai_model }}</span></span>
+    {% if ai_usage and ai_usage.total_tokens %}
+    <span class="text-muted text-xs">·
+      <strong>{{ "{:,}".format(ai_usage.total_tokens) }}</strong> tokens used
+      ({{ "{:,}".format(ai_usage.input_tokens or 0) }} in / {{ "{:,}".format(ai_usage.output_tokens or 0) }} out)
+    </span>
+    {% else %}
+    <span class="text-muted text-xs">· token usage not reported by this provider</span>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% if not candidates %}
   <div class="empty-state"><p class="empty-state__body">Nothing was extracted. <a href="/ui/projects/{{ project.id }}/import">Try again</a>.</p></div>
 {% else %}
 <form method="post" action="/ui/projects/{{ project.id }}/import">
+  <input type="hidden" name="_provider_label" value="{{ ai_provider_label or '' }}" />
+  <input type="hidden" name="_model" value="{{ ai_model or '' }}" />
+  <input type="hidden" name="_total_tokens" value="{{ ai_usage.total_tokens if (ai_usage and ai_usage.total_tokens) else '' }}" />
   <div class="card card--flush" style="margin-bottom: var(--s-4);">
     <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
       <h3 class="card__title">Candidates</h3>

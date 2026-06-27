@@ -33,6 +33,7 @@ class SummaryResult:
     text: str           # plain-text summary
     html: str           # sanitized HTML rendering (editable in the UI)
     model_label: str    # "anthropic/claude-opus-4-8"
+    total_tokens: int = 0  # input + output tokens the provider reported
 
 
 def default_provider(db: Session) -> AIProvider | None:
@@ -63,11 +64,13 @@ def generate_project_summary(db: Session, project: Project) -> SummaryResult:
         raise GenerationError("The selected provider has no API key configured.")
 
     prompt = _build_context(project)
+    usage: dict = {}
     text = spec.generate(
         api_key=decrypt_secret(provider.api_key_encrypted),
         model=provider.model,
         system=_SYSTEM_PROMPT,
         prompt=prompt,
+        usage=usage,
     )
 
     provider.last_used_at = datetime.now(UTC)
@@ -76,6 +79,7 @@ def generate_project_summary(db: Session, project: Project) -> SummaryResult:
         text=text,
         html=_text_to_html(text),
         model_label=f"{provider.provider}/{provider.model}",
+        total_tokens=int(usage.get("total_tokens") or 0),
     )
 
 
@@ -101,18 +105,19 @@ def stream_project_summary(project_id: int) -> Iterator[str]:
         key = decrypt_secret(provider.api_key_encrypted)
         prompt = _build_context(project)
         parts: list[str] = []
+        usage: dict = {}
         try:
             if spec.stream is not None:
                 for chunk in spec.stream(
                     api_key=key, model=provider.model,
-                    system=_SYSTEM_PROMPT, prompt=prompt,
+                    system=_SYSTEM_PROMPT, prompt=prompt, usage=usage,
                 ):
                     parts.append(chunk)
                     yield chunk
             elif spec.generate is not None:
                 text = spec.generate(
                     api_key=key, model=provider.model,
-                    system=_SYSTEM_PROMPT, prompt=prompt,
+                    system=_SYSTEM_PROMPT, prompt=prompt, usage=usage,
                 )
                 parts.append(text)
                 yield text
@@ -127,6 +132,7 @@ def stream_project_summary(project_id: int) -> Iterator[str]:
             project.exec_summary_html = _text_to_html(full)
             project.exec_summary_generated_at = now
             project.exec_summary_model = f"{provider.provider}/{provider.model}"
+            project.exec_summary_tokens = int(usage.get("total_tokens") or 0) or None
             provider.last_used_at = now
             db.commit()
     finally:
