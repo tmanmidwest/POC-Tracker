@@ -48,6 +48,78 @@
   });
 })();
 </script>
+<script>
+// Bulk use-case actions: checkboxes select rows; the sticky bar applies one
+// change to all selected via a hidden form (kept separate so it doesn't nest
+// inside the per-row status/edit forms).
+(function () {
+  var bar = document.getElementById('bulk-bar');
+  if (!bar) return;  // not rendered (external viewer, or no use cases)
+  var boxes = function () { return Array.prototype.slice.call(document.querySelectorAll('.uc-select')); };
+  var selected = function () { return boxes().filter(function (b) { return b.checked; }); };
+
+  function refresh() {
+    var n = selected().length;
+    document.getElementById('bulk-count').textContent = n + ' selected';
+    bar.style.display = n > 0 ? 'block' : 'none';
+    // Keep each category's "select all" in sync.
+    document.querySelectorAll('.uc-select-all').forEach(function (master) {
+      var group = boxes().filter(function (b) { return b.dataset.group === master.dataset.group; });
+      master.checked = group.length > 0 && group.every(function (b) { return b.checked; });
+    });
+  }
+
+  document.addEventListener('change', function (e) {
+    if (e.target.classList.contains('uc-select')) refresh();
+    if (e.target.classList.contains('uc-select-all')) {
+      var g = e.target.dataset.group, on = e.target.checked;
+      boxes().forEach(function (b) { if (b.dataset.group === g) b.checked = on; });
+      refresh();
+    }
+  });
+
+  window.bulkSelectAll = function () { boxes().forEach(function (b) { b.checked = true; }); refresh(); };
+  window.bulkClear = function () {
+    boxes().forEach(function (b) { b.checked = false; });
+    document.querySelectorAll('.uc-select-all').forEach(function (m) { m.checked = false; });
+    document.getElementById('bulk-action').value = '';
+    bulkActionChanged();
+    refresh();
+  };
+
+  window.bulkActionChanged = function () {
+    var a = document.getElementById('bulk-action').value;
+    document.getElementById('bulk-status').style.display = a === 'status' ? '' : 'none';
+    document.getElementById('bulk-stamp-wrap').style.display = a === 'status' ? 'inline-flex' : 'none';
+    document.getElementById('bulk-feature').style.display = a === 'feature_type' ? '' : 'none';
+    document.getElementById('bulk-date').style.display = a === 'completed_on' ? '' : 'none';
+  };
+
+  window.bulkApply = function () {
+    var ids = selected().map(function (b) { return b.value; });
+    if (!ids.length) { alert('Select at least one use case.'); return; }
+    var a = document.getElementById('bulk-action').value;
+    if (!a) { alert('Choose a bulk action.'); return; }
+    if (a === 'status' && !document.getElementById('bulk-status').value) { alert('Choose a status.'); return; }
+    if (a === 'delete' && !confirm('Delete ' + ids.length + ' use case(s)? This also removes their screenshots.')) return;
+
+    document.getElementById('bf-action').value = a;
+    document.getElementById('bf-status').value = document.getElementById('bulk-status').value;
+    document.getElementById('bf-stamp').value = document.getElementById('bulk-stamp').checked ? '1' : '';
+    document.getElementById('bf-feature').value = document.getElementById('bulk-feature').value;
+    document.getElementById('bf-date').value = document.getElementById('bulk-date').value;
+
+    var holder = document.getElementById('bf-ids');
+    holder.innerHTML = '';
+    ids.forEach(function (id) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'ids'; inp.value = id;
+      holder.appendChild(inp);
+    });
+    document.getElementById('bulk-form').submit();
+  };
+})();
+</script>
 {% endblock %}
 
 {% block main %}
@@ -429,17 +501,58 @@
  </div>
 </div>
 
+{# ---- Bulk actions (select checkboxes in the tables below) ---- #}
+{% if can_edit and use_case_groups %}
+<div id="bulk-bar" class="card" style="display:none; position:sticky; top:8px; z-index:30; margin-bottom: var(--s-4); border-color: var(--primary);">
+  <div class="card__body" style="display:flex; gap: var(--s-3); align-items:center; flex-wrap:wrap;">
+    <strong id="bulk-count">0 selected</strong>
+    <select id="bulk-action" class="select" style="width:auto;" onchange="bulkActionChanged()">
+      <option value="">Bulk action…</option>
+      <option value="status">Set status</option>
+      <option value="feature_type">Set feature type</option>
+      <option value="completed_on">Set completed date</option>
+      <option value="delete">Delete</option>
+    </select>
+    <select id="bulk-status" class="select" style="width:auto; display:none;">
+      {% for s in uc_statuses %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+    </select>
+    <label id="bulk-stamp-wrap" class="text-xs" style="display:none; align-items:center; gap: var(--s-1);">
+      <input type="checkbox" id="bulk-stamp" /> also stamp today as completed date
+    </label>
+    <select id="bulk-feature" class="select" style="width:auto; display:none;">
+      <option value="">— (none)</option>
+      {% for ft in feature_types %}<option value="{{ ft.id }}">{{ ft.name }}</option>{% endfor %}
+    </select>
+    <input type="date" id="bulk-date" class="input" style="width:auto; display:none;" />
+    <button type="button" class="btn btn--primary btn--sm" onclick="bulkApply()">Apply</button>
+    <span style="flex:1;"></span>
+    <button type="button" class="btn btn--ghost btn--sm" onclick="bulkSelectAll()">Select all</button>
+    <button type="button" class="btn btn--ghost btn--sm" onclick="bulkClear()">Clear</button>
+  </div>
+</div>
+<form id="bulk-form" method="post" action="/ui/projects/{{ project.id }}/use-cases/bulk" style="display:none;">
+  <input type="hidden" name="action" id="bf-action" />
+  <input type="hidden" name="status_id" id="bf-status" />
+  <input type="hidden" name="stamp_today" id="bf-stamp" />
+  <input type="hidden" name="feature_type_id" id="bf-feature" />
+  <input type="hidden" name="completed_on" id="bf-date" />
+  <span id="bf-ids"></span>
+</form>
+{% endif %}
+
 {# ---- Use case list ---- #}
 {% if not use_case_groups %}
   <div class="empty-state"><p class="empty-state__body">No use cases yet. Add some from the library or create a custom one.</p></div>
 {% endif %}
 
 {% for group in use_case_groups %}
+{% set gidx = loop.index %}
 <div class="card card--flush" style="margin-bottom: var(--s-4);">
   <div class="card__header"><h3 class="card__title">{{ group.category }}</h3></div>
   <div class="table-wrap">
   <table class="table">
     <thead><tr>
+      {% if can_edit %}<th style="width:34px;"><input type="checkbox" class="uc-select-all" data-group="{{ gidx }}" title="Select all in this category" /></th>{% endif %}
       {% if 'ref' in uc_fields %}<th style="width:70px;">Ref</th>{% endif %}
       <th>Use case</th>
       {% if 'feature' in uc_fields %}<th>Feature</th>{% endif %}
@@ -450,6 +563,7 @@
     <tbody>
       {% for uc in group.use_cases %}
       <tr>
+        {% if can_edit %}<td><input type="checkbox" class="uc-select" data-group="{{ gidx }}" value="{{ uc.id }}" /></td>{% endif %}
         {% if 'ref' in uc_fields %}<td class="mono">{{ uc.reference_number or "—" }}</td>{% endif %}
         <td>
           <strong>{{ uc.name }}</strong>

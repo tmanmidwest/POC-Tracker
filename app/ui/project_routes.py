@@ -1130,6 +1130,86 @@ def quick_set_status(
     return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
 
 
+@router.post("/{project_id}/use-cases/bulk")
+async def bulk_use_cases(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Apply one change to many selected use cases at once."""
+    project = _get_project(db, project_id)
+    form = await request.form()
+    action = form.get("action")
+    ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]  # type: ignore[attr-defined]
+    back = RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+    if not ids:
+        flash(request, "No use cases were selected.", "error")
+        return back
+    # Scope strictly to this project's use cases.
+    ucs = (
+        db.query(ProjectUseCase)
+        .filter(ProjectUseCase.project_id == project.id, ProjectUseCase.id.in_(ids))
+        .all()
+    )
+    if not ucs:
+        flash(request, "No matching use cases found.", "error")
+        return back
+    count = len(ucs)
+
+    if action == "status":
+        status_id = form.get("status_id")
+        status = db.get(UseCaseStatus, int(status_id)) if str(status_id).isdigit() else None
+        if status is None:
+            flash(request, "Choose a status to apply.", "error")
+            return back
+        stamp = bool(form.get("stamp_today"))
+        for uc in ucs:
+            uc.status_id = status.id
+            if stamp and status.is_complete_status and not uc.completed_on:
+                uc.completed_on = date.today()
+        summary = f"set {count} use case(s) to '{status.name}'"
+    elif action == "feature_type":
+        ft_raw = form.get("feature_type_id")
+        ft_id = int(ft_raw) if str(ft_raw).isdigit() else None
+        if ft_id is not None and db.get(FeatureType, ft_id) is None:
+            flash(request, "That feature type no longer exists.", "error")
+            return back
+        for uc in ucs:
+            uc.feature_type_id = ft_id
+        summary = f"set the feature type on {count} use case(s)"
+    elif action == "completed_on":
+        when = _parse_date(form.get("completed_on"))  # type: ignore[arg-type]
+        for uc in ucs:
+            uc.completed_on = when
+        summary = (
+            f"set the completed-on date on {count} use case(s)"
+            if when
+            else f"cleared the completed-on date on {count} use case(s)"
+        )
+    elif action == "delete":
+        for uc in ucs:
+            for shot in uc.screenshots:
+                screenshot_store.delete_file(shot)
+            db.delete(uc)
+        summary = f"deleted {count} use case(s)"
+    else:
+        flash(request, "Unknown bulk action.", "error")
+        return back
+
+    db.commit()
+    record_event(
+        category="project", event_type="use_case.bulk_updated", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Bulk {summary} in '{project.display_name}'",
+        detail={"surface": "ui", "action": action, "count": count}, request=request,
+    )
+    flash(request, f"Bulk {summary}.", "success")
+    return back
+
+
 @router.post("/use-cases/{use_case_id}/delete")
 def delete_use_case(
     use_case_id: int,
