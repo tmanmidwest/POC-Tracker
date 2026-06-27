@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 MAX_CANDIDATES = 200
 # Cap input size sent to the model (characters) — keeps token cost bounded.
 MAX_INPUT_CHARS = 60_000
+# Generous output ceiling — a long requirements doc can yield many use cases, and
+# JSON is verbose. Too low truncates the array mid-object (extraction then yields
+# nothing). Extraction streams the response so a large output won't time out.
+MAX_OUTPUT_TOKENS = 16_000
 
 _SYSTEM_PROMPT = (
     "You extract proof-of-concept (POC) use cases / functional requirements from the "
@@ -80,15 +84,28 @@ def extract_use_cases(
     if not provider.has_key:
         raise GenerationError("The selected provider has no API key configured.")
 
-    raw = spec.generate(
+    raw = _collect(
+        spec,
         api_key=decrypt_secret(provider.api_key_encrypted),
         model=provider.model,
         system=_SYSTEM_PROMPT,
         prompt=_build_prompt(text, project, has_documents=bool(documents)),
-        max_tokens=8000,
+        max_tokens=MAX_OUTPUT_TOKENS,
         documents=documents or None,
     )
     return _parse(raw)
+
+
+def _collect(spec, **kwargs) -> str:
+    """Get the model's full reply, streaming when supported.
+
+    Streaming keeps the connection fed during a long extraction, so a large
+    output doesn't trip the HTTP idle-read timeout the way a single blocking
+    response would. Falls back to one-shot generation otherwise.
+    """
+    if spec.stream is not None:
+        return "".join(spec.stream(**kwargs))
+    return spec.generate(**kwargs)
 
 
 def _build_prompt(text: str, project: Project | None, *, has_documents: bool) -> str:
@@ -118,16 +135,13 @@ def _build_prompt(text: str, project: Project | None, *, has_documents: bool) ->
 
 
 def _parse(raw: str) -> list[CandidateUseCase]:
-    """Parse the model's reply into candidates, tolerating fences/prose."""
-    payload = _extract_json_array(raw)
-    if payload is None:
-        raise GenerationError("The model did not return a parseable list of use cases.")
-    try:
-        data = json.loads(payload)
-    except ValueError as exc:
-        raise GenerationError(f"Could not parse the extracted use cases: {exc}") from exc
-    if not isinstance(data, list):
-        raise GenerationError("The model returned an unexpected format.")
+    """Parse the model's reply into candidates, tolerating fences/prose/truncation."""
+    data = _load_objects(raw)
+    if not data:
+        raise GenerationError(
+            "The model didn't return any use cases. The document may be very large or in "
+            "an unusual layout — try importing a section at a time, or paste the text."
+        )
 
     candidates: list[CandidateUseCase] = []
     for item in data:
@@ -153,6 +167,31 @@ def _parse(raw: str) -> list[CandidateUseCase]:
     return candidates
 
 
+def _load_objects(raw: str) -> list:
+    """Load the list of use-case objects from a model reply.
+
+    First tries a clean parse of the JSON array (tolerating ```fences``` and
+    surrounding prose). If that fails — most often because the array was
+    truncated at the output-token limit — it recovers every *complete* object
+    from the text, so a cut-off response still yields the items that fit instead
+    of nothing.
+    """
+    if not raw:
+        return []
+    payload = _extract_json_array(raw)
+    if payload:
+        try:
+            loaded = json.loads(payload)
+            if isinstance(loaded, list):
+                return loaded
+        except ValueError:
+            pass  # fall through to object recovery (likely truncated)
+    recovered = _recover_objects(raw)
+    if recovered:
+        log.info("extraction_recovered_truncated", extra={"count": len(recovered)})
+    return recovered
+
+
 def _extract_json_array(raw: str) -> str | None:
     """Pull the JSON array substring out of a model reply."""
     if not raw:
@@ -168,3 +207,28 @@ def _extract_json_array(raw: str) -> str | None:
     if start == -1 or end == -1 or end < start:
         return None
     return text[start : end + 1]
+
+
+def _recover_objects(raw: str) -> list:
+    """Recover every complete top-level JSON object from (possibly truncated) text.
+
+    Walks the string with a JSON decoder, decoding one ``{...}`` object at a time
+    and skipping past it; a trailing partial object (from truncation) simply stops
+    the walk, keeping all the complete ones before it.
+    """
+    decoder = json.JSONDecoder()
+    objects: list = []
+    i = raw.find("{")
+    while i != -1:
+        try:
+            obj, end = decoder.raw_decode(raw, i)
+        except ValueError:
+            nxt = raw.find("{", i + 1)
+            if nxt == -1:
+                break
+            i = nxt
+            continue
+        if isinstance(obj, dict):
+            objects.append(obj)
+        i = raw.find("{", end)
+    return objects

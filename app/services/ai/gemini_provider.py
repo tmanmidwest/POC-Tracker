@@ -83,6 +83,7 @@ def stream(
     system: str,
     prompt: str,
     max_tokens: int = 1500,
+    documents: list[dict] | None = None,
 ) -> Iterator[str]:
     """Stream text chunks from a Gemini model via SSE. Raises GenerationError."""
     if not api_key:
@@ -91,7 +92,7 @@ def stream(
     url = f"{_BASE}/{model}:streamGenerateContent?alt=sse"
     try:
         with httpx.stream(
-            "POST", url, json=_payload(system, prompt, max_tokens),
+            "POST", url, json=_payload(system, prompt, max_tokens, documents),
             headers=_headers(api_key), timeout=_TIMEOUT,
         ) as resp:
             if resp.status_code != 200:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -100,6 +102,47 @@ def test_parse_rejects_non_list() -> None:
 
     with pytest.raises(GenerationError):
         _parse("I couldn't find any requirements.")
+
+
+def test_parse_recovers_truncated_array() -> None:
+    """A JSON array cut off mid-object (hit the token limit) still yields the
+    complete leading objects instead of failing with 'nothing back'."""
+    from app.services.ai.extraction import _parse
+
+    items = [
+        {"reference_number": f"1.{i}", "category": "Access", "name": f"UC {i}"}
+        for i in range(20)
+    ]
+    full = json.dumps(items)
+    truncated = full[:400]  # cut somewhere mid-array
+    out = _parse(truncated)
+    assert 0 < len(out) < 20  # recovered the complete ones, dropped the partial
+    assert out[0].name == "UC 0"
+
+
+def test_extraction_prefers_streaming(monkeypatch) -> None:
+    """When the provider supports streaming, extraction streams (avoids timeouts)."""
+    from app.services.ai import registry
+
+    used = {"stream": False, "generate": False}
+
+    def fake_stream(*, api_key, model, system, prompt, max_tokens, documents=None):
+        used["stream"] = True
+        yield '[{"name":"Streamed UC","category":"X"}]'
+
+    def fake_generate(*, api_key, model, system, prompt, max_tokens, documents=None):
+        used["generate"] = True
+        return "[]"
+
+    spec = registry.PROVIDERS["anthropic"].__class__(
+        key="anthropic", label="C", default_model="m", suggested_models=[],
+        implemented=True, generate=fake_generate, stream=fake_stream,
+    )
+    from app.services.ai.extraction import _collect
+
+    raw = _collect(spec, api_key="k", model="m", system="s", prompt="p", max_tokens=100)
+    assert used["stream"] and not used["generate"]
+    assert "Streamed UC" in raw
 
 
 # ---------------------------------------------------------------------------

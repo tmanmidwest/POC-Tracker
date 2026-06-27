@@ -100,6 +100,7 @@ def stream(
     system: str,
     prompt: str,
     max_tokens: int = 1500,
+    documents: list[dict] | None = None,
 ) -> Iterator[str]:
     """Stream text chunks from a Claude model via SSE. Raises GenerationError."""
     if not api_key:
@@ -109,7 +110,7 @@ def stream(
         "model": model,
         "max_tokens": max_tokens,
         "system": system,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": _user_content(prompt, documents)}],
         "stream": True,
     }
     headers = {
