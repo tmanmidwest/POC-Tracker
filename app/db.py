@@ -40,6 +40,10 @@ def _build_engine() -> Engine:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        # Wait up to 5s for the write lock instead of failing immediately with
+        # "database is locked" when two writes briefly contend (explicit rather
+        # than relying on the driver's implicit default).
+        cursor.execute("PRAGMA busy_timeout=5000")
         # Make ON DELETE CASCADE fire row triggers too, so the full-text
         # search index is cleaned up when a parent (e.g. a project) is deleted.
         cursor.execute("PRAGMA recursive_triggers=ON")
