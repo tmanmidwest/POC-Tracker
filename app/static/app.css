@@ -552,10 +552,20 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   color: var(--primary);
 }
 
+/* Keep the cell a real table-cell so its bottom border lines up with the other
+   columns on tall (multi-line) rows; lay the buttons out inline instead of
+   making the <td> itself a flex container (which shrinks it to content height). */
 .table__actions {
-  display: flex;
-  gap: var(--s-1);
-  justify-content: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+.table__actions > *:not([hidden]) {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: var(--s-1);
+}
+.table__actions > *:not([hidden]):first-child {
+  margin-left: 0;
 }
 
 .table__empty {
