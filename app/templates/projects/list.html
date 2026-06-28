@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = "Projects" %}
 {% block breadcrumb %}<span>Projects</span>{% endblock %}
 
@@ -34,13 +35,7 @@
         </select>
       </div>
       {% if current_user and current_user.is_internal %}
-      <div class="form-row" style="margin:0;">
-        <label class="label" for="scope">Scope</label>
-        <select class="select" id="scope" name="scope" onchange="this.form.submit()">
-          <option value="mine" {% if scope == 'mine' %}selected{% endif %}>My POCs</option>
-          <option value="all" {% if scope == 'all' %}selected{% endif %}>All POCs</option>
-        </select>
-      </div>
+      {{ M.scope_filter(scope, scope_engineers) }}
       {% endif %}
     </form>
   </div>

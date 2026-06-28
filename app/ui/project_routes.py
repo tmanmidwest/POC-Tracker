@@ -51,7 +51,11 @@ from app.services.ai.summaries import (
 )
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
-from app.services.scope import resolve_scope, scoped_project_ids
+from app.services.scope import (
+    resolve_scope,
+    scoped_project_ids,
+    selectable_engineers,
+)
 from app.services.text_extract import TextExtractError, extract_text
 from app.services.use_case_io import (
     SpreadsheetError,
@@ -281,8 +285,8 @@ def list_projects(
         query = query.filter(Project.is_archived.is_(False))
     if status_id:
         query = query.filter(Project.status_id == status_id)
-    # "My POCs" (default) vs "All POCs"; external viewers ignore scope and only
-    # ever see projects shared with them.
+    # Project scope: mine (default) / all / unassigned / a specific engineer.
+    # External viewers ignore scope and only ever see projects shared with them.
     scope = resolve_scope(db, user, scope)
     visible_ids = scoped_project_ids(db, user, scope)
     if visible_ids is not None:
@@ -292,7 +296,7 @@ def list_projects(
     return render(
         request, "projects/list.html", current_user=user, active_section="projects",
         projects=projects, statuses=statuses, view=view, status_id=status_id,
-        scope=scope,
+        scope=scope, scope_engineers=selectable_engineers(db, user),
     )
 
 

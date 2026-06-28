@@ -91,6 +91,41 @@ def test_dashboard_scope_defaults_to_mine_and_is_sticky(ui: TestClient) -> None:
     assert "Other POC" not in ui.get("/ui/dashboard").text
 
 
+def test_dashboard_scope_unassigned_and_specific_engineer(ui: TestClient) -> None:
+    """Scope supports "unassigned" and a specific sales engineer ("user:<id>")."""
+    from app.db import get_session_factory
+    from app.models import AppUser, Project
+    from app.services.passwords import hash_password
+
+    db = get_session_factory()()
+    # A teammate who will own one project.
+    teammate = AppUser(username="se_jane", password_hash=hash_password("password123"),
+                       is_active=True, is_admin=False, display_name="Jane Doe")
+    db.add(teammate)
+    db.commit()
+
+    cid = _create_customer(ui, "Assign Co")
+    jane_id = _create_project(ui, cid, "Jane POC")
+    free_id = _create_project(ui, cid, "Unowned POC")
+    db.get(Project, jane_id).sales_engineer_id = teammate.id
+    db.commit()
+
+    # Filter to a specific engineer shows only their project.
+    page = ui.get(f"/ui/dashboard?scope=user:{teammate.id}").text
+    assert "Jane POC" in page
+    assert "Unowned POC" not in page
+    # The engineer appears as an option in the filter.
+    assert "Jane Doe" in page
+
+    # Filter to unassigned shows only the project with no sales engineer.
+    page = ui.get("/ui/dashboard?scope=unassigned").text
+    assert "Unowned POC" in page
+    assert "Jane POC" not in page
+
+    # A malformed scope value falls back safely (no 500).
+    assert ui.get("/ui/dashboard?scope=user:notanumber").status_code == 200
+
+
 def test_root_redirects_to_dashboard(ui: TestClient) -> None:
     resp = ui.get("/", follow_redirects=False)
     assert resp.headers["location"] == "/ui/dashboard"

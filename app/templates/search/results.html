@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = "Search" %}
 {% block breadcrumb %}<span>Search</span>{% endblock %}
 
@@ -17,10 +18,7 @@
   <input class="input" type="search" name="q" value="{{ query }}" placeholder="Search…"
          autocomplete="off" autofocus />
   {% if current_user and current_user.is_internal %}
-  <select class="select" name="scope" onchange="this.form.submit()" style="margin-top: var(--s-2);" aria-label="Project scope">
-    <option value="mine" {% if scope == 'mine' %}selected{% endif %}>My POCs</option>
-    <option value="all" {% if scope == 'all' %}selected{% endif %}>All POCs</option>
-  </select>
+  <div style="margin-top: var(--s-2); max-width:220px;">{{ M.scope_filter(scope, scope_engineers, label="Limit to") }}</div>
   {% endif %}
 </form>
 

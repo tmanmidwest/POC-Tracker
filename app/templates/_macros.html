@@ -35,6 +35,29 @@
 {% endmacro %}
 
 
+{# Project-scope filter select. Renders the labeled <select> for choosing My /
+   All / Unassigned / a specific sales engineer. Place inside a GET form whose
+   action is the page route; it auto-submits on change. `engineers` is the list
+   of selectable teammates (see scope.selectable_engineers). #}
+{% macro scope_filter(scope, engineers, label="Show") %}
+  <div class="form-row" style="margin:0;">
+    <label class="label" for="scope">{{ label }}</label>
+    <select class="select" id="scope" name="scope" onchange="this.form.submit()">
+      <option value="mine" {% if scope == 'mine' %}selected{% endif %}>My Projects</option>
+      <option value="all" {% if scope == 'all' %}selected{% endif %}>All Projects</option>
+      <option value="unassigned" {% if scope == 'unassigned' %}selected{% endif %}>Unassigned</option>
+      {% if engineers %}
+      <optgroup label="Assigned to">
+        {% for e in engineers %}
+        <option value="user:{{ e.id }}" {% if scope == 'user:' ~ e.id %}selected{% endif %}>{{ e.display_label }}</option>
+        {% endfor %}
+      </optgroup>
+      {% endif %}
+    </select>
+  </div>
+{% endmacro %}
+
+
 {# Render stored note content as HTML. Prefers sanitized rich-text HTML; falls
    back to escaped plain text (newlines → <br>) for legacy plain-text notes. #}
 {% macro render_note(html, text) %}

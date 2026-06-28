@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser
 from app.services import search as search_service
-from app.services.scope import get_scope, resolve_scope, scoped_project_ids
+from app.services.scope import (
+    get_scope,
+    resolve_scope,
+    scoped_project_ids,
+    selectable_engineers,
+)
 from app.ui.dependencies import require_ui_user
 from app.ui.templating import render
 
@@ -69,4 +74,5 @@ def results(
         groups=groups,
         total=search_service.total_hits(groups),
         scope=scope,
+        scope_engineers=selectable_engineers(db, user),
     )

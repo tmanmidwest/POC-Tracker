@@ -12,7 +12,12 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, DashboardPref, Project, ProjectStatus
-from app.services.scope import get_scope, resolve_scope, scoped_project_ids
+from app.services.scope import (
+    get_scope,
+    resolve_scope,
+    scoped_project_ids,
+    selectable_engineers,
+)
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
@@ -97,8 +102,8 @@ def dashboard(
     ]
     visible_statuses = _order_statuses(visible_statuses, prefs.get("status_order"))
 
-    # "My POCs" (default) vs "All POCs"; external viewers ignore scope and only
-    # ever see projects shared with them.
+    # Project scope: mine (default) / all / unassigned / a specific engineer.
+    # External viewers ignore scope and only ever see projects shared with them.
     scope = resolve_scope(db, user, scope)
     visible_ids = scoped_project_ids(db, user, scope)
 
@@ -141,6 +146,7 @@ def dashboard(
         all_columns=ALL_COLUMNS,
         total_active=total_active,
         scope=scope,
+        scope_engineers=selectable_engineers(db, user),
     )
 
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as M %}
 {% set page_title = "Dashboard" %}
 {% block breadcrumb %}<span>Dashboard</span>{% endblock %}
 
@@ -10,12 +11,11 @@
     <h1 class="page-header__title">Dashboard</h1>
     <p class="page-header__subtitle">{{ total_active }} active POC project(s), grouped by status.</p>
   </div>
-  <div class="page-header__actions">
+  <div class="page-header__actions" style="align-items:end;">
     {% if current_user and current_user.is_internal %}
-    <div style="display:inline-flex; gap: var(--s-1);" role="group" aria-label="Project scope">
-      <a href="/ui/dashboard?scope=mine" class="btn {{ 'btn--primary' if scope == 'mine' else 'btn--secondary' }}">My POCs</a>
-      <a href="/ui/dashboard?scope=all" class="btn {{ 'btn--primary' if scope == 'all' else 'btn--secondary' }}">All POCs</a>
-    </div>
+    <form method="get" action="/ui/dashboard" style="margin:0; min-width:180px;">
+      {{ M.scope_filter(scope, scope_engineers) }}
+    </form>
     {% endif %}
     <a href="/ui/dashboard/preferences" class="btn btn--secondary">Customize</a>
     <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
