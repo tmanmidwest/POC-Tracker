@@ -33,6 +33,15 @@
           <option value="all" {% if view == 'all' %}selected{% endif %}>All</option>
         </select>
       </div>
+      {% if current_user and current_user.is_internal %}
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="scope">Scope</label>
+        <select class="select" id="scope" name="scope" onchange="this.form.submit()">
+          <option value="mine" {% if scope == 'mine' %}selected{% endif %}>My POCs</option>
+          <option value="all" {% if scope == 'all' %}selected{% endif %}>All POCs</option>
+        </select>
+      </div>
+      {% endif %}
     </form>
   </div>
 </div>

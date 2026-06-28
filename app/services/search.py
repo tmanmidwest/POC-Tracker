@@ -215,16 +215,27 @@ _PROJECT_ID_OF = {
 }
 
 
-def _visible_to(etype: str, obj: object, visible_project_ids: set[int] | None) -> bool:
-    """Whether a hit may be shown given an external viewer's accessible projects.
+def _visible_to(
+    etype: str,
+    obj: object,
+    visible_project_ids: set[int] | None,
+    restrict_unscoped: bool = True,
+) -> bool:
+    """Whether a hit may be shown given the caller's accessible projects.
 
-    ``visible_project_ids`` is None for internal users (everything visible).
+    ``visible_project_ids`` is None for "search everything" (no project filter).
+    When it's a set, project-scoped hits are limited to those ids.
+
+    ``restrict_unscoped`` controls non-project-scoped types (customers, library,
+    contacts). True for external viewers — they see nothing outside their granted
+    projects. False for an internal user merely scoped to "My POCs" — they still
+    see global reference data, just narrowed project content.
     """
     if visible_project_ids is None:
         return True
     resolver = _PROJECT_ID_OF.get(etype)
     if resolver is None:
-        return False  # not project-scoped → hidden from external viewers
+        return not restrict_unscoped
     return resolver(obj) in visible_project_ids
 
 
@@ -235,11 +246,14 @@ def search(
     per_type_limit: int = DEFAULT_PER_TYPE,
     overall_cap: int = OVERALL_CAP,
     visible_project_ids: set[int] | None = None,
+    restrict_unscoped: bool = True,
 ) -> dict[str, list[SearchHit]]:
     """Run a bounded, ranked full-text search; return hits grouped by entity type.
 
-    Pass ``visible_project_ids`` (the set of project ids an external viewer may
-    see) to scope results; leave it None for internal users to search everything.
+    Pass ``visible_project_ids`` to scope project content to a set of ids; leave
+    it None to search every project. ``restrict_unscoped`` hides non-project
+    types (customers, library) — keep it True for external viewers, set it False
+    for an internal user merely scoped to "My POCs".
     """
     match = build_match_query(raw)
     if not match:
@@ -275,8 +289,8 @@ def search(
         obj = loaded.get((etype, eid))
         if obj is None:
             continue  # stale index row (e.g. cascade-deleted) — skip
-        if not _visible_to(etype, obj, visible_project_ids):
-            continue  # external viewer: not in a granted project
+        if not _visible_to(etype, obj, visible_project_ids, restrict_unscoped):
+            continue  # outside the caller's accessible / scoped projects
         bucket = grouped.setdefault(etype, [])
         if len(bucket) >= per_type_limit:
             continue

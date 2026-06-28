@@ -102,6 +102,20 @@ def _coerce(field: dict[str, Any], form: Any) -> Any:
     return raw or None
 
 
+@router.get("")
+@router.get("/")
+def lookups_index(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Landing page (under Settings) linking to each lookup table."""
+    return render(
+        request, "lookups/index.html", current_user=user,
+        active_section="settings", active_subsection="settings",
+        lookups=LOOKUPS,
+    )
+
+
 @router.get("/{slug}")
 def list_rows(
     slug: str,

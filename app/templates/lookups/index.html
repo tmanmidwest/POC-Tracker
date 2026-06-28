@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set page_title = "Lookups" %}
+{% block breadcrumb %}<a href="/ui/settings">Settings</a> <span class="topbar__breadcrumb-sep">/</span> <span>Lookups</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Lookups</h1>
+    <p class="page-header__subtitle">Reference lists that drive dropdowns and grouping across the app.</p>
+  </div>
+</div>
+
+<div class="settings-grid">
+  {% for slug, cfg in lookups.items() %}
+  <a href="/ui/lookups/{{ slug }}" class="settings-tile">
+    <div class="settings-tile__title">{{ cfg.title }}</div>
+    <div class="settings-tile__desc">{{ cfg.subtitle }}</div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

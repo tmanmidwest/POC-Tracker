@@ -56,6 +56,41 @@ def test_dashboard_renders(ui: TestClient) -> None:
     assert "Dashboard" in resp.text
 
 
+def test_dashboard_scope_defaults_to_mine_and_is_sticky(ui: TestClient) -> None:
+    """Internal users default to "My POCs" (projects they're the SE on) and the
+    My/All choice sticks across visits."""
+    from app.config import get_settings
+    from app.db import get_session_factory
+    from app.models import AppUser, Project
+
+    db = get_session_factory()()
+    me = db.query(AppUser).filter(
+        AppUser.username == get_settings().initial_admin_username
+    ).one()
+
+    cid = _create_customer(ui, "Scope Co")
+    mine_id = _create_project(ui, cid, "Mine POC")
+    other_id = _create_project(ui, cid, "Other POC")
+    db.get(Project, mine_id).sales_engineer_id = me.id  # assigned to me
+    db.commit()
+
+    # Default scope = mine: only my project shows.
+    page = ui.get("/ui/dashboard").text
+    assert "Mine POC" in page
+    assert "Other POC" not in page
+
+    # Switching to all shows both...
+    page = ui.get("/ui/dashboard?scope=all").text
+    assert "Mine POC" in page and "Other POC" in page
+
+    # ...and the choice is sticky: a plain visit still shows all.
+    assert "Other POC" in ui.get("/ui/dashboard").text
+
+    # Flipping back to mine sticks too.
+    assert "Other POC" not in ui.get("/ui/dashboard?scope=mine").text
+    assert "Other POC" not in ui.get("/ui/dashboard").text
+
+
 def test_root_redirects_to_dashboard(ui: TestClient) -> None:
     resp = ui.get("/", follow_redirects=False)
     assert resp.headers["location"] == "/ui/dashboard"
@@ -145,7 +180,9 @@ def test_salesforce_opp_link(ui: TestClient) -> None:
     assert "Salesforce Opp" in detail and p.salesforce_opp_url in detail
     assert "Notebook Link" in detail and p.notebook_url in detail
     assert "POC Instance" in detail and p.poc_instance_url in detail
-    assert "Salesforce Opp" in ui.get("/ui/dashboard").text
+    # The dashboard defaults to "My POCs"; this project has no assigned sales
+    # engineer, so check the "All POCs" scope to see it.
+    assert "Salesforce Opp" in ui.get("/ui/dashboard?scope=all").text
 
     # A javascript: (or any non-http) scheme is rejected, not stored.
     ui.post(f"/ui/projects/{p.id}/edit", data={
@@ -475,6 +512,16 @@ def test_admin_user_role_change(ui: TestClient) -> None:
 # ---------------------------------------------------------------------------
 # Lookups + library (admin)
 # ---------------------------------------------------------------------------
+
+
+def test_lookups_index_lists_each_table(ui: TestClient) -> None:
+    """The Lookups landing page (reached from Settings) links to all four tables."""
+    page = ui.get("/ui/lookups")
+    assert page.status_code == 200
+    for title in ("Contact Roles", "Project Statuses", "Feature Types", "Use Case Statuses"):
+        assert title in page.text
+    # And the Settings hub now links to it.
+    assert "/ui/lookups" in ui.get("/ui/settings").text
 
 
 def test_lookup_pages_render(ui: TestClient) -> None:

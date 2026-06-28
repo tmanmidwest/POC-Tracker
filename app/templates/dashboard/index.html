@@ -11,6 +11,12 @@
     <p class="page-header__subtitle">{{ total_active }} active POC project(s), grouped by status.</p>
   </div>
   <div class="page-header__actions">
+    {% if current_user and current_user.is_internal %}
+    <div style="display:inline-flex; gap: var(--s-1);" role="group" aria-label="Project scope">
+      <a href="/ui/dashboard?scope=mine" class="btn {{ 'btn--primary' if scope == 'mine' else 'btn--secondary' }}">My POCs</a>
+      <a href="/ui/dashboard?scope=all" class="btn {{ 'btn--primary' if scope == 'all' else 'btn--secondary' }}">All POCs</a>
+    </div>
+    {% endif %}
     <a href="/ui/dashboard/preferences" class="btn btn--secondary">Customize</a>
     <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
   </div>

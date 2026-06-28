@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, DashboardPref, Project, ProjectStatus
-from app.services.access import accessible_project_ids
+from app.services.scope import get_scope, resolve_scope, scoped_project_ids
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
@@ -83,6 +83,7 @@ def _progress(project: Project) -> dict[str, int]:
 @router.get("/")
 def dashboard(
     request: Request,
+    scope: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -96,8 +97,10 @@ def dashboard(
     ]
     visible_statuses = _order_statuses(visible_statuses, prefs.get("status_order"))
 
-    # External viewers only see projects shared with them; internal users see all.
-    visible_ids = accessible_project_ids(db, user)
+    # "My POCs" (default) vs "All POCs"; external viewers ignore scope and only
+    # ever see projects shared with them.
+    scope = resolve_scope(db, user, scope)
+    visible_ids = scoped_project_ids(db, user, scope)
 
     sort = prefs.get("sort", DEFAULT_SORT)
     groups = []
@@ -137,6 +140,7 @@ def dashboard(
         prefs=prefs,
         all_columns=ALL_COLUMNS,
         total_active=total_active,
+        scope=scope,
     )
 
 
@@ -180,6 +184,9 @@ async def save_preferences(
         "status_ids": status_ids,
         "status_order": status_order,
         "sort": sort if sort in {"updated", "start_date", "name"} else DEFAULT_SORT,
+        # Preserve the user's My/All POC scope, which lives in the same blob but
+        # is toggled from the dashboard rather than this preferences form.
+        "scope": get_scope(db, user),
     }
     row = (
         db.query(DashboardPref)

@@ -90,14 +90,8 @@
         {% endif %}
 
         {% if current_user and current_user.is_admin %}
-        <div class="sidebar__section-label">Lookups</div>
-        <a href="/ui/lookups/contact-roles" class="sidebar__link {% if active_subsection == 'contact_roles' %}is-active{% endif %}">Contact Roles</a>
-        <a href="/ui/lookups/project-statuses" class="sidebar__link {% if active_subsection == 'project_statuses' %}is-active{% endif %}">Project Statuses</a>
-        <a href="/ui/lookups/feature-types" class="sidebar__link {% if active_subsection == 'feature_types' %}is-active{% endif %}">Feature Types</a>
-        <a href="/ui/lookups/use-case-statuses" class="sidebar__link {% if active_subsection == 'use_case_statuses' %}is-active{% endif %}">Use Case Statuses</a>
-
         <div class="sidebar__section-label">Admin</div>
-        <a href="/ui/settings" class="sidebar__link {% if request.url.path.startswith('/ui/settings') %}is-active{% endif %}">
+        <a href="/ui/settings" class="sidebar__link {% if request.url.path.startswith('/ui/settings') or request.url.path.startswith('/ui/lookups') %}is-active{% endif %}">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="8" cy="8" r="2.25"/>
             <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/>

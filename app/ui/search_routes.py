@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser
 from app.services import search as search_service
-from app.services.access import accessible_project_ids
+from app.services.scope import get_scope, resolve_scope, scoped_project_ids
 from app.ui.dependencies import require_ui_user
 from app.ui.templating import render
 
@@ -28,9 +28,12 @@ def suggest(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """HTMX fragment: top hits grouped by type for the live dropdown."""
+    # The dropdown has no toggle of its own, so honour the user's stored scope.
+    scope = get_scope(db, user)
     groups = search_service.search(
         db, q, per_type_limit=5, overall_cap=30,
-        visible_project_ids=accessible_project_ids(db, user),
+        visible_project_ids=scoped_project_ids(db, user, scope),
+        restrict_unscoped=user.is_external,
     )
     return render(
         request,
@@ -46,13 +49,16 @@ def suggest(
 def results(
     request: Request,
     q: str = "",
+    scope: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     """Full results page, grouped by entity type."""
+    scope = resolve_scope(db, user, scope)
     groups = search_service.search(
         db, q, per_type_limit=20, overall_cap=120,
-        visible_project_ids=accessible_project_ids(db, user),
+        visible_project_ids=scoped_project_ids(db, user, scope),
+        restrict_unscoped=user.is_external,
     )
     return render(
         request,
@@ -62,4 +68,5 @@ def results(
         query=q,
         groups=groups,
         total=search_service.total_hits(groups),
+        scope=scope,
     )

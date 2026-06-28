@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% set page_title = cfg.title %}
-{% block breadcrumb %}<a href="/ui/lookups/{{ slug }}">{{ cfg.title }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if row else "New" }}</span>{% endblock %}
+{% block breadcrumb %}<a href="/ui/lookups">Lookups</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/lookups/{{ slug }}">{{ cfg.title }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if row else "New" }}</span>{% endblock %}
 
 {% block main %}
 <div class="page-header">
