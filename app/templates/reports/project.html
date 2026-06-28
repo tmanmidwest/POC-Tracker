@@ -43,6 +43,12 @@
     <td colspan="3"><a href="{{ project.notebook_url }}">{{ project.notebook_url }}</a></td>
   </tr>
   {% endif %}
+  {% if project.poc_instance_url %}
+  <tr>
+    <th>POC Instance</th>
+    <td colspan="3"><a href="{{ project.poc_instance_url }}">{{ project.poc_instance_url }}</a></td>
+  </tr>
+  {% endif %}
   {% if project.notes_html or project.notes %}
   <tr><th>Notes</th><td colspan="3">{{ M.render_note(project.notes_html, project.notes) }}</td></tr>
   {% endif %}

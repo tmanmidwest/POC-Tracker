@@ -38,6 +38,7 @@
         {% if 'account_executive' in cols %}<th>Account Exec</th>{% endif %}
         {% if 'salesforce' in cols %}<th>Salesforce</th>{% endif %}
         {% if 'notebook' in cols %}<th>Notebook</th>{% endif %}
+        {% if 'poc_instance' in cols %}<th>POC Instance</th>{% endif %}
         {% if 'start_date' in cols %}<th>Start</th>{% endif %}
         {% if 'end_date' in cols %}<th>End</th>{% endif %}
         {% if 'progress' in cols %}<th>Use cases</th>{% endif %}
@@ -53,6 +54,7 @@
         {% if 'account_executive' in cols %}<td class="text-muted">{{ p.account_executive or "—" }}</td>{% endif %}
         {% if 'salesforce' in cols %}<td>{% if p.salesforce_opp_url %}<a href="{{ p.salesforce_opp_url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Salesforce Opp ↗</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
         {% if 'notebook' in cols %}<td>{% if p.notebook_url %}<a href="{{ p.notebook_url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">Notebook Link ↗</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
+        {% if 'poc_instance' in cols %}<td>{% if p.poc_instance_url %}<a href="{{ p.poc_instance_url }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">POC Instance ↗</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
         {% if 'start_date' in cols %}<td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>{% endif %}
         {% if 'end_date' in cols %}<td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>{% endif %}
         {% if 'progress' in cols %}

@@ -79,6 +79,11 @@
       <div class="form-hint">Paste the full URL — it shows as a “Notebook Link” on the project.</div>
     </div>
     <div class="form-row">
+      <label class="label" for="poc_instance_url">POC Instance URL</label>
+      <input class="input" type="url" id="poc_instance_url" name="poc_instance_url" value="{{ form.poc_instance_url or '' }}" maxlength="1000" placeholder="https://…" />
+      <div class="form-hint">Paste the full URL — it shows as a “POC Instance” link on the project and dashboard.</div>
+    </div>
+    <div class="form-row">
       <label class="label" for="notes">Notes</label>
       <div class="rte" data-rte-target="#notes" data-placeholder="Notes about this project…">{{ M.rte_seed(form.notes_html, form.notes) }}</div>
       <input type="hidden" id="notes" name="notes" />

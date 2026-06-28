@@ -325,6 +325,7 @@ async def _read_project_form(request: Request) -> dict:
         "account_executive_email": _clean(form.get("account_executive_email")),  # type: ignore[arg-type]
         "salesforce_opp_url": _clean_url(form.get("salesforce_opp_url")),  # type: ignore[arg-type]
         "notebook_url": _clean_url(form.get("notebook_url")),  # type: ignore[arg-type]
+        "poc_instance_url": _clean_url(form.get("poc_instance_url")),  # type: ignore[arg-type]
         # Rich-text notes: store sanitized HTML + a plain-text rendering.
         "notes": html_to_text(notes_html),
         "notes_html": notes_html,
@@ -357,6 +358,7 @@ async def create_project(
         account_executive_email=data["account_executive_email"],
         salesforce_opp_url=data["salesforce_opp_url"],
         notebook_url=data["notebook_url"],
+        poc_instance_url=data["poc_instance_url"],
         notes=data["notes"],
         notes_html=data["notes_html"],
     )
@@ -392,6 +394,7 @@ def edit_form(
         "account_executive_email": project.account_executive_email,
         "salesforce_opp_url": project.salesforce_opp_url,
         "notebook_url": project.notebook_url,
+        "poc_instance_url": project.poc_instance_url,
         "notes": project.notes,
         "notes_html": project.notes_html,
     }
@@ -427,6 +430,7 @@ async def update_project(
     project.account_executive_email = data["account_executive_email"]
     project.salesforce_opp_url = data["salesforce_opp_url"]
     project.notebook_url = data["notebook_url"]
+    project.poc_instance_url = data["poc_instance_url"]
     project.notes = data["notes"]
     project.notes_html = data["notes_html"]
     db.commit()

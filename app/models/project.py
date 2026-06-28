@@ -59,6 +59,9 @@ class Project(Base, TimestampMixin):
     # Full URL to a notebook (e.g. a shared analysis/notebook); shown as a
     # "Notebook Link" hyperlink in the UI.
     notebook_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Full URL to the POC instance/environment; shown as a "POC Instance"
+    # hyperlink in the UI.
+    poc_instance_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Free-text project notes. ``notes`` holds a plain-text rendering (search/
     # export/fallback); ``notes_html`` holds sanitized rich-text HTML when present.

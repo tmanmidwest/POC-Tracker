@@ -29,11 +29,12 @@ ALL_COLUMNS = [
     {"key": "account_executive", "label": "Account Exec"},
     {"key": "salesforce", "label": "Salesforce Opp"},
     {"key": "notebook", "label": "Notebook Link"},
+    {"key": "poc_instance", "label": "POC Instance"},
     {"key": "start_date", "label": "Start"},
     {"key": "end_date", "label": "End"},
     {"key": "progress", "label": "Use-case progress"},
 ]
-DEFAULT_COLUMNS = ["name", "sales_engineer", "salesforce", "notebook", "start_date", "end_date", "progress"]
+DEFAULT_COLUMNS = ["name", "sales_engineer", "salesforce", "notebook", "poc_instance", "start_date", "end_date", "progress"]
 DEFAULT_SORT = "updated"  # updated | start_date | name
 
 
