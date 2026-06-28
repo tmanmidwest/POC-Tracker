@@ -583,6 +583,58 @@ def test_library_admin_create(ui: TestClient) -> None:
     assert "Library Item X" in ui.get("/ui/library").text
 
 
+def test_library_export_and_template_download(ui: TestClient) -> None:
+    xlsx_ct = "spreadsheetml"
+    exp = ui.get("/ui/library/export.xlsx")
+    assert exp.status_code == 200
+    assert xlsx_ct in exp.headers["content-type"]
+    assert "attachment" in exp.headers["content-disposition"]
+    tmpl = ui.get("/ui/library/template.xlsx")
+    assert tmpl.status_code == 200
+    assert xlsx_ct in tmpl.headers["content-type"]
+
+
+def test_library_import_roundtrip_updates_and_adds(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import UseCaseLibrary
+
+    # Seed one entry to update on re-import.
+    ui.post("/ui/library/new",
+            data={"category": "Cat A", "name": "Item One", "default_reference_number": "1.1",
+                  "description": "", "success_validation": "", "feature_type_id": ""},
+            follow_redirects=False)
+    db = get_session_factory()()
+    e = db.query(UseCaseLibrary).filter(UseCaseLibrary.name == "Item One").one()
+
+    # CSV matching the template columns: row 0 updates the existing entry (by Id),
+    # row 1 has a blank Id so it's added as new.
+    csv_text = (
+        "Id,Reference Number,Category,Name,Description,Success Validation,Feature Type,Active\n"
+        f"{e.id},1.1,Cat A,Item One Renamed,,,,Yes\n"
+        ",2.1,Cat B,Brand New Item,A description,,,Yes\n"
+    )
+    files = {"file": ("lib.csv", csv_text.encode(), "text/csv")}
+    prev = ui.post("/ui/library/spreadsheet/preview", files=files)
+    assert prev.status_code == 200
+    assert "1 new" in prev.text and "1 update" in prev.text
+
+    # Apply both rows.
+    resp = ui.post("/ui/library/spreadsheet/apply", data={
+        "select": ["0", "1"],
+        "id_0": str(e.id), "category_0": "Cat A", "name_0": "Item One Renamed",
+        "ref_0": "1.1", "desc_0": "", "sv_0": "", "feature_type_id_0": "", "active_0": "1",
+        "id_1": "", "category_1": "Cat B", "name_1": "Brand New Item",
+        "ref_1": "2.1", "desc_1": "A description", "sv_1": "", "feature_type_id_1": "", "active_1": "1",
+    }, follow_redirects=False)
+    assert resp.status_code == 303
+
+    db.expire_all()
+    assert db.get(UseCaseLibrary, e.id).name == "Item One Renamed"  # updated in place
+    assert db.query(UseCaseLibrary).filter(UseCaseLibrary.name == "Brand New Item").count() == 1
+    page = ui.get("/ui/library").text
+    assert "Item One Renamed" in page and "Brand New Item" in page
+
+
 def test_mcp_token_settings_page_and_rotate(ui: TestClient) -> None:
     from app.services.mcp_token import read_token
 

@@ -3,15 +3,24 @@
 from __future__ import annotations
 
 import logging
+import re
 from itertools import groupby
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, FeatureType, UseCaseLibrary
 from app.services.audit import record_event
+from app.services.use_case_io import (
+    LIBRARY_KEYS,
+    SpreadsheetError,
+    build_library_export_xlsx,
+    build_library_template_xlsx,
+    classify_library_rows,
+    parse_spreadsheet,
+)
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
@@ -19,6 +28,16 @@ from app.ui.templating import render
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ui/library", tags=["ui"], include_in_schema=False)
+
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _xlsx_response(data: bytes, filename: str) -> Response:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or "library"
+    return Response(
+        content=data, media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )
 
 
 def _clean(value: str | None) -> str | None:
@@ -56,6 +75,109 @@ def list_library(
         request, "library/list.html", current_user=user, active_section="library",
         groups=groups, total=len(entries),
     )
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheet import / export
+# ---------------------------------------------------------------------------
+
+
+@router.get("/export.xlsx")
+def export_library(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    return _xlsx_response(build_library_export_xlsx(db), "use-case-library.xlsx")
+
+
+@router.get("/template.xlsx")
+def library_template(
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    return _xlsx_response(build_library_template_xlsx(db), "use-case-library-template.xlsx")
+
+
+@router.get("/spreadsheet")
+def spreadsheet_hub(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    return render(
+        request, "library/spreadsheet.html", current_user=user,
+        active_section="library",
+    )
+
+
+@router.post("/spreadsheet/preview")
+async def spreadsheet_preview(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    if not file or not file.filename:
+        flash(request, "Choose a spreadsheet to import.", "error")
+        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
+    raw = await file.read()
+    try:
+        rows = parse_spreadsheet(file.filename, raw, keys=LIBRARY_KEYS)
+    except SpreadsheetError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
+    candidates = classify_library_rows(db, rows)
+    if not candidates:
+        flash(request, "No rows found in that file. Check it matches the template.", "error")
+        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
+    return render(
+        request, "library/spreadsheet_preview.html", current_user=user,
+        active_section="library", candidates=candidates,
+        new_count=sum(1 for c in candidates if c.action == "new" and c.valid),
+        update_count=sum(1 for c in candidates if c.action == "update" and c.valid),
+    )
+
+
+@router.post("/spreadsheet/apply")
+async def spreadsheet_apply(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    form = await request.form()
+    selected = form.getlist("select")  # type: ignore[attr-defined]
+    created = updated = 0
+    for idx in selected:
+        name = _clean(form.get(f"name_{idx}"))  # type: ignore[arg-type]
+        category = _clean(form.get(f"category_{idx}"))  # type: ignore[arg-type]
+        if not name or not category:
+            continue
+        tid_raw = str(form.get(f"id_{idx}") or "")
+        entry = db.get(UseCaseLibrary, int(tid_raw)) if tid_raw.isdigit() else None
+        if entry is None:
+            entry = UseCaseLibrary(category=category, name=name)
+            db.add(entry)
+            created += 1
+        else:
+            updated += 1
+        entry.category = category
+        entry.name = name
+        entry.default_reference_number = _clean(form.get(f"ref_{idx}"))  # type: ignore[arg-type]
+        entry.description = _clean(form.get(f"desc_{idx}"))  # type: ignore[arg-type]
+        entry.success_validation = _clean(form.get(f"sv_{idx}"))  # type: ignore[arg-type]
+        ft = str(form.get(f"feature_type_id_{idx}") or "")
+        entry.feature_type_id = int(ft) if ft.isdigit() else None
+        entry.is_active = str(form.get(f"active_{idx}") or "") == "1"
+    db.commit()
+    record_event(
+        category="library", event_type="library.spreadsheet_imported", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="use_case_library",
+        target_id=None, target_label="library",
+        message=f"Library spreadsheet import: {created} added, {updated} updated",
+        detail={"surface": "ui", "created": created, "updated": updated}, request=request,
+    )
+    flash(request, f"Imported library: {created} added, {updated} updated.", "success")
+    return RedirectResponse(url="/ui/library", status_code=303)
 
 
 @router.get("/new")
