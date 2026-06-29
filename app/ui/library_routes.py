@@ -259,10 +259,14 @@ def spreadsheet_hub(
     if current is None:
         flash(request, "Create a library first.", "error")
         return RedirectResponse(url="/ui/library/sets", status_code=303)
-    return render(
+    resp = render(
         request, "library/spreadsheet.html", current_user=user,
         active_section="library", current_set=current,
     )
+    # Don't let the browser restore this upload page (and its stale file input)
+    # from the back/forward cache — a re-import must re-read the chosen file.
+    resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    return resp
 
 
 @router.post("/spreadsheet/preview")

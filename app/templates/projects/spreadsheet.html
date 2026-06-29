@@ -41,11 +41,24 @@
   (function () {
     var form = document.getElementById('ss-form');
     if (!form) return;
-    form.addEventListener('submit', function () {
-      if (!document.getElementById('file').files.length) return;
-      var b = document.getElementById('ss-btn');
-      if (b) { b.disabled = true; b.textContent = 'Reading…'; }
-      document.getElementById('ss-status').style.display = 'block';
+    var file = document.getElementById('file');
+    var btn = document.getElementById('ss-btn');
+    var status = document.getElementById('ss-status');
+
+    // Reset the file input whenever the page is shown — including back/forward
+    // (bfcache) restores — so a re-import never re-submits a previously chosen
+    // (now stale) file. The user must re-pick, guaranteeing a fresh read.
+    function reset() {
+      form.reset();
+      if (btn) { btn.disabled = false; btn.textContent = 'Review import →'; }
+      if (status) { status.style.display = 'none'; }
+    }
+    window.addEventListener('pageshow', reset);
+
+    form.addEventListener('submit', function (e) {
+      if (!file.files.length) { e.preventDefault(); return; }
+      if (btn) { btn.disabled = true; btn.textContent = 'Reading…'; }
+      if (status) { status.style.display = 'block'; }
     });
   })();
 </script>

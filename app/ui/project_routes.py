@@ -876,10 +876,14 @@ def spreadsheet_hub(
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     project = _get_project(db, project_id)
-    return render(
+    resp = render(
         request, "projects/spreadsheet.html", current_user=user,
         active_section="projects", project=project,
     )
+    # Don't let the browser restore this upload page (and its stale file input)
+    # from the back/forward cache — a re-import must re-read the chosen file.
+    resp.headers["Cache-Control"] = "no-store, must-revalidate"
+    return resp
 
 
 @router.post("/{project_id}/use-cases/spreadsheet/preview")
