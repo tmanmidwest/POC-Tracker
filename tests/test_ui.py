@@ -465,6 +465,24 @@ def test_dashboard_status_ordering(ui: TestClient) -> None:
     assert page.index(statuses[1].name) < page.index(statuses[0].name)
 
 
+def test_branding_tagline_editable(ui: TestClient) -> None:
+    """The sub-header tagline is editable in branding and shows on the shell +
+    login; clearing it hides the element."""
+    def _save(tagline: str) -> None:
+        r = ui.post("/ui/settings/branding",
+                    data={"brand_name": "POC Tracker", "brand_tagline": tagline,
+                          "brand_color": "#1e293b", "icon_key": "suitcase"},
+                    follow_redirects=False)
+        assert r.status_code == 303
+
+    _save("Acme · Production")
+    assert "Acme · Production" in ui.get("/ui/dashboard").text
+    assert "Acme · Production" in ui.get("/ui/login").text
+
+    _save("")  # blank hides the tagline entirely
+    assert "sidebar__brand-tagline" not in ui.get("/ui/dashboard").text
+
+
 def test_dark_mode_toggle(ui: TestClient) -> None:
     from app.config import get_settings
     from app.db import get_session_factory

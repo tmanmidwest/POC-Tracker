@@ -44,6 +44,13 @@
     </div>
 
     <div class="form-row">
+      <label class="label" for="brand_tagline">Tagline</label>
+      <input class="input" id="brand_tagline" name="brand_tagline" maxlength="100"
+             value="{{ form.brand_tagline or '' }}" placeholder="e.g. POC · non-production" />
+      <div class="form-hint">Small sub-header under the brand name (sidebar &amp; login). Leave blank to hide it.</div>
+    </div>
+
+    <div class="form-row">
       <label class="label" for="brand_color_hex">Accent color</label>
       <div style="display:flex; align-items:center; gap:var(--s-3);">
         <input type="color" id="brand_color" name="brand_color" value="{{ form.brand_color }}"

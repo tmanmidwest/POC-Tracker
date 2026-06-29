@@ -38,7 +38,7 @@
                style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
           <div class="sidebar__brand-name"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</div>
         </div>
-        <div class="sidebar__brand-tagline">POC · non-production</div>
+        {% if branding.tagline %}<div class="sidebar__brand-tagline">{{ branding.tagline }}</div>{% endif %}
       </div>
 
       <nav class="sidebar__nav">

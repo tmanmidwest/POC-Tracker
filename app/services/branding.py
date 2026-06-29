@@ -19,6 +19,8 @@ from urllib.parse import quote
 DEFAULT_COLOR = "#1e293b"
 DEFAULT_NAME = "POC Tracker"
 DEFAULT_ICON = "suitcase"
+# Small sub-header under the brand name (sidebar + login). Empty hides it.
+DEFAULT_TAGLINE = "POC · non-production"
 
 # key -> {"label": human name, "svg": inner SVG markup for a 0 0 24 24 viewBox}
 ICON_PRESETS: dict[str, dict[str, str]] = {
@@ -114,6 +116,7 @@ def _load() -> dict[str, str]:
     from app.models import AppBranding
 
     name, color, icon_key = DEFAULT_NAME, "", DEFAULT_ICON
+    tagline = DEFAULT_TAGLINE
     db = get_session_factory()()
     try:
         row = db.get(AppBranding, 1)
@@ -121,6 +124,8 @@ def _load() -> dict[str, str]:
             name = row.brand_name or DEFAULT_NAME
             color = row.brand_color or ""
             icon_key = resolve_icon_key(row.icon_key)
+            # An explicit empty tagline hides it; only fall back when unset (None).
+            tagline = row.brand_tagline if row.brand_tagline is not None else DEFAULT_TAGLINE
     except Exception:
         # Branding is non-critical chrome — never let a DB hiccup break a page.
         pass
@@ -133,6 +138,7 @@ def _load() -> dict[str, str]:
         # Empty string means "no explicit override" so templates can keep the
         # theme default; effective_color is always a concrete hex for the icon.
         "color": color,
+        "tagline": tagline,
         "icon_key": icon_key,
         "icon_svg": icon_svg(icon_key),
         "favicon": favicon_data_uri(icon_key, effective_color),

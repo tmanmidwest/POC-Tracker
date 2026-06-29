@@ -86,9 +86,11 @@
       </form>
       {% endif %}
 
+      {% if branding.tagline %}
       <div style="margin-top: var(--s-8); text-align: center;">
-        <div class="auth-card__mark">POC · non-production</div>
+        <div class="auth-card__mark">{{ branding.tagline }}</div>
       </div>
+      {% endif %}
     </div>
   </div>
 

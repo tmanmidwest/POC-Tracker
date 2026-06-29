@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models._mixins import TimestampMixin
-from app.services.branding import DEFAULT_ICON, DEFAULT_NAME
+from app.services.branding import DEFAULT_ICON, DEFAULT_NAME, DEFAULT_TAGLINE
 
 # The singleton row always uses this primary key.
 BRANDING_ID = 1
@@ -27,6 +27,10 @@ class AppBranding(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=BRANDING_ID)
     brand_name: Mapped[str] = mapped_column(
         String(100), nullable=False, default=DEFAULT_NAME
+    )
+    # Sub-header under the brand name (sidebar + login). Empty string hides it.
+    brand_tagline: Mapped[str] = mapped_column(
+        String(100), nullable=False, default=DEFAULT_TAGLINE
     )
     # Hex like "#1e293b". Empty string means "use the theme default".
     brand_color: Mapped[str] = mapped_column(String(20), nullable=False, default="")

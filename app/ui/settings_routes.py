@@ -1165,6 +1165,7 @@ def _get_or_create_branding(db: Session) -> AppBranding:
         branding = AppBranding(
             id=BRANDING_ID,
             brand_name=branding_service.DEFAULT_NAME,
+            brand_tagline=branding_service.DEFAULT_TAGLINE,
             brand_color="",
             icon_key=branding_service.DEFAULT_ICON,
         )
@@ -1187,6 +1188,7 @@ def show_branding(
         active_subsection="branding",
         form={
             "brand_name": branding.brand_name,
+            "brand_tagline": branding.brand_tagline,
             "brand_color": branding.brand_color or branding_service.DEFAULT_COLOR,
             "icon_key": branding.icon_key,
         },
@@ -1199,17 +1201,20 @@ def show_branding(
 def update_branding(
     request: Request,
     brand_name: str = Form(...),
+    brand_tagline: str = Form(""),
     brand_color: str = Form(""),
     icon_key: str = Form(...),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     brand_name = brand_name.strip()
+    brand_tagline = brand_tagline.strip()
     brand_color = brand_color.strip()
     icon_key = icon_key.strip()
 
     form = {
         "brand_name": brand_name,
+        "brand_tagline": brand_tagline,
         "brand_color": brand_color or branding_service.DEFAULT_COLOR,
         "icon_key": icon_key,
     }
@@ -1230,6 +1235,8 @@ def update_branding(
         return _reject("Brand name is required.")
     if len(brand_name) > 100:
         return _reject("Brand name must be 100 characters or fewer.")
+    if len(brand_tagline) > 100:
+        return _reject("Tagline must be 100 characters or fewer.")
     if brand_color and not _HEX_COLOR_RE.match(brand_color):
         return _reject("Color must be a hex value like #1e293b.")
     if icon_key not in branding_service.ICON_PRESETS:
@@ -1242,6 +1249,7 @@ def update_branding(
 
     branding = _get_or_create_branding(db)
     branding.brand_name = brand_name
+    branding.brand_tagline = brand_tagline
     branding.brand_color = brand_color
     branding.icon_key = icon_key
     db.commit()
