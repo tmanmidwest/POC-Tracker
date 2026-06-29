@@ -102,13 +102,13 @@
   <table class="table">
     <thead><tr>
       <th style="width:34px;"><input type="checkbox" class="uc-select-all" data-group="{{ gidx }}" title="Select all in this category" /></th>
-      <th style="width:70px;">Ref</th><th>Name</th><th>Feature</th><th>Active</th><th></th>
+      <th style="width:110px; white-space:nowrap;">Ref</th><th>Name</th><th>Feature</th><th>Active</th><th></th>
     </tr></thead>
     <tbody>
       {% for e in g.entries %}
       <tr>
         <td><input type="checkbox" class="uc-select" data-group="{{ gidx }}" value="{{ e.id }}" /></td>
-        <td class="mono">{{ e.default_reference_number or "—" }}</td>
+        <td class="mono" style="white-space:nowrap;">{{ e.default_reference_number or "—" }}</td>
         <td><strong>{{ e.name }}</strong>{% if e.description %}<br><span class="text-muted text-xs">{{ e.description }}</span>{% endif %}</td>
         <td>{% if e.feature_type %}<span class="badge badge--neutral">{{ e.feature_type.name }}</span>{% else %}—{% endif %}</td>
         <td>{% if e.is_active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--neutral">Inactive</span>{% endif %}</td>
