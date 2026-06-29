@@ -345,6 +345,9 @@ def spreadsheet_hub(
     resp = render(
         request, "library/spreadsheet.html", current_user=user,
         active_section="library", current_set=current,
+        # A per-render token appended to the export links so each download is a
+        # distinct URL — defeats Safari's URL-keyed download cache.
+        cache_bust=random.randint(100000, 999999),
     )
     # Don't let the browser restore this upload page (and its stale file input)
     # from the back/forward cache — a re-import must re-read the chosen file.
