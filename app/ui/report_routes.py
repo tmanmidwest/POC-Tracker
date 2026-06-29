@@ -7,6 +7,7 @@ report shows everything captured for one POC in a clean layout.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from datetime import date
 from typing import Any
@@ -56,10 +57,11 @@ def _report_context(project: Project, user: AppUser) -> dict[str, Any]:
 
 def _download_headers(filename: str, *, suffix: str) -> dict[str, str]:
     base = report_archive._safe(filename, fallback="project")
-    # Stamp the export date (MMDDYYYY) before the extension, e.g. ...-report-06292026.pdf.
+    # Stamp the export date (MMDDYYYY) + a random 4-digit token before the extension
+    # (e.g. ...-report-06292026-4823.pdf) so every export filename is unique.
     stem, _, ext = suffix.rpartition(".")
-    stamp = date.today().strftime("%m%d%Y")
-    name = f"{base}-{stem}-{stamp}.{ext}" if ext else f"{base}-{suffix}-{stamp}"
+    tag = f"{date.today().strftime('%m%d%Y')}-{random.randint(1000, 9999)}"
+    name = f"{base}-{stem}-{tag}.{ext}" if ext else f"{base}-{suffix}-{tag}"
     return {
         "Content-Disposition": f'attachment; filename="{name}"',
         # These are freshly generated each request — never let a browser serve a

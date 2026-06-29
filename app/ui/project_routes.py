@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import random
 import re
 from datetime import UTC, date, datetime
 from itertools import groupby
@@ -842,13 +843,19 @@ def _xlsx_response(data: bytes, filename: str) -> Response:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or "use-cases"
     return Response(
         content=data, media_type=_XLSX_MEDIA,
-        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe}"',
+            # Freshly generated each request — never let the browser serve a stale copy.
+            "Cache-Control": "no-store, must-revalidate",
+        },
     )
 
 
 def _dated(stem: str, ext: str) -> str:
-    """Append the export date (MMDDYYYY) before the extension, e.g. ...-06292026.xlsx."""
-    return f"{stem}-{date.today().strftime('%m%d%Y')}.{ext}"
+    """Append the export date (MMDDYYYY) and a random 4-digit token before the
+    extension, e.g. ...-06292026-4823.xlsx — keeps every export filename unique
+    so a browser never serves a stale cached download."""
+    return f"{stem}-{date.today().strftime('%m%d%Y')}-{random.randint(1000, 9999)}.{ext}"
 
 
 @router.get("/{project_id}/use-cases/export.xlsx")
