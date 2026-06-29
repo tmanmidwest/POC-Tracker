@@ -21,6 +21,8 @@ from app.models import (
     AppUser,
     AuthProvider,
     OAuthClient,
+    Project,
+    ProjectGrant,
     UserIdentity,
 )
 from app.models.app_branding import BRANDING_ID
@@ -328,11 +330,47 @@ def delete_admin(
     if target.id == user.id:
         flash(request, "You cannot delete your own account.", "error")
         return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+    # Detach references that would otherwise block the delete (these FKs don't
+    # cascade). Provenance columns are nulled; the user's own API keys are
+    # removed; OAuth clients they created are reassigned to the acting admin so
+    # the integration keeps working. CASCADE handles grants-to-them, prefs, and
+    # linked identities automatically. The username is preserved in audit history
+    # (audit_events has no FK to app_users by design).
+    username = target.username
+    db.query(Project).filter(Project.sales_engineer_id == target.id).update(
+        {Project.sales_engineer_id: None}
+    )
+    db.query(ProjectGrant).filter(ProjectGrant.granted_by_user_id == target.id).update(
+        {ProjectGrant.granted_by_user_id: None}
+    )
+    db.query(AIProvider).filter(AIProvider.created_by_user_id == target.id).update(
+        {AIProvider.created_by_user_id: None}
+    )
+    db.query(AuthProvider).filter(AuthProvider.created_by_user_id == target.id).update(
+        {AuthProvider.created_by_user_id: None}
+    )
+    db.query(ApiKey).filter(ApiKey.created_by_user_id == target.id).delete()
+    db.query(OAuthClient).filter(OAuthClient.created_by_user_id == target.id).update(
+        {OAuthClient.created_by_user_id: user.id}
+    )
+
     db.delete(target)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        log.warning("ui_admin_delete_blocked", extra={"target_user_id": user_id})
+        flash(
+            request,
+            f"Couldn't delete '{username}' — they're still referenced by other "
+            "records. Disable the account instead, or remove those references first.",
+            "error",
+        )
+        return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
     log.info(
         "ui_admin_deleted",
-        extra={"target_user_id": user_id, "target_username": target.username, "by": user.username},
+        extra={"target_user_id": user_id, "target_username": username, "by": user.username},
     )
     _settings_event(
         request, user,
@@ -340,10 +378,10 @@ def delete_admin(
         event_type="admin_user.deleted",
         target_type="app_user",
         target_id=user_id,
-        target_label=target.username,
-        message=f"Deleted admin user '{target.username}'",
+        target_label=username,
+        message=f"Deleted admin user '{username}'",
     )
-    flash(request, f"Deleted admin user '{target.username}'.", "success")
+    flash(request, f"Deleted admin user '{username}'.", "success")
     return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
 
 

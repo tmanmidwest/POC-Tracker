@@ -521,6 +521,32 @@ def test_user_display_name(ui: TestClient) -> None:
     assert "rsmith" in ui.get(f"/ui/projects/{pid}").text  # falls back to username
 
 
+def test_delete_admin_user_detaches_references(ui: TestClient) -> None:
+    """Deleting a user who is referenced elsewhere (e.g. a project's sales
+    engineer, or who granted access) must succeed by detaching those refs —
+    not 500 on a foreign-key violation."""
+    from app.db import get_session_factory
+    from app.models import AppUser, Project, ProjectGrant
+
+    _make_standard_user("deleteme")
+    db = get_session_factory()()
+    target_id = db.query(AppUser).filter(AppUser.username == "deleteme").one().id
+
+    cid = _create_customer(ui, "Ref Co")
+    pid = _create_project(ui, cid, "Ref POC")
+    proj = db.get(Project, pid)
+    proj.sales_engineer_id = target_id  # blocking FK (no cascade)
+    db.add(ProjectGrant(project_id=pid, user_id=target_id,
+                        granted_by_user_id=target_id, tier="viewer"))
+    db.commit()
+
+    r = ui.post(f"/ui/settings/admin-users/{target_id}/delete", follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    assert db.get(AppUser, target_id) is None          # user actually deleted
+    assert db.get(Project, pid).sales_engineer_id is None  # reference detached
+
+
 def test_admin_user_role_change(ui: TestClient) -> None:
     from app.config import get_settings
     from app.db import get_session_factory
