@@ -56,8 +56,12 @@ def _report_context(project: Project, user: AppUser) -> dict[str, Any]:
 
 def _download_headers(filename: str, *, suffix: str) -> dict[str, str]:
     base = report_archive._safe(filename, fallback="project")
+    # Stamp the export date (MMDDYYYY) before the extension, e.g. ...-report-06292026.pdf.
+    stem, _, ext = suffix.rpartition(".")
+    stamp = date.today().strftime("%m%d%Y")
+    name = f"{base}-{stem}-{stamp}.{ext}" if ext else f"{base}-{suffix}-{stamp}"
     return {
-        "Content-Disposition": f'attachment; filename="{base}-{suffix}"',
+        "Content-Disposition": f'attachment; filename="{name}"',
         # These are freshly generated each request — never let a browser serve a
         # stale cached copy (which can show an out-of-date layout).
         "Cache-Control": "no-store, must-revalidate",

@@ -846,6 +846,11 @@ def _xlsx_response(data: bytes, filename: str) -> Response:
     )
 
 
+def _dated(stem: str, ext: str) -> str:
+    """Append the export date (MMDDYYYY) before the extension, e.g. ...-06292026.xlsx."""
+    return f"{stem}-{date.today().strftime('%m%d%Y')}.{ext}"
+
+
 @router.get("/{project_id}/use-cases/export.xlsx")
 def export_use_cases(
     project_id: int,
@@ -854,7 +859,7 @@ def export_use_cases(
 ) -> Response:
     project = _get_project(db, project_id)
     return _xlsx_response(
-        build_export_xlsx(project), f"{project.display_name}-use-cases.xlsx"
+        build_export_xlsx(project), _dated(f"{project.display_name}-use-cases", "xlsx")
     )
 
 

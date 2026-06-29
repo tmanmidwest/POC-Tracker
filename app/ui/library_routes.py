@@ -239,9 +239,9 @@ def export_library(
     current = resolve_library_set(db, set_id)
     if current is None:
         raise HTTPException(status_code=404, detail="No library to export.")
-    name = re.sub(r"[^A-Za-z0-9._-]+", "-", current.name).strip("-").lower() or "library"
     return _xlsx_response(
-        build_library_export_xlsx(db, current.id), f"{name}-library.xlsx"
+        build_library_export_xlsx(db, current.id),
+        _dated(f"{_slug(current.name)}-library", "xlsx"),
     )
 
 
@@ -255,6 +255,11 @@ def library_template(
 
 def _slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-").lower() or "library"
+
+
+def _dated(stem: str, ext: str) -> str:
+    """Append the export date (MMDDYYYY) before the extension, e.g. ...-06292026.pdf."""
+    return f"{stem}-{date.today().strftime('%m%d%Y')}.{ext}"
 
 
 @router.get("/export.pdf")
@@ -299,7 +304,7 @@ def export_library_pdf(
         content=pdf,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{_slug(current.name)}-use-cases.pdf"',
+            "Content-Disposition": f'attachment; filename="{_dated(_slug(current.name) + "-use-cases", "pdf")}"',
             "Cache-Control": "no-store, must-revalidate",
         },
     )
@@ -316,7 +321,7 @@ def export_library_formatted(
     if current is None:
         raise HTTPException(status_code=404, detail="No library to export.")
     data = build_library_presentation_xlsx(db, current)
-    return _xlsx_response(data, f"{_slug(current.name)}-use-cases.xlsx")
+    return _xlsx_response(data, _dated(f"{_slug(current.name)}-use-cases", "xlsx"))
 
 
 @router.get("/spreadsheet")

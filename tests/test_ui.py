@@ -616,10 +616,12 @@ def test_library_sets_create_scope_and_isolation(ui: TestClient) -> None:
     assert "Sandbox setup" in ui.get(f"/ui/library?set={new_id}").text
     assert "Sandbox setup" not in ui.get(f"/ui/library?set={standard}").text
 
-    # The scoped export is named after the library.
+    # The scoped export is named after the library, with the export date stamped.
+    from datetime import date
+    stamp = date.today().strftime("%m%d%Y")
     exp = ui.get(f"/ui/library/export.xlsx?set={new_id}")
     assert exp.status_code == 200
-    assert "acme-launch-library.xlsx" in exp.headers["content-disposition"]
+    assert f"acme-launch-library-{stamp}.xlsx" in exp.headers["content-disposition"]
 
 
 def test_library_set_delete_blocked_when_non_empty(ui: TestClient) -> None:
@@ -731,14 +733,20 @@ def test_library_bulk_move_and_delete(ui: TestClient) -> None:
 
 
 def test_library_export_and_template_download(ui: TestClient) -> None:
+    from datetime import date
+
     xlsx_ct = "spreadsheetml"
+    stamp = date.today().strftime("%m%d%Y")
     exp = ui.get("/ui/library/export.xlsx")
     assert exp.status_code == 200
     assert xlsx_ct in exp.headers["content-type"]
-    assert "attachment" in exp.headers["content-disposition"]
+    assert f"-{stamp}.xlsx" in exp.headers["content-disposition"]  # date stamped
     tmpl = ui.get("/ui/library/template.xlsx")
     assert tmpl.status_code == 200
     assert xlsx_ct in tmpl.headers["content-type"]
+    # The blank template is the one export that is NOT date-stamped.
+    assert "use-case-library-template.xlsx" in tmpl.headers["content-disposition"]
+    assert stamp not in tmpl.headers["content-disposition"]
 
 
 def test_library_formatted_xlsx_export(ui: TestClient) -> None:
@@ -746,10 +754,13 @@ def test_library_formatted_xlsx_export(ui: TestClient) -> None:
 
     from openpyxl import load_workbook
 
+    from datetime import date
+
     r = ui.get("/ui/library/formatted.xlsx")
     assert r.status_code == 200
     assert "spreadsheetml" in r.headers["content-type"]
-    assert "use-cases.xlsx" in r.headers["content-disposition"]
+    stamp = date.today().strftime("%m%d%Y")
+    assert f"use-cases-{stamp}.xlsx" in r.headers["content-disposition"]
     ws = load_workbook(io.BytesIO(r.content)).active
     assert ws["A1"].value == "Core Use Case Library"  # title row = library name
     # Header fill must be full-alpha ARGB (FF…) so the brand color actually shows;
