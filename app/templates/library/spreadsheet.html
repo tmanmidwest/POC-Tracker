@@ -17,6 +17,7 @@
   <div class="card__header"><h3 class="card__title">Share (formatted)</h3></div>
   <div class="card__body" style="display:flex; gap: var(--s-3); flex-wrap:wrap; align-items:center;">
     <a href="/ui/library/export.pdf?set={{ current_set.id }}&v={{ cache_bust }}" class="btn btn--primary">⬇ Download PDF</a>
+    <a href="/ui/library/export.docx?set={{ current_set.id }}&v={{ cache_bust }}" class="btn btn--secondary">⬇ Download Word</a>
     <a href="/ui/library/formatted.xlsx?set={{ current_set.id }}&v={{ cache_bust }}" class="btn btn--secondary">⬇ Download formatted Excel</a>
     <p class="text-muted text-xs" style="flex-basis:100%; margin:0;">Polished, read-only exports of <strong>{{ current_set.name }}</strong> (active use cases only), grouped by category — for sharing. The PDF is branded; the formatted Excel adds headers, category banners and wrapped text. Neither is meant to be re-imported.</p>
   </div>

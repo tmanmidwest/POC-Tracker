@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, FeatureType, LibrarySet, UseCaseLibrary
-from app.services import report_pdf
+from app.services import report_docx, report_pdf
 from app.services.audit import record_event
 from app.services.branding import current_branding
 from app.services.library_sets import (
@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/ui/library", tags=["ui"], include_in_schema=False)
 
 _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 def _xlsx_response(data: bytes, filename: str) -> Response:
@@ -269,16 +270,8 @@ def _dated(stem: str, ext: str) -> str:
     return f"{stem}-{date.today().strftime('%m%d%Y')}-{random.randint(1000, 9999)}.{ext}"
 
 
-@router.get("/export.pdf")
-def export_library_pdf(
-    set_id: int | None = Query(default=None, alias="set"),
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
-) -> Response:
-    """A polished, branded PDF of one library (active use cases), for sharing."""
-    current = resolve_library_set(db, set_id)
-    if current is None:
-        raise HTTPException(status_code=404, detail="No library to export.")
+def _library_report_context(db: Session, current: LibrarySet) -> dict:
+    """Shared context (active entries grouped by category) for the PDF/Word exports."""
     entries = (
         db.query(UseCaseLibrary)
         .filter(
@@ -292,16 +285,27 @@ def export_library_pdf(
         {"category": cat, "entries": list(items)}
         for cat, items in groupby(entries, key=lambda e: e.category)
     ]
-    html = report_pdf.render_library_html(
-        {
-            "library": current,
-            "groups": groups,
-            "total": len(entries),
-            "full": True,
-            "branding": current_branding(),
-            "generated_on": date.today().strftime("%b %-d, %Y"),
-        }
-    )
+    return {
+        "library": current,
+        "groups": groups,
+        "total": len(entries),
+        "full": True,
+        "branding": current_branding(),
+        "generated_on": date.today().strftime("%b %-d, %Y"),
+    }
+
+
+@router.get("/export.pdf")
+def export_library_pdf(
+    set_id: int | None = Query(default=None, alias="set"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """A polished, branded PDF of one library (active use cases), for sharing."""
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No library to export.")
+    html = report_pdf.render_library_html(_library_report_context(db, current))
     try:
         pdf = report_pdf.library_pdf(html)
     except Exception:  # pragma: no cover - depends on system libs
@@ -312,6 +316,27 @@ def export_library_pdf(
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{_dated(_slug(current.name) + "-use-cases", "pdf")}"',
+            "Cache-Control": "no-store, must-revalidate",
+        },
+    )
+
+
+@router.get("/export.docx")
+def export_library_docx(
+    set_id: int | None = Query(default=None, alias="set"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """An editable Word (.docx) version of the library share document."""
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No library to export.")
+    data = report_docx.build_library_docx(_library_report_context(db, current))
+    return Response(
+        content=data,
+        media_type=_DOCX_MEDIA,
+        headers={
+            "Content-Disposition": f'attachment; filename="{_dated(_slug(current.name) + "-use-cases", "docx")}"',
             "Cache-Control": "no-store, must-revalidate",
         },
     )

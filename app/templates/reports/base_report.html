@@ -99,6 +99,7 @@
     <strong>{{ project.display_name }} — Report</strong>
     <span class="spacer"></span>
     <a class="btn btn--primary" href="/ui/reports/projects/{{ project.id }}/pdf?v={{ cache_bust }}">⬇ Download PDF</a>
+    <a class="btn" href="/ui/reports/projects/{{ project.id }}/report.docx?v={{ cache_bust }}">⬇ Download Word</a>
     {% if has_artifacts %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/artifacts.zip?v={{ cache_bust }}">⬇ Download all (.zip)</a>{% endif %}
     <button class="btn" onclick="window.print()">Print</button>
     <a class="btn" href="/ui/projects/{{ project.id }}">Open project</a>

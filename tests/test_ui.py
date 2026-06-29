@@ -777,6 +777,44 @@ def test_library_formatted_xlsx_export(ui: TestClient) -> None:
     assert ws.cell(row=4, column=1).fill.fgColor.rgb == "FF1E293B"
 
 
+def test_library_docx_export(ui: TestClient) -> None:
+    import io
+    from datetime import date
+
+    from docx import Document
+
+    r = ui.get("/ui/library/export.docx")
+    assert r.status_code == 200
+    assert "wordprocessingml" in r.headers["content-type"]
+    stamp = date.today().strftime("%m%d%Y")
+    import re as _re
+    assert _re.search(rf"use-cases-{stamp}-\d{{4}}\.docx", r.headers["content-disposition"])
+    doc = Document(io.BytesIO(r.content))
+    texts = [p.text for p in doc.paragraphs]
+    assert "Core Use Case Library" in texts  # title
+    assert any(p.style.name.startswith("Heading") for p in doc.paragraphs)
+
+
+def test_project_report_docx_export(ui: TestClient) -> None:
+    import io
+
+    from docx import Document
+
+    cid = _create_customer(ui, "Word Co")
+    pid = _create_project(ui, cid, "Word POC")
+    ui.post(f"/ui/projects/{pid}/use-cases/from-library",
+            data={"library_ids": ["1", "2"]}, follow_redirects=False)
+
+    r = ui.get(f"/ui/reports/projects/{pid}/report.docx")
+    assert r.status_code == 200
+    assert "wordprocessingml" in r.headers["content-type"]
+    assert ".docx" in r.headers["content-disposition"]
+    doc = Document(io.BytesIO(r.content))
+    texts = "\n".join(p.text for p in doc.paragraphs)
+    assert "Word POC" in texts
+    assert "Use cases" in texts
+
+
 def test_library_pdf_export(ui: TestClient) -> None:
     # The HTML template must always render (no request, no system libs needed).
     from app.db import get_session_factory

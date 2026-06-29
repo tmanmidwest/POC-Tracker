@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, Project, ProjectStatus
-from app.services import report_archive, report_pdf
+from app.services import report_archive, report_docx, report_pdf
 from app.services.access import accessible_project_ids
 from app.services.branding import current_branding
 from app.ui.dependencies import require_ui_user
@@ -131,6 +131,22 @@ def project_report_pdf(
     return Response(
         content=pdf, media_type="application/pdf",
         headers=_download_headers(project.display_name, suffix="report.pdf"),
+    )
+
+
+@router.get("/projects/{project_id}/report.docx")
+def project_report_docx(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Editable Word (.docx) version of the full project report, with screenshots."""
+    project = _get_viewable_project(db, project_id, user)
+    data = report_docx.build_project_report_docx(project, _report_context(project, user))
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=_download_headers(project.display_name, suffix="report.docx"),
     )
 
 
