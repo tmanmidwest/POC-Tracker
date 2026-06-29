@@ -741,6 +741,44 @@ def test_library_export_and_template_download(ui: TestClient) -> None:
     assert xlsx_ct in tmpl.headers["content-type"]
 
 
+def test_library_formatted_xlsx_export(ui: TestClient) -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    r = ui.get("/ui/library/formatted.xlsx")
+    assert r.status_code == 200
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert "use-cases.xlsx" in r.headers["content-disposition"]
+    ws = load_workbook(io.BytesIO(r.content)).active
+    assert ws["A1"].value == "Core Use Case Library"  # title row = library name
+
+
+def test_library_pdf_export(ui: TestClient) -> None:
+    # The HTML template must always render (no request, no system libs needed).
+    from app.db import get_session_factory
+    from app.services import report_pdf
+    from app.services.branding import current_branding
+    from app.services.library_sets import default_library_set
+
+    lib = default_library_set(get_session_factory()())
+    html = report_pdf.render_library_html({
+        "library": lib, "groups": [], "total": 0, "full": True,
+        "branding": current_branding(), "generated_on": "Jan 1, 2026",
+    })
+    assert lib.name in html
+
+    # PDF generation itself needs WeasyPrint's native libs — skip if absent.
+    try:
+        import weasyprint  # noqa: F401
+    except (ImportError, OSError):
+        pytest.skip("WeasyPrint or its native libraries are unavailable")
+    r = ui.get("/ui/library/export.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-"
+
+
 def test_library_import_roundtrip_updates_and_adds(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.models import UseCaseLibrary

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ library.name }} — Use Case Library</title>
+  <style>
+    :root {
+      --ink: #1c1917; --muted: #57534e; --line: #e7e5e4; --line-strong: #d6d3d1;
+      --accent: {{ branding.color or '#1e293b' }}; --soft: #f5f5f4;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink); font-size: 13px; line-height: 1.5; background: #fff;
+    }
+    .report { max-width: 920px; margin: 0 auto; padding: 28px 32px 48px; }
+
+    .head { display: flex; align-items: center; gap: 12px; border-bottom: 3px solid var(--accent); padding-bottom: 14px; margin-bottom: 6px; }
+    .head__icon { width: 30px; height: 30px; color: var(--accent); flex: none; }
+    .head__brand { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+    h1 { font-size: 22px; margin: 0; }
+    .subtitle { color: var(--muted); margin: 4px 0 0; font-size: 12px; }
+
+    h2 {
+      font-size: 14px; margin: 24px 0 10px; padding-bottom: 6px;
+      border-bottom: 2px solid var(--accent); text-transform: uppercase; letter-spacing: .04em;
+    }
+
+    .uc { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+    .uc__title { display: flex; align-items: baseline; gap: 8px; }
+    .uc__ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); font-size: 12px; flex: none; }
+    .uc__name { font-size: 14px; font-weight: 700; }
+    .badge {
+      display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+      background: var(--soft); border: 1px solid var(--line-strong); color: var(--ink);
+    }
+    .badge--off { color: var(--muted); }
+    .uc__detail { margin: 8px 0 0; }
+    .uc__detail .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; display: block; margin-bottom: 1px; }
+    .prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .empty { color: var(--muted); font-style: italic; }
+    .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+    @page { size: A4; margin: 16mm 14mm; }
+    .uc { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+  </style>
+</head>
+<body>
+  <div class="report">
+    <div class="head">
+      <svg class="head__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{{ branding.icon_svg | safe }}</svg>
+      <div>
+        <div class="head__brand">{{ branding.name }}</div>
+        <h1>{{ library.name }}</h1>
+      </div>
+    </div>
+    <p class="subtitle">
+      Use Case Library · {{ total }} use case{{ "" if total == 1 else "s" }}
+      {% if library.description %} · {{ library.description }}{% endif %}
+      · Generated {{ generated_on }}
+    </p>
+
+    {% if not groups %}
+      <p class="empty">This library has no active use cases.</p>
+    {% endif %}
+
+    {% for g in groups %}
+    <h2>{{ g.category }}</h2>
+    {% for e in g.entries %}
+    <div class="uc">
+      <div class="uc__title">
+        {% if e.default_reference_number %}<span class="uc__ref">{{ e.default_reference_number }}</span>{% endif %}
+        <span class="uc__name">{{ e.name }}</span>
+        {% if not e.is_active %}<span class="badge badge--off">Inactive</span>{% endif %}
+      </div>
+      {% if full and e.feature_type %}<div class="meta">Feature: <span class="badge">{{ e.feature_type.name }}</span></div>{% endif %}
+      {% if e.description %}<div class="uc__detail"><span class="lbl">Description</span><div class="prewrap">{{ e.description }}</div></div>{% endif %}
+      {% if full and e.success_validation %}<div class="uc__detail"><span class="lbl">Success validation</span><div class="prewrap">{{ e.success_validation }}</div></div>{% endif %}
+    </div>
+    {% endfor %}
+    {% endfor %}
+
+    <div class="footer">{{ branding.name }} · {{ library.name }} · Generated {{ generated_on }}</div>
+  </div>
+</body>
+</html>

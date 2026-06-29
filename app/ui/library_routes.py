@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date
 from itertools import groupby
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -17,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, FeatureType, LibrarySet, UseCaseLibrary
+from app.services import report_pdf
 from app.services.audit import record_event
+from app.services.branding import current_branding
 from app.services.library_sets import (
     default_library_set,
     entry_count,
@@ -28,6 +31,7 @@ from app.services.use_case_io import (
     LIBRARY_KEYS,
     SpreadsheetError,
     build_library_export_xlsx,
+    build_library_presentation_xlsx,
     build_library_template_xlsx,
     classify_library_rows,
     parse_spreadsheet,
@@ -247,6 +251,72 @@ def library_template(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     return _xlsx_response(build_library_template_xlsx(db), "use-case-library-template.xlsx")
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-").lower() or "library"
+
+
+@router.get("/export.pdf")
+def export_library_pdf(
+    set_id: int | None = Query(default=None, alias="set"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """A polished, branded PDF of one library (active use cases), for sharing."""
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No library to export.")
+    entries = (
+        db.query(UseCaseLibrary)
+        .filter(
+            UseCaseLibrary.library_set_id == current.id,
+            UseCaseLibrary.is_active.is_(True),
+        )
+        .order_by(UseCaseLibrary.category, UseCaseLibrary.default_reference_number)
+        .all()
+    )
+    groups = [
+        {"category": cat, "entries": list(items)}
+        for cat, items in groupby(entries, key=lambda e: e.category)
+    ]
+    html = report_pdf.render_library_html(
+        {
+            "library": current,
+            "groups": groups,
+            "total": len(entries),
+            "full": True,
+            "branding": current_branding(),
+            "generated_on": date.today().strftime("%b %-d, %Y"),
+        }
+    )
+    try:
+        pdf = report_pdf.library_pdf(html)
+    except Exception:  # pragma: no cover - depends on system libs
+        log.exception("library_pdf_failed", extra={"library_set_id": current.id})
+        raise HTTPException(status_code=500, detail="PDF generation failed.") from None
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_slug(current.name)}-use-cases.pdf"',
+            "Cache-Control": "no-store, must-revalidate",
+        },
+    )
+
+
+@router.get("/formatted.xlsx")
+def export_library_formatted(
+    set_id: int | None = Query(default=None, alias="set"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """A styled, read-only .xlsx of one library (active use cases), for sharing."""
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No library to export.")
+    data = build_library_presentation_xlsx(db, current)
+    return _xlsx_response(data, f"{_slug(current.name)}-use-cases.xlsx")
 
 
 @router.get("/spreadsheet")

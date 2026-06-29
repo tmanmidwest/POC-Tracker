@@ -49,6 +49,18 @@ def render_report_html(context: dict[str, Any]) -> str:
     return templates.get_template("reports/project.html").render(context)
 
 
+def render_library_html(context: dict[str, Any]) -> str:
+    """Render the use-case library report template to an HTML string."""
+    return templates.get_template("reports/library.html").render(context)
+
+
+def library_pdf(html: str) -> bytes:
+    """Render the library report HTML to PDF bytes (no images to embed)."""
+    from weasyprint import HTML  # lazy: only needed when actually exporting
+
+    return HTML(string=html, base_url=_BASE_URL).write_pdf()
+
+
 def _screenshot_map(project: Project) -> dict[str, Any]:
     """Map each screenshot's serve-path to its on-disk file + content type."""
     out: dict[str, Any] = {}

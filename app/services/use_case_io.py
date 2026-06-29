@@ -16,11 +16,13 @@ from datetime import date, datetime
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy.orm import Session
 
 from app.models import (
     FeatureType,
+    LibrarySet,
     Project,
     ProjectUseCase,
     UseCaseLibrary,
@@ -448,3 +450,105 @@ def classify_library_rows(
             )
         )
     return results
+
+
+# ===========================================================================
+# Library "presentation" export — a styled, read-only .xlsx for sharing
+# (distinct from the plain round-trip export above, which import re-reads).
+# ===========================================================================
+
+_PRES_HEADERS = ["Ref", "Name", "Description", "Success Validation", "Feature Type"]
+_PRES_WIDTHS = [12, 34, 55, 45, 18]
+
+
+def _accent_hex() -> str:
+    """The brand accent as a bare 6-char RGB hex (for openpyxl fills/fonts)."""
+    from app.services.branding import current_branding
+
+    raw = (current_branding().get("color") or "#1E293B").lstrip("#")
+    return raw.upper() if len(raw) == 6 else "1E293B"
+
+
+def build_library_presentation_xlsx(
+    db: Session, library_set: LibrarySet, *, active_only: bool = True
+) -> bytes:
+    """A polished, read-only .xlsx of one library: title, branded headers,
+    category banners, wrapped text, and borders. Grouped by category."""
+    accent = _accent_hex()
+    header_fill = PatternFill("solid", fgColor=accent)
+    banner_fill = PatternFill("solid", fgColor="F1F5F9")
+    white_bold = Font(bold=True, color="FFFFFF")
+    muted = Font(color="64748B")
+    title_font = Font(bold=True, size=16, color=accent)
+    banner_font = Font(bold=True, color="0F172A")
+    thin = Side(style="thin", color="E2E8F0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wrap_top = Alignment(wrap_text=True, vertical="top")
+    top = Alignment(vertical="top")
+
+    query = db.query(UseCaseLibrary).filter(
+        UseCaseLibrary.library_set_id == library_set.id
+    )
+    if active_only:
+        query = query.filter(UseCaseLibrary.is_active.is_(True))
+    entries = query.order_by(
+        UseCaseLibrary.category,
+        UseCaseLibrary.default_reference_number,
+        UseCaseLibrary.name,
+    ).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Use Cases"
+    ncols = len(_PRES_HEADERS)
+    last_col = chr(ord("A") + ncols - 1)
+
+    # Title + subtitle (merged across all columns).
+    ws.merge_cells(f"A1:{last_col}1")
+    ws["A1"] = library_set.name
+    ws["A1"].font = title_font
+    ws.merge_cells(f"A2:{last_col}2")
+    sub = f"Use Case Library · {len(entries)} use case{'' if len(entries) == 1 else 's'}"
+    if library_set.description:
+        sub += f" · {library_set.description}"
+    ws["A2"] = sub
+    ws["A2"].font = muted
+
+    # Header row (row 4).
+    header_row = 4
+    for i, head in enumerate(_PRES_HEADERS):
+        cell = ws.cell(row=header_row, column=i + 1, value=head)
+        cell.fill = header_fill
+        cell.font = white_bold
+        cell.alignment = Alignment(vertical="center")
+        cell.border = border
+
+    # Body: a category banner, then its entries.
+    r = header_row + 1
+    last_category = object()
+    for e in entries:
+        if e.category != last_category:
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
+            banner = ws.cell(row=r, column=1, value=e.category)
+            banner.fill = banner_fill
+            banner.font = banner_font
+            banner.alignment = Alignment(vertical="center")
+            r += 1
+            last_category = e.category
+        values = [
+            e.default_reference_number or "",
+            e.name or "",
+            e.description or "",
+            e.success_validation or "",
+            e.feature_type.name if e.feature_type else "",
+        ]
+        for i, val in enumerate(values):
+            cell = ws.cell(row=r, column=i + 1, value=val)
+            cell.border = border
+            cell.alignment = wrap_top if i in (2, 3) else top
+        r += 1
+
+    for i, w in enumerate(_PRES_WIDTHS):
+        ws.column_dimensions[chr(ord("A") + i)].width = w
+    ws.freeze_panes = f"A{header_row + 1}"
+    return _to_bytes(wb)
