@@ -483,9 +483,20 @@
     {% if not library_picker %}
       <p class="text-muted">No libraries have active use cases. <a href="/ui/library">Add entries</a>.</p>
     {% else %}
-    <p class="form-hint">Pick the use cases that apply — across any library. Already-added ones are checked and disabled.</p>
+    <p class="form-hint">Pick the use cases that apply. Already-added ones are checked and disabled.</p>
+    {% if library_picker | length > 1 %}
+    <div class="form-row" style="margin-bottom: var(--s-3);">
+      <label class="label" for="lib-filter">Library</label>
+      <select id="lib-filter" class="select" onchange="filterLibrary(this.value)">
+        <option value="all">All libraries</option>
+        {% for lib in library_picker %}
+        <option value="{{ lib.set.id }}" {% if lib.set.is_default %}selected{% endif %}>{{ lib.set.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
     {% for lib in library_picker %}
-    <div style="margin-bottom: var(--s-4);">
+    <div class="lib-section" data-library-id="{{ lib.set.id }}" style="margin-bottom: var(--s-4);">
       <div style="font-weight:600; border-bottom:1px solid var(--border, #e3e3e6); padding-bottom: var(--s-1); margin-bottom: var(--s-2);">
         {{ lib.set.name }}
       </div>
@@ -514,6 +525,19 @@
   </form>
  </div>
 </div>
+<script>
+// "Add from library" — filter the picker to one library (or all) so the list
+// stays manageable as libraries grow. Defaults to the pinned default library.
+(function () {
+  var sel = document.getElementById('lib-filter');
+  window.filterLibrary = function (v) {
+    document.querySelectorAll('#m-add-library .lib-section').forEach(function (s) {
+      s.style.display = (v === 'all' || s.dataset.libraryId === v) ? '' : 'none';
+    });
+  };
+  if (sel) filterLibrary(sel.value);
+})();
+</script>
 
 {# ---- Bulk actions (select checkboxes in the tables below) ---- #}
 {% if can_edit and use_case_groups %}
