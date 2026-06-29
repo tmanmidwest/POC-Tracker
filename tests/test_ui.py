@@ -661,6 +661,75 @@ def test_library_entry_move_between_sets(ui: TestClient) -> None:
     assert "Mover One" in ui.get(f"/ui/library?set={target}").text
 
 
+def _new_library_entry(ui: TestClient, set_id: int, category: str, name: str) -> int:
+    from app.db import get_session_factory
+    from app.models import UseCaseLibrary
+
+    ui.post("/ui/library/new",
+            data={"library_set_id": str(set_id), "category": category, "name": name,
+                  "default_reference_number": "", "description": "",
+                  "success_validation": "", "feature_type_id": ""},
+            follow_redirects=False)
+    db = get_session_factory()()
+    return db.query(UseCaseLibrary).filter(UseCaseLibrary.name == name).one().id
+
+
+def test_library_bulk_set_category_and_active(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import UseCaseLibrary
+
+    set_id = _default_library_set_id()
+    a = _new_library_entry(ui, set_id, "Old Cat", "Bulk A")
+    b = _new_library_entry(ui, set_id, "Old Cat", "Bulk B")
+
+    resp = ui.post("/ui/library/bulk",
+                   data={"action": "category", "category": "New Cat",
+                         "current_set_id": str(set_id), "ids": [str(a), str(b)]},
+                   follow_redirects=False)
+    assert resp.status_code == 303
+    db = get_session_factory()()
+    assert db.get(UseCaseLibrary, a).category == "New Cat"
+    assert db.get(UseCaseLibrary, b).category == "New Cat"
+
+    # Bulk deactivate.
+    ui.post("/ui/library/bulk",
+            data={"action": "active", "is_active": "0",
+                  "current_set_id": str(set_id), "ids": [str(a), str(b)]},
+            follow_redirects=False)
+    db.expire_all()
+    assert db.get(UseCaseLibrary, a).is_active is False
+    assert db.get(UseCaseLibrary, b).is_active is False
+
+
+def test_library_bulk_move_and_delete(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import UseCaseLibrary
+
+    src = _default_library_set_id()
+    dest = _create_library_set(ui, "Bulk Dest")
+    a = _new_library_entry(ui, src, "C", "Move A")
+    b = _new_library_entry(ui, src, "C", "Move B")
+
+    # Bulk move to the destination library.
+    ui.post("/ui/library/bulk",
+            data={"action": "move", "target_set_id": str(dest),
+                  "current_set_id": str(src), "ids": [str(a), str(b)]},
+            follow_redirects=False)
+    db = get_session_factory()()
+    assert db.get(UseCaseLibrary, a).library_set_id == dest
+    assert db.get(UseCaseLibrary, b).library_set_id == dest
+
+    # Bulk delete them.
+    resp = ui.post("/ui/library/bulk",
+                   data={"action": "delete", "current_set_id": str(dest),
+                         "ids": [str(a), str(b)]},
+                   follow_redirects=False)
+    assert resp.status_code == 303
+    db.expire_all()
+    assert db.get(UseCaseLibrary, a) is None
+    assert db.get(UseCaseLibrary, b) is None
+
+
 def test_library_export_and_template_download(ui: TestClient) -> None:
     xlsx_ct = "spreadsheetml"
     exp = ui.get("/ui/library/export.xlsx")

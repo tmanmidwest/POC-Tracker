@@ -98,6 +98,7 @@ def list_library(
     return render(
         request, "library/list.html", current_user=user, active_section="library",
         groups=groups, total=total, sets=sets, current_set=current, set_counts=set_counts,
+        feature_types=_feature_types(db),
     )
 
 
@@ -521,3 +522,81 @@ def delete_entry(
     )
     flash(request, f"Removed '{name}' from the library.", "success")
     return RedirectResponse(url=_set_url("/ui/library", set_id), status_code=303)
+
+
+@router.post("/bulk")
+async def bulk_entries(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Apply one change to many selected library use cases at once."""
+    form = await request.form()
+    action = form.get("action")
+    ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]  # type: ignore[attr-defined]
+    cur_raw = str(form.get("current_set_id") or "")  # type: ignore[arg-type]
+    back = RedirectResponse(
+        url=_set_url("/ui/library", int(cur_raw) if cur_raw.isdigit() else None),
+        status_code=303,
+    )
+
+    if not ids:
+        flash(request, "No use cases were selected.", "error")
+        return back
+    entries = db.query(UseCaseLibrary).filter(UseCaseLibrary.id.in_(ids)).all()
+    if not entries:
+        flash(request, "No matching use cases found.", "error")
+        return back
+    count = len(entries)
+    detail: dict = {"surface": "ui", "action": action, "count": count}
+
+    if action == "category":
+        new_category = _clean(form.get("category"))  # type: ignore[arg-type]
+        if not new_category:
+            flash(request, "Enter a category to apply.", "error")
+            return back
+        for e in entries:
+            e.category = new_category
+        summary = f"set the category on {count} use case(s) to '{new_category}'"
+    elif action == "feature_type":
+        ft_raw = str(form.get("feature_type_id") or "")  # type: ignore[arg-type]
+        ft_id = int(ft_raw) if ft_raw.isdigit() else None
+        if ft_id is not None and db.get(FeatureType, ft_id) is None:
+            flash(request, "That feature type no longer exists.", "error")
+            return back
+        for e in entries:
+            e.feature_type_id = ft_id
+        summary = f"set the feature type on {count} use case(s)"
+    elif action == "active":
+        make_active = str(form.get("is_active") or "") == "1"
+        for e in entries:
+            e.is_active = make_active
+        summary = f"{'activated' if make_active else 'deactivated'} {count} use case(s)"
+    elif action == "move":
+        tgt_raw = str(form.get("target_set_id") or "")  # type: ignore[arg-type]
+        target = db.get(LibrarySet, int(tgt_raw)) if tgt_raw.isdigit() else None
+        if target is None:
+            flash(request, "Choose a library to move them into.", "error")
+            return back
+        for e in entries:
+            e.library_set_id = target.id
+        detail["target_set_id"] = target.id
+        summary = f"moved {count} use case(s) to '{target.name}'"
+    elif action == "delete":
+        # Project use cases already copied from these are unaffected (snapshots).
+        for e in entries:
+            db.delete(e)
+        summary = f"deleted {count} use case(s)"
+    else:
+        flash(request, "Unknown bulk action.", "error")
+        return back
+
+    db.commit()
+    record_event(
+        category="library", event_type="library.use_case.bulk_updated", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="use_case_library",
+        target_id=None, target_label="library",
+        message=f"Bulk {summary}", detail=detail, request=request,
+    )
+    flash(request, f"Bulk {summary}.", "success")
+    return back

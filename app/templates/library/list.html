@@ -41,7 +41,7 @@
 {% if not sets %}
   <div class="empty-state">
     <h3 class="empty-state__title">No libraries yet</h3>
-    <p class="empty-state__body">Create your first library — e.g. "Standard" or a per-product library for an early-adoption push.</p>
+    <p class="empty-state__body">Create your first library — e.g. "Core Use Case Library" or a per-product library for an early-adoption push.</p>
     <a href="/ui/library/sets" class="btn btn--primary">Manage libraries</a>
   </div>
 {% elif not groups %}
@@ -52,15 +52,62 @@
   </div>
 {% endif %}
 
+{# ---- Bulk actions (select the checkboxes in the tables below) ---- #}
+{% if groups %}
+<div id="bulk-bar" class="card" style="display:none; position:sticky; top:8px; z-index:30; margin-bottom: var(--s-4); border-color: var(--primary);">
+  <div class="card__body" style="display:flex; gap: var(--s-3); align-items:center; flex-wrap:wrap;">
+    <strong id="bulk-count">0 selected</strong>
+    <select id="bulk-action" class="select" style="width:auto;" onchange="bulkActionChanged()">
+      <option value="">Bulk action…</option>
+      <option value="category">Set category</option>
+      <option value="feature_type">Set feature type</option>
+      <option value="active">Set active status</option>
+      <option value="move">Move to library</option>
+      <option value="delete">Delete</option>
+    </select>
+    <input type="text" id="bulk-category" class="input" placeholder="New category" maxlength="150" style="width:auto; display:none;" />
+    <select id="bulk-feature" class="select" style="width:auto; display:none;">
+      <option value="">— (none)</option>
+      {% for ft in feature_types %}<option value="{{ ft.id }}">{{ ft.name }}</option>{% endfor %}
+    </select>
+    <select id="bulk-active" class="select" style="width:auto; display:none;">
+      <option value="1">Active</option>
+      <option value="0">Inactive</option>
+    </select>
+    <select id="bulk-move" class="select" style="width:auto; display:none;">
+      {% for s in sets %}<option value="{{ s.id }}" {% if current_set and s.id == current_set.id %}disabled{% endif %}>{{ s.name }}{% if current_set and s.id == current_set.id %} (current){% endif %}</option>{% endfor %}
+    </select>
+    <button type="button" class="btn btn--primary btn--sm" onclick="bulkApply()">Apply</button>
+    <span style="flex:1;"></span>
+    <button type="button" class="btn btn--ghost btn--sm" onclick="bulkSelectAll()">Select all</button>
+    <button type="button" class="btn btn--ghost btn--sm" onclick="bulkClear()">Clear</button>
+  </div>
+</div>
+<form id="bulk-form" method="post" action="/ui/library/bulk" style="display:none;">
+  <input type="hidden" name="action" id="bf-action" />
+  <input type="hidden" name="category" id="bf-category" />
+  <input type="hidden" name="feature_type_id" id="bf-feature" />
+  <input type="hidden" name="is_active" id="bf-active" />
+  <input type="hidden" name="target_set_id" id="bf-move" />
+  <input type="hidden" name="current_set_id" value="{{ current_set.id if current_set else '' }}" />
+  <span id="bf-ids"></span>
+</form>
+{% endif %}
+
 {% for g in groups %}
+{% set gidx = loop.index %}
 <div class="card card--flush" style="margin-bottom: var(--s-4);">
   <div class="card__header"><h3 class="card__title">{{ g.category }}</h3></div>
   <div class="table-wrap">
   <table class="table">
-    <thead><tr><th style="width:70px;">Ref</th><th>Name</th><th>Feature</th><th>Active</th><th></th></tr></thead>
+    <thead><tr>
+      <th style="width:34px;"><input type="checkbox" class="uc-select-all" data-group="{{ gidx }}" title="Select all in this category" /></th>
+      <th style="width:70px;">Ref</th><th>Name</th><th>Feature</th><th>Active</th><th></th>
+    </tr></thead>
     <tbody>
       {% for e in g.entries %}
       <tr>
+        <td><input type="checkbox" class="uc-select" data-group="{{ gidx }}" value="{{ e.id }}" /></td>
         <td class="mono">{{ e.default_reference_number or "—" }}</td>
         <td><strong>{{ e.name }}</strong>{% if e.description %}<br><span class="text-muted text-xs">{{ e.description }}</span>{% endif %}</td>
         <td>{% if e.feature_type %}<span class="badge badge--neutral">{{ e.feature_type.name }}</span>{% else %}—{% endif %}</td>
@@ -78,4 +125,79 @@
   </div>
 </div>
 {% endfor %}
+
+{% if groups %}
+<script>
+// Bulk library actions: row checkboxes select entries; the sticky bar applies one
+// change to all selected via a hidden form (separate from the per-row delete forms).
+(function () {
+  var bar = document.getElementById('bulk-bar');
+  if (!bar) return;
+  var boxes = function () { return Array.prototype.slice.call(document.querySelectorAll('.uc-select')); };
+  var selected = function () { return boxes().filter(function (b) { return b.checked; }); };
+
+  function refresh() {
+    var n = selected().length;
+    document.getElementById('bulk-count').textContent = n + ' selected';
+    bar.style.display = n > 0 ? 'block' : 'none';
+    document.querySelectorAll('.uc-select-all').forEach(function (master) {
+      var group = boxes().filter(function (b) { return b.dataset.group === master.dataset.group; });
+      master.checked = group.length > 0 && group.every(function (b) { return b.checked; });
+    });
+  }
+
+  document.addEventListener('change', function (e) {
+    if (e.target.classList.contains('uc-select')) refresh();
+    if (e.target.classList.contains('uc-select-all')) {
+      var g = e.target.dataset.group, on = e.target.checked;
+      boxes().forEach(function (b) { if (b.dataset.group === g) b.checked = on; });
+      refresh();
+    }
+  });
+
+  window.bulkSelectAll = function () { boxes().forEach(function (b) { b.checked = true; }); refresh(); };
+  window.bulkClear = function () {
+    boxes().forEach(function (b) { b.checked = false; });
+    document.querySelectorAll('.uc-select-all').forEach(function (m) { m.checked = false; });
+    document.getElementById('bulk-action').value = '';
+    bulkActionChanged();
+    refresh();
+  };
+
+  window.bulkActionChanged = function () {
+    var a = document.getElementById('bulk-action').value;
+    document.getElementById('bulk-category').style.display = a === 'category' ? '' : 'none';
+    document.getElementById('bulk-feature').style.display = a === 'feature_type' ? '' : 'none';
+    document.getElementById('bulk-active').style.display = a === 'active' ? '' : 'none';
+    document.getElementById('bulk-move').style.display = a === 'move' ? '' : 'none';
+  };
+
+  window.bulkApply = function () {
+    var ids = selected().map(function (b) { return b.value; });
+    if (!ids.length) { alert('Select at least one use case.'); return; }
+    var a = document.getElementById('bulk-action').value;
+    if (!a) { alert('Choose a bulk action.'); return; }
+    if (a === 'category' && !document.getElementById('bulk-category').value.trim()) { alert('Enter a category.'); return; }
+    var move = document.getElementById('bulk-move');
+    if (a === 'move' && (!move.value || move.options[move.selectedIndex].disabled)) { alert('Choose a different library to move them into.'); return; }
+    if (a === 'delete' && !confirm('Delete ' + ids.length + ' use case(s)? Projects already using them are unaffected.')) return;
+
+    document.getElementById('bf-action').value = a;
+    document.getElementById('bf-category').value = document.getElementById('bulk-category').value;
+    document.getElementById('bf-feature').value = document.getElementById('bulk-feature').value;
+    document.getElementById('bf-active').value = document.getElementById('bulk-active').value;
+    document.getElementById('bf-move').value = move.value;
+
+    var holder = document.getElementById('bf-ids');
+    holder.innerHTML = '';
+    ids.forEach(function (id) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = 'ids'; inp.value = id;
+      holder.appendChild(inp);
+    });
+    document.getElementById('bulk-form').submit();
+  };
+})();
+</script>
+{% endif %}
 {% endblock %}
