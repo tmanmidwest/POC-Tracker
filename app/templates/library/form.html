@@ -11,6 +11,12 @@
 
 <form method="post" action="{{ form_action }}" class="card" style="max-width: 640px;">
   <div class="card__body">
+    <div class="form-row"><label class="label" for="library_set_id">Library<span class="label__required">*</span></label>
+      <select class="select" id="library_set_id" name="library_set_id" required>
+        {% for s in sets %}<option value="{{ s.id }}" {% if form.library_set_id == s.id %}selected{% endif %}>{{ s.name }}{% if not s.is_active %} (inactive){% endif %}</option>{% endfor %}
+      </select>
+      {% if entry %}<div class="form-hint">Change this to move the use case to a different library.</div>{% endif %}
+    </div>
     <div style="display:grid; grid-template-columns: 1fr 140px; gap: var(--s-4);">
       <div class="form-row"><label class="label" for="category">Category<span class="label__required">*</span></label>
         <input class="input" id="category" name="category" value="{{ form.category or '' }}" required maxlength="150" /></div>

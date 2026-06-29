@@ -17,6 +17,7 @@ from app.models.contact_role import ContactRole
 from app.models.customer import Customer
 from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
+from app.models.library_set import LibrarySet
 from app.models.note_attachment import NoteAttachment
 from app.models.oauth_client import OAuthClient
 from app.models.project import Project
@@ -44,6 +45,7 @@ __all__ = [
     "Customer",
     "DashboardPref",
     "FeatureType",
+    "LibrarySet",
     "NoteAttachment",
     "OAuthClient",
     "Project",

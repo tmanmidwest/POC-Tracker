@@ -323,21 +323,23 @@ def _parse_bool(value: str, default: bool = True) -> bool:
     return default
 
 
-def build_library_export_xlsx(db: Session) -> bytes:
-    """Export the whole library as an .xlsx (with ids, for round-trip update)."""
+def build_library_export_xlsx(db: Session, library_set_id: int | None = None) -> bytes:
+    """Export a library as an .xlsx (with ids, for round-trip update).
+
+    Scoped to ``library_set_id`` when given; otherwise exports every library.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Library"
     ws.append(LIBRARY_HEADERS)
-    entries = (
-        db.query(UseCaseLibrary)
-        .order_by(
-            UseCaseLibrary.category,
-            UseCaseLibrary.default_reference_number,
-            UseCaseLibrary.name,
-        )
-        .all()
-    )
+    query = db.query(UseCaseLibrary)
+    if library_set_id is not None:
+        query = query.filter(UseCaseLibrary.library_set_id == library_set_id)
+    entries = query.order_by(
+        UseCaseLibrary.category,
+        UseCaseLibrary.default_reference_number,
+        UseCaseLibrary.name,
+    ).all()
     for e in entries:
         ws.append(
             [
@@ -396,10 +398,21 @@ class LibraryImportRow:
     warnings: list[str] = field(default_factory=list)
 
 
-def classify_library_rows(db: Session, rows: list[dict]) -> list[LibraryImportRow]:
-    """Resolve feature-type names→ids and decide new-vs-update for each row."""
+def classify_library_rows(
+    db: Session, rows: list[dict], library_set_id: int | None = None
+) -> list[LibraryImportRow]:
+    """Resolve feature-type names→ids and decide new-vs-update for each row.
+
+    When ``library_set_id`` is given, only ids already in that library count as
+    updates; an id from another library is treated as a new entry (and added to
+    the target library), so an import never silently moves entries between
+    libraries.
+    """
     features = {f.name.lower(): f.id for f in _active(db, FeatureType)}
-    existing_ids = {eid for (eid,) in db.query(UseCaseLibrary.id).all()}
+    id_query = db.query(UseCaseLibrary.id)
+    if library_set_id is not None:
+        id_query = id_query.filter(UseCaseLibrary.library_set_id == library_set_id)
+    existing_ids = {eid for (eid,) in id_query.all()}
 
     results: list[LibraryImportRow] = []
     for i, row in enumerate(rows):
@@ -409,7 +422,7 @@ def classify_library_rows(db: Session, rows: list[dict]) -> list[LibraryImportRo
 
         target_id = int(row["id"]) if row["id"].strip().isdigit() else None
         if target_id is not None and target_id not in existing_ids:
-            warnings.append(f"id {target_id} isn't in the library — will be added as new")
+            warnings.append(f"id {target_id} isn't in this library — will be added as new")
             target_id = None
         action = "update" if target_id is not None else "new"
 

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% set page_title = "Manage Libraries" %}
+{% block breadcrumb %}<a href="/ui/library">Use Case Library</a> <span class="topbar__breadcrumb-sep">/</span> <span>Manage libraries</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Manage libraries</h1>
+    <p class="page-header__subtitle">Each library is a named set of use cases. Use separate libraries for new products or early-adoption programs; projects can pull from any of them.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/library" class="btn btn--secondary">← Back to library</a>
+  </div>
+</div>
+
+<div class="card" style="max-width: 760px; margin-bottom: var(--s-4);">
+  <div class="card__header"><h3 class="card__title">New library</h3></div>
+  <form method="post" action="/ui/library/sets" class="card__body">
+    <div style="display:grid; grid-template-columns: 1fr 2fr; gap: var(--s-4);">
+      <div class="form-row"><label class="label" for="name">Name<span class="label__required">*</span></label>
+        <input class="input" id="name" name="name" required maxlength="150" placeholder="e.g. Acme Product Launch" /></div>
+      <div class="form-row"><label class="label" for="description">Description</label>
+        <input class="input" id="description" name="description" placeholder="Optional — what this library is for" /></div>
+    </div>
+    <div class="form-actions" style="padding-top: var(--s-2);">
+      <button type="submit" class="btn btn--primary">Create library</button>
+    </div>
+  </form>
+</div>
+
+<div class="card card--flush">
+  <div class="card__header"><h3 class="card__title">Libraries ({{ sets | length }})</h3></div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th style="width:90px;">Use cases</th><th style="width:80px;">Active</th><th style="width:260px;"></th></tr></thead>
+    <tbody>
+      {% for s in sets %}
+      <tr>
+        <td><strong><a href="/ui/library?set={{ s.id }}">{{ s.name }}</a></strong></td>
+        <td class="text-muted text-xs">{{ s.description or "—" }}</td>
+        <td>{{ set_counts.get(s.id, 0) }}</td>
+        <td>{% if s.is_active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--neutral">Inactive</span>{% endif %}</td>
+        <td class="table__actions">
+          <button type="button" class="btn btn--ghost btn--sm" onclick="document.getElementById('edit-{{ s.id }}').hidden = !document.getElementById('edit-{{ s.id }}').hidden;">Edit</button>
+          <form method="post" action="/ui/library/sets/{{ s.id }}/delete" style="margin:0;"
+                onsubmit="return confirm('Delete library {{ s.name }}? This only works if it has no use cases.');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" {% if set_counts.get(s.id, 0) %}disabled title="Move or delete its use cases first"{% endif %}>Delete</button>
+          </form>
+        </td>
+      </tr>
+      <tr id="edit-{{ s.id }}" hidden>
+        <td colspan="5" style="background: var(--surface-2, #f7f7f8);">
+          <form method="post" action="/ui/library/sets/{{ s.id }}/edit" style="display:flex; gap: var(--s-3); align-items:flex-end; flex-wrap:wrap; padding: var(--s-2) 0;">
+            <div class="form-row" style="margin:0;"><label class="label">Name</label>
+              <input class="input" name="name" value="{{ s.name }}" required maxlength="150" /></div>
+            <div class="form-row" style="margin:0; flex:1; min-width:240px;"><label class="label">Description</label>
+              <input class="input" name="description" value="{{ s.description or '' }}" /></div>
+            <label class="checkbox-row" style="display:flex; gap:var(--s-2); align-items:center; padding-bottom: var(--s-2);">
+              <input type="checkbox" name="is_active" value="1" {% if s.is_active %}checked{% endif %} /> Active
+            </label>
+            <button type="submit" class="btn btn--primary btn--sm" style="margin-bottom: var(--s-2);">Save</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

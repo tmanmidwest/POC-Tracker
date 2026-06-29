@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import FeatureType, UseCaseLibrary
+from app.models import FeatureType, LibrarySet, UseCaseLibrary
 from app.schemas.poc import (
     UseCaseLibraryCreate,
     UseCaseLibraryOut,
@@ -32,10 +32,16 @@ def _validate_feature_type(db: Session, feature_type_id: int | None) -> None:
         raise HTTPException(status_code=422, detail="Unknown feature type.")
 
 
+def _validate_library_set(db: Session, library_set_id: int | None) -> None:
+    if library_set_id is not None and db.get(LibrarySet, library_set_id) is None:
+        raise HTTPException(status_code=422, detail="Unknown library.")
+
+
 @router.get("/", response_model=list[UseCaseLibraryOut])
 def list_library(
     is_active: bool | None = None,
     category: str | None = None,
+    library_set_id: int | None = None,
     db: Session = Depends(get_db),
     _principal: Principal = Depends(get_authenticated_principal),
 ) -> list[UseCaseLibrary]:
@@ -44,6 +50,8 @@ def list_library(
         query = query.filter(UseCaseLibrary.is_active == is_active)
     if category is not None:
         query = query.filter(UseCaseLibrary.category == category)
+    if library_set_id is not None:
+        query = query.filter(UseCaseLibrary.library_set_id == library_set_id)
     return query.order_by(
         UseCaseLibrary.category, UseCaseLibrary.default_reference_number, UseCaseLibrary.name
     ).all()
@@ -68,6 +76,7 @@ def create_entry(
     principal: Principal = Depends(get_authenticated_principal),
 ) -> UseCaseLibrary:
     _validate_feature_type(db, body.feature_type_id)
+    _validate_library_set(db, body.library_set_id)
     entry = UseCaseLibrary(**body.model_dump())
     db.add(entry)
     db.commit()
@@ -98,6 +107,8 @@ def update_entry(
     data = body.model_dump(exclude_unset=True)
     if "feature_type_id" in data:
         _validate_feature_type(db, data["feature_type_id"])
+    if "library_set_id" in data:
+        _validate_library_set(db, data["library_set_id"])
     for field, value in data.items():
         setattr(entry, field, value)
     db.commit()

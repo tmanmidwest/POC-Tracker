@@ -1,4 +1,9 @@
-"""HTML UI for managing the use-case library (admin only)."""
+"""HTML UI for managing use-case libraries (admin only).
+
+Entries live in named libraries (``LibrarySet``). Most views are scoped to one
+library via a ``?set=<id>`` query param; without it the default library is used.
+A separate "manage libraries" page handles creating/renaming/deleting libraries.
+"""
 
 from __future__ import annotations
 
@@ -6,13 +11,19 @@ import logging
 import re
 from itertools import groupby
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import AppUser, FeatureType, UseCaseLibrary
+from app.models import AppUser, FeatureType, LibrarySet, UseCaseLibrary
 from app.services.audit import record_event
+from app.services.library_sets import (
+    default_library_set,
+    entry_count,
+    list_library_sets,
+    resolve_library_set,
+)
 from app.services.use_case_io import (
     LIBRARY_KEYS,
     SpreadsheetError,
@@ -56,38 +67,174 @@ def _feature_types(db: Session) -> list[FeatureType]:
     )
 
 
+def _set_url(base: str, set_id: int | None) -> str:
+    return f"{base}?set={set_id}" if set_id else base
+
+
 @router.get("/")
 def list_library(
     request: Request,
+    set_id: int | None = Query(default=None, alias="set"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
-    entries = (
-        db.query(UseCaseLibrary)
-        .order_by(UseCaseLibrary.category, UseCaseLibrary.default_reference_number)
-        .all()
-    )
-    groups = [
-        {"category": cat, "entries": list(items)}
-        for cat, items in groupby(entries, key=lambda e: e.category)
-    ]
+    sets = list_library_sets(db)
+    current = resolve_library_set(db, set_id)
+    groups: list[dict] = []
+    total = 0
+    if current is not None:
+        entries = (
+            db.query(UseCaseLibrary)
+            .filter(UseCaseLibrary.library_set_id == current.id)
+            .order_by(UseCaseLibrary.category, UseCaseLibrary.default_reference_number)
+            .all()
+        )
+        total = len(entries)
+        groups = [
+            {"category": cat, "entries": list(items)}
+            for cat, items in groupby(entries, key=lambda e: e.category)
+        ]
+    set_counts = {s.id: entry_count(db, s.id) for s in sets}
     return render(
         request, "library/list.html", current_user=user, active_section="library",
-        groups=groups, total=len(entries),
+        groups=groups, total=total, sets=sets, current_set=current, set_counts=set_counts,
     )
 
 
 # ---------------------------------------------------------------------------
-# Spreadsheet import / export
+# Manage libraries (the named sets)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sets")
+def manage_sets(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    sets = list_library_sets(db)
+    set_counts = {s.id: entry_count(db, s.id) for s in sets}
+    return render(
+        request, "library/sets.html", current_user=user, active_section="library",
+        sets=sets, set_counts=set_counts,
+    )
+
+
+@router.post("/sets")
+def create_set(
+    request: Request,
+    name: str = Form(...),
+    description: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    clean_name = _clean(name)
+    if not clean_name:
+        flash(request, "A library name is required.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    if db.query(LibrarySet).filter(LibrarySet.name == clean_name).first() is not None:
+        flash(request, f"A library named '{clean_name}' already exists.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    entry = LibrarySet(name=clean_name, description=_clean(description), is_active=True)
+    db.add(entry)
+    db.commit()
+    record_event(
+        category="library", event_type="library.set.created", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="library_set",
+        target_id=entry.id, target_label=entry.name,
+        message=f"Created library '{entry.name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, f"Created library '{entry.name}'.", "success")
+    return RedirectResponse(url=_set_url("/ui/library", entry.id), status_code=303)
+
+
+@router.post("/sets/{set_id}/edit")
+def update_set(
+    set_id: int,
+    request: Request,
+    name: str = Form(...),
+    description: str | None = Form(None),
+    is_active: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    entry = db.get(LibrarySet, set_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Library not found.")
+    clean_name = _clean(name)
+    if not clean_name:
+        flash(request, "A library name is required.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    clash = db.query(LibrarySet).filter(LibrarySet.name == clean_name).first()
+    if clash is not None and clash.id != set_id:
+        flash(request, f"A library named '{clean_name}' already exists.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    entry.name = clean_name
+    entry.description = _clean(description)
+    entry.is_active = bool(is_active)
+    db.commit()
+    record_event(
+        category="library", event_type="library.set.updated", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="library_set",
+        target_id=entry.id, target_label=entry.name,
+        message=f"Updated library '{entry.name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Library updated.", "success")
+    return RedirectResponse(url="/ui/library/sets", status_code=303)
+
+
+@router.post("/sets/{set_id}/delete")
+def delete_set(
+    set_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    entry = db.get(LibrarySet, set_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Library not found.")
+    count = entry_count(db, set_id)
+    if count:
+        flash(
+            request,
+            f"'{entry.name}' still has {count} use case(s). Move or delete them first.",
+            "error",
+        )
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    name = entry.name
+    db.delete(entry)
+    db.commit()
+    record_event(
+        category="library", event_type="library.set.deleted", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="library_set",
+        target_id=set_id, target_label=name,
+        message=f"Deleted library '{name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, f"Deleted library '{name}'.", "success")
+    return RedirectResponse(url="/ui/library/sets", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheet import / export (scoped to one library)
 # ---------------------------------------------------------------------------
 
 
 @router.get("/export.xlsx")
 def export_library(
+    set_id: int | None = Query(default=None, alias="set"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
-    return _xlsx_response(build_library_export_xlsx(db), "use-case-library.xlsx")
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="No library to export.")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", current.name).strip("-").lower() or "library"
+    return _xlsx_response(
+        build_library_export_xlsx(db, current.id), f"{name}-library.xlsx"
+    )
 
 
 @router.get("/template.xlsx")
@@ -101,12 +248,17 @@ def library_template(
 @router.get("/spreadsheet")
 def spreadsheet_hub(
     request: Request,
+    set_id: int | None = Query(default=None, alias="set"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        flash(request, "Create a library first.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
     return render(
         request, "library/spreadsheet.html", current_user=user,
-        active_section="library",
+        active_section="library", current_set=current,
     )
 
 
@@ -114,25 +266,31 @@ def spreadsheet_hub(
 async def spreadsheet_preview(
     request: Request,
     file: UploadFile = File(...),
+    library_set_id: int = Form(...),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    current = db.get(LibrarySet, library_set_id)
+    if current is None:
+        flash(request, "Unknown library.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
+    hub_url = _set_url("/ui/library/spreadsheet", current.id)
     if not file or not file.filename:
         flash(request, "Choose a spreadsheet to import.", "error")
-        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
+        return RedirectResponse(url=hub_url, status_code=303)
     raw = await file.read()
     try:
         rows = parse_spreadsheet(file.filename, raw, keys=LIBRARY_KEYS)
     except SpreadsheetError as exc:
         flash(request, str(exc), "error")
-        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
-    candidates = classify_library_rows(db, rows)
+        return RedirectResponse(url=hub_url, status_code=303)
+    candidates = classify_library_rows(db, rows, library_set_id=current.id)
     if not candidates:
         flash(request, "No rows found in that file. Check it matches the template.", "error")
-        return RedirectResponse(url="/ui/library/spreadsheet", status_code=303)
+        return RedirectResponse(url=hub_url, status_code=303)
     return render(
         request, "library/spreadsheet_preview.html", current_user=user,
-        active_section="library", candidates=candidates,
+        active_section="library", candidates=candidates, current_set=current,
         new_count=sum(1 for c in candidates if c.action == "new" and c.valid),
         update_count=sum(1 for c in candidates if c.action == "update" and c.valid),
     )
@@ -145,6 +303,11 @@ async def spreadsheet_apply(
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     form = await request.form()
+    set_raw = str(form.get("library_set_id") or "")  # type: ignore[arg-type]
+    current = db.get(LibrarySet, int(set_raw)) if set_raw.isdigit() else None
+    if current is None:
+        flash(request, "Unknown library.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
     selected = form.getlist("select")  # type: ignore[attr-defined]
     created = updated = 0
     for idx in selected:
@@ -154,8 +317,11 @@ async def spreadsheet_apply(
             continue
         tid_raw = str(form.get(f"id_{idx}") or "")
         entry = db.get(UseCaseLibrary, int(tid_raw)) if tid_raw.isdigit() else None
+        # Only update entries that belong to this library; otherwise add as new.
+        if entry is not None and entry.library_set_id != current.id:
+            entry = None
         if entry is None:
-            entry = UseCaseLibrary(category=category, name=name)
+            entry = UseCaseLibrary(category=category, name=name, library_set_id=current.id)
             db.add(entry)
             created += 1
         else:
@@ -171,24 +337,38 @@ async def spreadsheet_apply(
     db.commit()
     record_event(
         category="library", event_type="library.spreadsheet_imported", actor_type="user",
-        actor_label=user.username, actor_id=user.id, target_type="use_case_library",
-        target_id=None, target_label="library",
-        message=f"Library spreadsheet import: {created} added, {updated} updated",
-        detail={"surface": "ui", "created": created, "updated": updated}, request=request,
+        actor_label=user.username, actor_id=user.id, target_type="library_set",
+        target_id=current.id, target_label=current.name,
+        message=f"Library spreadsheet import into '{current.name}': "
+        f"{created} added, {updated} updated",
+        detail={"surface": "ui", "created": created, "updated": updated,
+                "library_set_id": current.id}, request=request,
     )
-    flash(request, f"Imported library: {created} added, {updated} updated.", "success")
-    return RedirectResponse(url="/ui/library", status_code=303)
+    flash(request, f"Imported into '{current.name}': {created} added, {updated} updated.", "success")
+    return RedirectResponse(url=_set_url("/ui/library", current.id), status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# Library entry CRUD
+# ---------------------------------------------------------------------------
 
 
 @router.get("/new")
 def new_form(
     request: Request,
+    set_id: int | None = Query(default=None, alias="set"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    sets = list_library_sets(db)
+    current = resolve_library_set(db, set_id)
+    if current is None:
+        flash(request, "Create a library first.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
     return render(
         request, "library/form.html", current_user=user, active_section="library",
-        entry=None, form={}, form_action="/ui/library/new", feature_types=_feature_types(db),
+        entry=None, form={"library_set_id": current.id}, form_action="/ui/library/new",
+        feature_types=_feature_types(db), sets=sets,
     )
 
 
@@ -197,6 +377,7 @@ def create_entry(
     request: Request,
     category: str = Form(...),
     name: str = Form(...),
+    library_set_id: int = Form(...),
     default_reference_number: str | None = Form(None),
     description: str | None = Form(None),
     success_validation: str | None = Form(None),
@@ -204,10 +385,14 @@ def create_entry(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    if db.get(LibrarySet, library_set_id) is None:
+        flash(request, "Choose a valid library.", "error")
+        return RedirectResponse(url="/ui/library/new", status_code=303)
     if not _clean(category) or not _clean(name):
         flash(request, "Category and name are required.", "error")
-        return RedirectResponse(url="/ui/library/new", status_code=303)
+        return RedirectResponse(url=_set_url("/ui/library/new", library_set_id), status_code=303)
     entry = UseCaseLibrary(
+        library_set_id=library_set_id,
         category=_clean(category),
         name=_clean(name),
         default_reference_number=_clean(default_reference_number),
@@ -223,10 +408,11 @@ def create_entry(
         actor_label=user.username, actor_id=user.id, target_type="use_case_library",
         target_id=entry.id, target_label=entry.name,
         message=f"Created library use case '{entry.name}'",
-        detail={"surface": "ui", "category": entry.category}, request=request,
+        detail={"surface": "ui", "category": entry.category,
+                "library_set_id": entry.library_set_id}, request=request,
     )
     flash(request, f"Added '{entry.name}' to the library.", "success")
-    return RedirectResponse(url="/ui/library", status_code=303)
+    return RedirectResponse(url=_set_url("/ui/library", entry.library_set_id), status_code=303)
 
 
 @router.get("/{entry_id}/edit")
@@ -240,6 +426,7 @@ def edit_form(
     if entry is None:
         raise HTTPException(status_code=404, detail="Library use case not found.")
     form = {
+        "library_set_id": entry.library_set_id,
         "category": entry.category,
         "name": entry.name,
         "default_reference_number": entry.default_reference_number,
@@ -251,7 +438,7 @@ def edit_form(
     return render(
         request, "library/form.html", current_user=user, active_section="library",
         entry=entry, form=form, form_action=f"/ui/library/{entry_id}/edit",
-        feature_types=_feature_types(db),
+        feature_types=_feature_types(db), sets=list_library_sets(db),
     )
 
 
@@ -261,6 +448,7 @@ def update_entry(
     request: Request,
     category: str = Form(...),
     name: str = Form(...),
+    library_set_id: int = Form(...),
     default_reference_number: str | None = Form(None),
     description: str | None = Form(None),
     success_validation: str | None = Form(None),
@@ -272,6 +460,11 @@ def update_entry(
     entry = db.get(UseCaseLibrary, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Library use case not found.")
+    moved_from = entry.library_set_id
+    if db.get(LibrarySet, library_set_id) is None:
+        flash(request, "Choose a valid library.", "error")
+        return RedirectResponse(url=f"/ui/library/{entry_id}/edit", status_code=303)
+    entry.library_set_id = library_set_id
     entry.category = _clean(category) or entry.category
     entry.name = _clean(name) or entry.name
     entry.default_reference_number = _clean(default_reference_number)
@@ -280,15 +473,21 @@ def update_entry(
     entry.feature_type_id = int(feature_type_id) if feature_type_id else None
     entry.is_active = bool(is_active)
     db.commit()
+    moved = moved_from != library_set_id
     record_event(
-        category="library", event_type="library.use_case.updated", actor_type="user",
-        actor_label=user.username, actor_id=user.id, target_type="use_case_library",
-        target_id=entry.id, target_label=entry.name,
-        message=f"Updated library use case '{entry.name}'",
-        detail={"surface": "ui"}, request=request,
+        category="library",
+        event_type="library.use_case.moved" if moved else "library.use_case.updated",
+        actor_type="user", actor_label=user.username, actor_id=user.id,
+        target_type="use_case_library", target_id=entry.id, target_label=entry.name,
+        message=(
+            f"Moved library use case '{entry.name}' to another library"
+            if moved else f"Updated library use case '{entry.name}'"
+        ),
+        detail={"surface": "ui", "from_library_set_id": moved_from,
+                "to_library_set_id": library_set_id}, request=request,
     )
-    flash(request, "Library use case updated.", "success")
-    return RedirectResponse(url="/ui/library", status_code=303)
+    flash(request, "Library use case moved." if moved else "Library use case updated.", "success")
+    return RedirectResponse(url=_set_url("/ui/library", entry.library_set_id), status_code=303)
 
 
 @router.post("/{entry_id}/delete")
@@ -302,6 +501,7 @@ def delete_entry(
     if entry is None:
         raise HTTPException(status_code=404, detail="Library use case not found.")
     name = entry.name
+    set_id = entry.library_set_id
     # Project use cases already copied from this entry are unaffected (snapshots).
     db.delete(entry)
     db.commit()
@@ -313,4 +513,4 @@ def delete_entry(
         detail={"surface": "ui"}, request=request,
     )
     flash(request, f"Removed '{name}' from the library.", "success")
-    return RedirectResponse(url="/ui/library", status_code=303)
+    return RedirectResponse(url=_set_url("/ui/library", set_id), status_code=303)

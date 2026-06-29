@@ -95,6 +95,34 @@ class CustomerUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Library sets (named use-case libraries)
+# ---------------------------------------------------------------------------
+
+
+class LibrarySetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class LibrarySetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    description: str | None = None
+    is_active: bool = True
+
+
+class LibrarySetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    description: str | None = None
+    is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
 # Use Case Library
 # ---------------------------------------------------------------------------
 
@@ -103,6 +131,8 @@ class UseCaseLibraryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    library_set_id: int
+    library_set: NamedRef | None
     category: str
     default_reference_number: str | None
     name: str
@@ -116,6 +146,7 @@ class UseCaseLibraryOut(BaseModel):
 
 
 class UseCaseLibraryCreate(BaseModel):
+    library_set_id: int
     category: str = Field(min_length=1, max_length=150)
     default_reference_number: str | None = Field(default=None, max_length=20)
     name: str = Field(min_length=1, max_length=255)
@@ -126,6 +157,7 @@ class UseCaseLibraryCreate(BaseModel):
 
 
 class UseCaseLibraryUpdate(BaseModel):
+    library_set_id: int | None = None
     category: str | None = Field(default=None, min_length=1, max_length=150)
     default_reference_number: str | None = Field(default=None, max_length=20)
     name: str | None = Field(default=None, min_length=1, max_length=255)

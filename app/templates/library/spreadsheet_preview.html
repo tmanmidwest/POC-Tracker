@@ -7,17 +7,19 @@
   <div class="page-header__text">
     <h1 class="page-header__title">Review library import</h1>
     <p class="page-header__subtitle">
+      Into <strong>{{ current_set.name }}</strong>:
       <span class="badge badge--success">{{ new_count }} new</span>
       <span class="badge badge--neutral">{{ update_count }} update{{ "s" if update_count != 1 else "" }}</span>
-      — uncheck any you don't want, tweak fields, then apply. Updates change an existing library entry in place; new ones are added to the library.
+      — uncheck any you don't want, tweak fields, then apply. Updates change an existing entry in place; new ones are added to <strong>{{ current_set.name }}</strong>.
     </p>
   </div>
   <div class="page-header__actions">
-    <a href="/ui/library/spreadsheet" class="btn btn--secondary">Start over</a>
+    <a href="/ui/library/spreadsheet?set={{ current_set.id }}" class="btn btn--secondary">Start over</a>
   </div>
 </div>
 
 <form method="post" action="/ui/library/spreadsheet/apply">
+  <input type="hidden" name="library_set_id" value="{{ current_set.id }}" />
   <div class="card card--flush" style="margin-bottom: var(--s-4);">
     <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
       <h3 class="card__title">Rows</h3>
@@ -67,7 +69,7 @@
     </div>
   </div>
   <div class="form-actions">
-    <a href="/ui/library" class="btn btn--secondary">Cancel</a>
+    <a href="/ui/library?set={{ current_set.id }}" class="btn btn--secondary">Cancel</a>
     <button type="submit" class="btn btn--primary">Apply import</button>
   </div>
 </form>

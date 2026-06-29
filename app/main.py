@@ -135,6 +135,7 @@ def create_app() -> FastAPI:
     # --- Routers ---
     from app.api.v1.api_keys import router as api_keys_router
     from app.api.v1.customers import router as customers_router
+    from app.api.v1.library_sets import router as library_sets_router
     from app.api.v1.lookups import (
         contact_roles_router,
         feature_types_router,
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
 
     # /api/v1/* (core POC domain)
     app.include_router(customers_router, prefix="/api/v1")
+    app.include_router(library_sets_router, prefix="/api/v1")
     app.include_router(use_case_library_router, prefix="/api/v1")
     app.include_router(projects_router, prefix="/api/v1")
 

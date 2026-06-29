@@ -62,6 +62,7 @@ def copy_library_entries_to_project(
             project_id=project.id,
             source=SOURCE_LIBRARY,
             library_id=lib.id,
+            library_set_id=lib.library_set_id,
             reference_number=lib.default_reference_number,
             category=lib.category,
             name=lib.name,

@@ -21,6 +21,7 @@ from app.models import (
     ContactRole,
     Customer,
     FeatureType,
+    LibrarySet,
     Project,
     ProjectStatus,
     ProjectUseCase,
@@ -162,6 +163,7 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
     seed_project_statuses(db)
     seed_feature_types(db)
     seed_use_case_statuses(db)
+    seed_library_sets(db)
     seed_use_case_library(db)
     seed_admin_user(db, settings)
     seed_sample_data(db)
@@ -276,6 +278,41 @@ def seed_use_case_statuses(db: Session) -> int:
     return inserted
 
 
+DEFAULT_LIBRARY_SET_NAME = "Standard"
+
+
+def seed_library_sets(db: Session) -> int:
+    """Ensure the default 'Standard' library exists (entries hang off it)."""
+    existing = db.scalar(
+        select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
+    )
+    if existing is not None:
+        return 0
+    db.add(
+        LibrarySet(
+            name=DEFAULT_LIBRARY_SET_NAME,
+            description="Default use case library.",
+            is_active=True,
+        )
+    )
+    db.flush()
+    log.info("seeded_library_sets", extra={"inserted": 1})
+    return 1
+
+
+def _default_library_set_id(db: Session) -> int:
+    """Id of the library that seeded entries belong to (Standard)."""
+    found = db.scalar(
+        select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
+    ) or db.scalar(select(LibrarySet).order_by(LibrarySet.id).limit(1))
+    if found is None:
+        seed_library_sets(db)
+        found = db.scalar(
+            select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
+        )
+    return found.id
+
+
 def seed_use_case_library(db: Session) -> int:
     """Insert any missing library entries (matched by category + name)."""
     existing = {
@@ -285,12 +322,14 @@ def seed_use_case_library(db: Session) -> int:
         ).all()
     }
     feature_ids = {f.name: f.id for f in db.scalars(select(FeatureType)).all()}
+    library_set_id = _default_library_set_id(db)
     inserted = 0
     for category, ref, name, description, success, ft_name in DEFAULT_USE_CASE_LIBRARY:
         if (category, name) in existing:
             continue
         db.add(
             UseCaseLibrary(
+                library_set_id=library_set_id,
                 category=category,
                 default_reference_number=ref,
                 name=name,

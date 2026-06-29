@@ -20,6 +20,7 @@ from app.models.feature_type import FeatureType
 from app.models.use_case_status import UseCaseStatus
 
 if TYPE_CHECKING:
+    from app.models.library_set import LibrarySet
     from app.models.project import Project
     from app.models.screenshot import Screenshot
     from app.models.use_case_library import UseCaseLibrary
@@ -45,6 +46,10 @@ class ProjectUseCase(Base, TimestampMixin):
     library_id: Mapped[int | None] = mapped_column(
         ForeignKey("use_case_library.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Which named library this snapshot came from (provenance/display only).
+    library_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("library_sets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Per-project reference number for listing/sorting within a category (e.g. 1.1).
     reference_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -67,6 +72,7 @@ class ProjectUseCase(Base, TimestampMixin):
 
     project: Mapped[Project] = relationship("Project", back_populates="use_cases")
     library: Mapped[UseCaseLibrary | None] = relationship("UseCaseLibrary", lazy="joined")
+    library_set: Mapped[LibrarySet | None] = relationship("LibrarySet", lazy="joined")
     feature_type: Mapped[FeatureType | None] = relationship("FeatureType", lazy="joined")
     status: Mapped[UseCaseStatus] = relationship("UseCaseStatus", lazy="joined")
     screenshots: Mapped[list[Screenshot]] = relationship(

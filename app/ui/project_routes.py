@@ -23,6 +23,7 @@ from app.models import (
     AppUser,
     Customer,
     FeatureType,
+    LibrarySet,
     NoteAttachment,
     Project,
     ProjectGrant,
@@ -521,18 +522,31 @@ def detail(
 ) -> Response:
     project = _get_viewable_project(db, project_id, user)
 
-    # Library picker — entries grouped by category with an "already added" flag.
+    # Library picker — active entries grouped by library, then category, each
+    # flagged "already added". A project can pull from any number of libraries.
     added = added_library_ids(project)
     library = (
         db.query(UseCaseLibrary)
-        .filter(UseCaseLibrary.is_active.is_(True))
-        .order_by(UseCaseLibrary.category, UseCaseLibrary.default_reference_number)
+        .join(LibrarySet, UseCaseLibrary.library_set_id == LibrarySet.id)
+        .filter(UseCaseLibrary.is_active.is_(True), LibrarySet.is_active.is_(True))
+        .order_by(
+            LibrarySet.name,
+            UseCaseLibrary.category,
+            UseCaseLibrary.default_reference_number,
+        )
         .all()
     )
-    lib_groups = []
-    for category, items in groupby(library, key=lambda e: e.category):
-        entries = [{"entry": e, "added": e.id in added} for e in items]
-        lib_groups.append({"category": category, "entries": entries})
+    library_picker = []
+    for _set_id, set_items in groupby(library, key=lambda e: e.library_set_id):
+        items = list(set_items)
+        cat_groups = [
+            {
+                "category": category,
+                "entries": [{"entry": e, "added": e.id in added} for e in cat_items],
+            }
+            for category, cat_items in groupby(items, key=lambda e: e.category)
+        ]
+        library_picker.append({"set": items[0].library_set, "groups": cat_groups})
 
     uc_statuses = (
         db.query(UseCaseStatus)
@@ -578,7 +592,7 @@ def detail(
     return render(
         request, "projects/detail.html", current_user=user, active_section="projects",
         project=project, use_case_groups=_group_use_cases(visible),
-        library_groups=lib_groups, uc_statuses=uc_statuses, feature_types=feature_types,
+        library_picker=library_picker, uc_statuses=uc_statuses, feature_types=feature_types,
         progress={"total": total, "done": done, "pct": round(done / total * 100) if total else 0},
         today=date.today().isoformat(),
         uc_fields=set(uc_view["fields"]), uc_status_filter=str(uc_view["status_filter"]),

@@ -226,10 +226,24 @@ def get_customer(customer_id: int) -> dict:
 
 
 @mcp.tool()
-def list_use_case_library(category: str | None = None) -> list[dict]:
-    """List the master use-case library, optionally filtered by category."""
-    params = {"category": category} if category else None
-    return _get("/use-case-library/", params)
+def list_library_sets() -> list[dict]:
+    """List the named use-case libraries (e.g. 'Standard', or per-product
+    libraries). Use a library's id to scope list_use_case_library."""
+    return _get("/library-sets/")
+
+
+@mcp.tool()
+def list_use_case_library(
+    category: str | None = None, library_set_id: int | None = None
+) -> list[dict]:
+    """List the use-case library, optionally filtered by category and/or by a
+    specific library (library_set_id — see list_library_sets)."""
+    params = {}
+    if category:
+        params["category"] = category
+    if library_set_id is not None:
+        params["library_set_id"] = library_set_id
+    return _get("/use-case-library/", params or None)
 
 
 @mcp.tool()

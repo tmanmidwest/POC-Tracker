@@ -573,14 +573,92 @@ def test_create_lookup_row(ui: TestClient) -> None:
     assert "PAM-Test" in ui.get("/ui/lookups/feature-types").text
 
 
+def _standard_library_set_id() -> int:
+    from app.db import get_session_factory
+    from app.models import LibrarySet
+
+    db = get_session_factory()()
+    return db.query(LibrarySet).filter(LibrarySet.name == "Standard").one().id
+
+
 def test_library_admin_create(ui: TestClient) -> None:
+    set_id = _standard_library_set_id()
     resp = ui.post("/ui/library/new",
-                   data={"category": "Demo", "name": "Library Item X",
+                   data={"library_set_id": str(set_id),
+                         "category": "Demo", "name": "Library Item X",
                          "default_reference_number": "1.1", "description": "",
                          "success_validation": "", "feature_type_id": ""},
                    follow_redirects=False)
     assert resp.status_code == 303
     assert "Library Item X" in ui.get("/ui/library").text
+
+
+def _create_library_set(ui: TestClient, name: str, description: str = "") -> int:
+    """Create a library via the UI and return its id (parsed from the redirect)."""
+    resp = ui.post("/ui/library/sets",
+                   data={"name": name, "description": description},
+                   follow_redirects=False)
+    assert resp.status_code == 303
+    return int(resp.headers["location"].split("set=")[1])
+
+
+def test_library_sets_create_scope_and_isolation(ui: TestClient) -> None:
+    standard = _standard_library_set_id()
+    new_id = _create_library_set(ui, "Acme Launch", "Early adoption")
+    assert new_id != standard
+
+    # An entry created in the new library appears only when scoped to it.
+    ui.post("/ui/library/new",
+            data={"library_set_id": str(new_id), "category": "Onboarding",
+                  "name": "Sandbox setup", "default_reference_number": "1.1",
+                  "description": "", "success_validation": "", "feature_type_id": ""},
+            follow_redirects=False)
+    assert "Sandbox setup" in ui.get(f"/ui/library?set={new_id}").text
+    assert "Sandbox setup" not in ui.get(f"/ui/library?set={standard}").text
+
+    # The scoped export is named after the library.
+    exp = ui.get(f"/ui/library/export.xlsx?set={new_id}")
+    assert exp.status_code == 200
+    assert "acme-launch-library.xlsx" in exp.headers["content-disposition"]
+
+
+def test_library_set_delete_blocked_when_non_empty(ui: TestClient) -> None:
+    new_id = _create_library_set(ui, "Has Entries")
+    ui.post("/ui/library/new",
+            data={"library_set_id": str(new_id), "category": "C", "name": "Keeper",
+                  "default_reference_number": "", "description": "",
+                  "success_validation": "", "feature_type_id": ""},
+            follow_redirects=False)
+    ui.post(f"/ui/library/sets/{new_id}/delete", follow_redirects=False)
+    # Still present — deletion is guarded while the library holds use cases.
+    assert "Has Entries" in ui.get("/ui/library/sets").text
+
+
+def test_library_entry_move_between_sets(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import UseCaseLibrary
+
+    target = _create_library_set(ui, "Destination")
+    standard = _standard_library_set_id()
+    ui.post("/ui/library/new",
+            data={"library_set_id": str(standard), "category": "Move", "name": "Mover One",
+                  "default_reference_number": "", "description": "",
+                  "success_validation": "", "feature_type_id": ""},
+            follow_redirects=False)
+    db = get_session_factory()()
+    entry = db.query(UseCaseLibrary).filter(UseCaseLibrary.name == "Mover One").one()
+
+    # Edit the entry, changing its library — this is the "move" action.
+    resp = ui.post(f"/ui/library/{entry.id}/edit",
+                   data={"library_set_id": str(target), "category": "Move",
+                         "name": "Mover One", "default_reference_number": "",
+                         "description": "", "success_validation": "",
+                         "feature_type_id": "", "is_active": "1"},
+                   follow_redirects=False)
+    assert resp.status_code == 303
+    db.expire_all()
+    assert db.get(UseCaseLibrary, entry.id).library_set_id == target
+    assert "Mover One" in ui.get(f"/ui/library?set={target}").text
 
 
 def test_library_export_and_template_download(ui: TestClient) -> None:
@@ -598,9 +676,12 @@ def test_library_import_roundtrip_updates_and_adds(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.models import UseCaseLibrary
 
+    set_id = _standard_library_set_id()
+
     # Seed one entry to update on re-import.
     ui.post("/ui/library/new",
-            data={"category": "Cat A", "name": "Item One", "default_reference_number": "1.1",
+            data={"library_set_id": str(set_id),
+                  "category": "Cat A", "name": "Item One", "default_reference_number": "1.1",
                   "description": "", "success_validation": "", "feature_type_id": ""},
             follow_redirects=False)
     db = get_session_factory()()
@@ -614,12 +695,14 @@ def test_library_import_roundtrip_updates_and_adds(ui: TestClient) -> None:
         ",2.1,Cat B,Brand New Item,A description,,,Yes\n"
     )
     files = {"file": ("lib.csv", csv_text.encode(), "text/csv")}
-    prev = ui.post("/ui/library/spreadsheet/preview", files=files)
+    prev = ui.post("/ui/library/spreadsheet/preview", files=files,
+                   data={"library_set_id": str(set_id)})
     assert prev.status_code == 200
     assert "1 new" in prev.text and "1 update" in prev.text
 
     # Apply both rows.
     resp = ui.post("/ui/library/spreadsheet/apply", data={
+        "library_set_id": str(set_id),
         "select": ["0", "1"],
         "id_0": str(e.id), "category_0": "Cat A", "name_0": "Item One Renamed",
         "ref_0": "1.1", "desc_0": "", "sv_0": "", "feature_type_id_0": "", "active_0": "1",

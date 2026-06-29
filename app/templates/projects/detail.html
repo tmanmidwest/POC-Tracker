@@ -480,22 +480,29 @@
   <div class="ucmodal__head"><span class="ucmodal__title">Add from library</span>
     <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
   <form method="post" action="/ui/projects/{{ project.id }}/use-cases/from-library" class="ucmodal__body">
-    {% if not library_groups %}
-      <p class="text-muted">The library is empty. <a href="/ui/library">Add entries</a>.</p>
+    {% if not library_picker %}
+      <p class="text-muted">No libraries have active use cases. <a href="/ui/library">Add entries</a>.</p>
     {% else %}
-    <p class="form-hint">Pick the use cases that apply. Already-added ones are checked and disabled.</p>
-    {% for g in library_groups %}
-    <div style="margin-bottom: var(--s-3);">
-      <div class="sidebar__section-label" style="padding-left:0;">{{ g.category }}</div>
-      {% for item in g.entries %}
-      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:flex-start; padding: var(--s-1) 0; {% if item.added %}opacity:0.5;{% endif %}">
-        <input type="checkbox" name="library_ids" value="{{ item.entry.id }}" {% if item.added %}checked disabled{% endif %} />
-        <span>
-          <strong>{% if item.entry.default_reference_number %}{{ item.entry.default_reference_number }} · {% endif %}{{ item.entry.name }}</strong>
-          {% if item.added %}<span class="badge badge--neutral">added</span>{% endif %}
-          {% if item.entry.description %}<br><span class="text-muted text-xs">{{ item.entry.description }}</span>{% endif %}
-        </span>
-      </label>
+    <p class="form-hint">Pick the use cases that apply — across any library. Already-added ones are checked and disabled.</p>
+    {% for lib in library_picker %}
+    <div style="margin-bottom: var(--s-4);">
+      <div style="font-weight:600; border-bottom:1px solid var(--border, #e3e3e6); padding-bottom: var(--s-1); margin-bottom: var(--s-2);">
+        {{ lib.set.name }}
+      </div>
+      {% for g in lib.groups %}
+      <div style="margin-bottom: var(--s-3);">
+        <div class="sidebar__section-label" style="padding-left:0;">{{ g.category }}</div>
+        {% for item in g.entries %}
+        <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:flex-start; padding: var(--s-1) 0; {% if item.added %}opacity:0.5;{% endif %}">
+          <input type="checkbox" name="library_ids" value="{{ item.entry.id }}" {% if item.added %}checked disabled{% endif %} />
+          <span>
+            <strong>{% if item.entry.default_reference_number %}{{ item.entry.default_reference_number }} · {% endif %}{{ item.entry.name }}</strong>
+            {% if item.added %}<span class="badge badge--neutral">added</span>{% endif %}
+            {% if item.entry.description %}<br><span class="text-muted text-xs">{{ item.entry.description }}</span>{% endif %}
+          </span>
+        </label>
+        {% endfor %}
+      </div>
       {% endfor %}
     </div>
     {% endfor %}

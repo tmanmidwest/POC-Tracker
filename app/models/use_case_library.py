@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 from app.models._mixins import TimestampMixin
 from app.models.feature_type import FeatureType
+from app.models.library_set import LibrarySet
 
 
 class UseCaseLibrary(Base, TimestampMixin):
@@ -21,6 +22,11 @@ class UseCaseLibrary(Base, TimestampMixin):
     __tablename__ = "use_case_library"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # The named library this entry belongs to (exactly one).
+    library_set_id: Mapped[int] = mapped_column(
+        ForeignKey("library_sets.id"), nullable=False, index=True
+    )
 
     category: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     # Optional suggested reference number; the project copy gets its own.
@@ -36,6 +42,7 @@ class UseCaseLibrary(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     feature_type: Mapped[FeatureType | None] = relationship("FeatureType", lazy="joined")
+    library_set: Mapped[LibrarySet] = relationship("LibrarySet", lazy="joined")
 
     def __repr__(self) -> str:
         return f"<UseCaseLibrary category={self.category!r} name={self.name!r}>"
