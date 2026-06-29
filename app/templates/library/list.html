@@ -27,8 +27,9 @@
     <select id="set-switch" class="select" style="width:auto; min-width:240px;"
             onchange="if(this.value) window.location='/ui/library?set='+this.value;">
       {% for s in sets %}
+      {% set n = set_counts.get(s.id, 0) %}
       <option value="{{ s.id }}" {% if current_set and s.id == current_set.id %}selected{% endif %}>
-        {{ s.name }}{% if not s.is_active %} (inactive){% endif %} · {{ set_counts.get(s.id, 0) }}
+        {{ s.name }}{% if s.is_default %} (default){% endif %}{% if not s.is_active %} (inactive){% endif %} · {{ n }} use case{{ "" if n == 1 else "s" }}
       </option>
       {% endfor %}
     </select>

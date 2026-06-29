@@ -106,6 +106,7 @@ class LibrarySetOut(BaseModel):
     name: str
     description: str | None
     is_active: bool
+    is_default: bool
     created_at: datetime
     updated_at: datetime
 

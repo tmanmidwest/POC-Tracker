@@ -278,21 +278,34 @@ def seed_use_case_statuses(db: Session) -> int:
     return inserted
 
 
-DEFAULT_LIBRARY_SET_NAME = "Standard"
+DEFAULT_LIBRARY_SET_NAME = "Core Use Case Library"
 
 
 def seed_library_sets(db: Session) -> int:
-    """Ensure the default 'Standard' library exists (entries hang off it)."""
+    """Ensure a single default library exists (entries hang off it)."""
+    # Already have a pinned default? Nothing to do.
+    if db.scalar(select(LibrarySet).where(LibrarySet.is_default.is_(True))) is not None:
+        return 0
+    # An older install may still have the pre-rename name — adopt it as default.
+    legacy = db.scalar(select(LibrarySet).where(LibrarySet.name == "Standard"))
+    if legacy is not None:
+        legacy.name = DEFAULT_LIBRARY_SET_NAME
+        legacy.is_default = True
+        db.flush()
+        return 0
     existing = db.scalar(
         select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
     )
     if existing is not None:
+        existing.is_default = True
+        db.flush()
         return 0
     db.add(
         LibrarySet(
             name=DEFAULT_LIBRARY_SET_NAME,
             description="Default use case library.",
             is_active=True,
+            is_default=True,
         )
     )
     db.flush()
@@ -301,15 +314,13 @@ def seed_library_sets(db: Session) -> int:
 
 
 def _default_library_set_id(db: Session) -> int:
-    """Id of the library that seeded entries belong to (Standard)."""
+    """Id of the library that seeded entries belong to (the pinned default)."""
     found = db.scalar(
-        select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
+        select(LibrarySet).where(LibrarySet.is_default.is_(True))
     ) or db.scalar(select(LibrarySet).order_by(LibrarySet.id).limit(1))
     if found is None:
         seed_library_sets(db)
-        found = db.scalar(
-            select(LibrarySet).where(LibrarySet.name == DEFAULT_LIBRARY_SET_NAME)
-        )
+        found = db.scalar(select(LibrarySet).where(LibrarySet.is_default.is_(True)))
     return found.id
 
 

@@ -36,7 +36,7 @@
     <tbody>
       {% for s in sets %}
       <tr>
-        <td><strong><a href="/ui/library?set={{ s.id }}">{{ s.name }}</a></strong></td>
+        <td><strong><a href="/ui/library?set={{ s.id }}">{{ s.name }}</a></strong>{% if s.is_default %} <span class="badge badge--neutral">Default</span>{% endif %}</td>
         <td class="text-muted text-xs">{{ s.description or "—" }}</td>
         <td>{{ set_counts.get(s.id, 0) }}</td>
         <td>{% if s.is_active %}<span class="badge badge--success">Active</span>{% else %}<span class="badge badge--neutral">Inactive</span>{% endif %}</td>
@@ -44,7 +44,9 @@
           <button type="button" class="btn btn--ghost btn--sm" onclick="document.getElementById('edit-{{ s.id }}').hidden = !document.getElementById('edit-{{ s.id }}').hidden;">Edit</button>
           <form method="post" action="/ui/library/sets/{{ s.id }}/delete" style="margin:0;"
                 onsubmit="return confirm('Delete library {{ s.name }}? This only works if it has no use cases.');">
-            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" {% if set_counts.get(s.id, 0) %}disabled title="Move or delete its use cases first"{% endif %}>Delete</button>
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);"
+              {% if s.is_default %}disabled title="The default library can't be deleted"
+              {% elif set_counts.get(s.id, 0) %}disabled title="Move or delete its use cases first"{% endif %}>Delete</button>
           </form>
         </td>
       </tr>

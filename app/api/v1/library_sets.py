@@ -117,6 +117,10 @@ def delete_set(
     entry = db.get(LibrarySet, set_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Library not found.")
+    if entry.is_default:
+        raise HTTPException(
+            status_code=409, detail="The default library can't be deleted."
+        )
     count = entry_count(db, set_id)
     if count:
         raise HTTPException(

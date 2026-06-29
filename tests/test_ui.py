@@ -573,16 +573,16 @@ def test_create_lookup_row(ui: TestClient) -> None:
     assert "PAM-Test" in ui.get("/ui/lookups/feature-types").text
 
 
-def _standard_library_set_id() -> int:
+def _default_library_set_id() -> int:
     from app.db import get_session_factory
     from app.models import LibrarySet
 
     db = get_session_factory()()
-    return db.query(LibrarySet).filter(LibrarySet.name == "Standard").one().id
+    return db.query(LibrarySet).filter(LibrarySet.is_default.is_(True)).one().id
 
 
 def test_library_admin_create(ui: TestClient) -> None:
-    set_id = _standard_library_set_id()
+    set_id = _default_library_set_id()
     resp = ui.post("/ui/library/new",
                    data={"library_set_id": str(set_id),
                          "category": "Demo", "name": "Library Item X",
@@ -603,7 +603,7 @@ def _create_library_set(ui: TestClient, name: str, description: str = "") -> int
 
 
 def test_library_sets_create_scope_and_isolation(ui: TestClient) -> None:
-    standard = _standard_library_set_id()
+    standard = _default_library_set_id()
     new_id = _create_library_set(ui, "Acme Launch", "Early adoption")
     assert new_id != standard
 
@@ -639,7 +639,7 @@ def test_library_entry_move_between_sets(ui: TestClient) -> None:
     from app.models import UseCaseLibrary
 
     target = _create_library_set(ui, "Destination")
-    standard = _standard_library_set_id()
+    standard = _default_library_set_id()
     ui.post("/ui/library/new",
             data={"library_set_id": str(standard), "category": "Move", "name": "Mover One",
                   "default_reference_number": "", "description": "",
@@ -676,7 +676,7 @@ def test_library_import_roundtrip_updates_and_adds(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.models import UseCaseLibrary
 
-    set_id = _standard_library_set_id()
+    set_id = _default_library_set_id()
 
     # Seed one entry to update on re-import.
     ui.post("/ui/library/new",

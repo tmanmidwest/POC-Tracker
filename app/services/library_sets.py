@@ -14,23 +14,33 @@ from app.models import LibrarySet, UseCaseLibrary
 
 
 def list_library_sets(db: Session, *, include_inactive: bool = True) -> list[LibrarySet]:
-    """All library sets ordered by name (active first when listing inactive too)."""
+    """All library sets, default first, then active, then by name."""
     query = select(LibrarySet)
     if not include_inactive:
         query = query.where(LibrarySet.is_active.is_(True))
     return list(
-        db.scalars(query.order_by(LibrarySet.is_active.desc(), LibrarySet.name)).all()
+        db.scalars(
+            query.order_by(
+                LibrarySet.is_default.desc(),
+                LibrarySet.is_active.desc(),
+                LibrarySet.name,
+            )
+        ).all()
     )
 
 
 def default_library_set(db: Session) -> LibrarySet | None:
-    """The library to fall back to when none is selected (first active by name)."""
-    return db.scalar(
-        select(LibrarySet)
-        .where(LibrarySet.is_active.is_(True))
-        .order_by(LibrarySet.name)
-        .limit(1)
-    ) or db.scalar(select(LibrarySet).order_by(LibrarySet.name).limit(1))
+    """The pinned default library, falling back to first active, then any."""
+    return (
+        db.scalar(select(LibrarySet).where(LibrarySet.is_default.is_(True)).limit(1))
+        or db.scalar(
+            select(LibrarySet)
+            .where(LibrarySet.is_active.is_(True))
+            .order_by(LibrarySet.name)
+            .limit(1)
+        )
+        or db.scalar(select(LibrarySet).order_by(LibrarySet.id).limit(1))
+    )
 
 
 def resolve_library_set(db: Session, set_id: int | None) -> LibrarySet | None:

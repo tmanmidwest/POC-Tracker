@@ -195,6 +195,9 @@ def delete_set(
     entry = db.get(LibrarySet, set_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Library not found.")
+    if entry.is_default:
+        flash(request, f"'{entry.name}' is the default library and can't be deleted.", "error")
+        return RedirectResponse(url="/ui/library/sets", status_code=303)
     count = entry_count(db, set_id)
     if count:
         flash(

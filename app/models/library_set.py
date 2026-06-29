@@ -25,6 +25,9 @@ class LibrarySet(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # The pinned primary library: the landing/fallback when none is selected, and
+    # protected from deletion. Exactly one library should have this set.
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     def __repr__(self) -> str:
         return f"<LibrarySet id={self.id} name={self.name!r}>"
