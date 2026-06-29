@@ -462,11 +462,16 @@ _PRES_WIDTHS = [12, 34, 55, 45, 18]
 
 
 def _accent_hex() -> str:
-    """The brand accent as a bare 6-char RGB hex (for openpyxl fills/fonts)."""
+    """The brand accent as 8-char ARGB hex (for openpyxl fills/fonts).
+
+    openpyxl needs a full ARGB value; a bare 6-char RGB gets a ``00`` (fully
+    transparent) alpha prepended, so the fill would silently render invisible.
+    """
     from app.services.branding import current_branding
 
     raw = (current_branding().get("color") or "#1E293B").lstrip("#")
-    return raw.upper() if len(raw) == 6 else "1E293B"
+    rgb = raw.upper() if len(raw) == 6 else "1E293B"
+    return "FF" + rgb
 
 
 def build_library_presentation_xlsx(
@@ -474,14 +479,14 @@ def build_library_presentation_xlsx(
 ) -> bytes:
     """A polished, read-only .xlsx of one library: title, branded headers,
     category banners, wrapped text, and borders. Grouped by category."""
-    accent = _accent_hex()
+    accent = _accent_hex()  # 8-char ARGB
     header_fill = PatternFill("solid", fgColor=accent)
-    banner_fill = PatternFill("solid", fgColor="F1F5F9")
-    white_bold = Font(bold=True, color="FFFFFF")
-    muted = Font(color="64748B")
+    banner_fill = PatternFill("solid", fgColor="FFF1F5F9")
+    white_bold = Font(bold=True, color="FFFFFFFF")
+    muted = Font(color="FF64748B")
     title_font = Font(bold=True, size=16, color=accent)
-    banner_font = Font(bold=True, color="0F172A")
-    thin = Side(style="thin", color="E2E8F0")
+    banner_font = Font(bold=True, color="FF0F172A")
+    thin = Side(style="thin", color="FFE2E8F0")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     wrap_top = Alignment(wrap_text=True, vertical="top")
     top = Alignment(vertical="top")

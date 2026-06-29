@@ -752,6 +752,9 @@ def test_library_formatted_xlsx_export(ui: TestClient) -> None:
     assert "use-cases.xlsx" in r.headers["content-disposition"]
     ws = load_workbook(io.BytesIO(r.content)).active
     assert ws["A1"].value == "Core Use Case Library"  # title row = library name
+    # Header fill must be full-alpha ARGB (FF…) so the brand color actually shows;
+    # a bare 6-char hex would get a transparent 00 alpha. Default brand = #1e293b.
+    assert ws.cell(row=4, column=1).fill.fgColor.rgb == "FF1E293B"
 
 
 def test_library_pdf_export(ui: TestClient) -> None:
@@ -761,12 +764,29 @@ def test_library_pdf_export(ui: TestClient) -> None:
     from app.services.branding import current_branding
     from app.services.library_sets import default_library_set
 
-    lib = default_library_set(get_session_factory()())
+    db = get_session_factory()()
+    lib = default_library_set(db)
+    from itertools import groupby
+
+    from app.models import UseCaseLibrary
+    entries = (
+        db.query(UseCaseLibrary)
+        .filter(UseCaseLibrary.library_set_id == lib.id, UseCaseLibrary.is_active.is_(True))
+        .order_by(UseCaseLibrary.category, UseCaseLibrary.default_reference_number)
+        .all()
+    )
+    groups = [{"category": c, "entries": list(i)}
+              for c, i in groupby(entries, key=lambda e: e.category)]
     html = report_pdf.render_library_html({
-        "library": lib, "groups": [], "total": 0, "full": True,
+        "library": lib, "groups": groups, "total": len(entries), "full": True,
         "branding": current_branding(), "generated_on": "Jan 1, 2026",
     })
     assert lib.name in html
+    # Hyperlinked table of contents: each TOC entry links to a use-case anchor.
+    assert "Contents" in html
+    first = entries[0]
+    assert f'href="#uc-{first.id}"' in html
+    assert f'id="uc-{first.id}"' in html
 
     # PDF generation itself needs WeasyPrint's native libs — skip if absent.
     try:
