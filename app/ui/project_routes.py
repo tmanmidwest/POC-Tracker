@@ -274,19 +274,22 @@ def _form_dropdowns(db: Session) -> dict:
 @router.get("/")
 def list_projects(
     request: Request,
-    status_id: int | None = None,
+    # Accept as a string: the filter's "All" option submits an empty value, and
+    # `int` query parsing would 422 on "" (or any non-numeric value).
+    status_id: str | None = None,
     view: str = "active",
     scope: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    sid = int(status_id) if status_id and status_id.lstrip("-").isdigit() else None
     query = db.query(Project)
     if view == "archived":
         query = query.filter(Project.is_archived.is_(True))
     elif view == "active":
         query = query.filter(Project.is_archived.is_(False))
-    if status_id:
-        query = query.filter(Project.status_id == status_id)
+    if sid:
+        query = query.filter(Project.status_id == sid)
     # Project scope: mine (default) / all / unassigned / a specific engineer.
     # External viewers ignore scope and only ever see projects shared with them.
     scope = resolve_scope(db, user, scope)
@@ -297,7 +300,7 @@ def list_projects(
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
     return render(
         request, "projects/list.html", current_user=user, active_section="projects",
-        projects=projects, statuses=statuses, view=view, status_id=status_id,
+        projects=projects, statuses=statuses, view=view, status_id=sid,
         scope=scope, scope_engineers=selectable_engineers(db, user),
     )
 

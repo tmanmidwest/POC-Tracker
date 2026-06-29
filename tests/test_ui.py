@@ -126,6 +126,15 @@ def test_dashboard_scope_unassigned_and_specific_engineer(ui: TestClient) -> Non
     assert ui.get("/ui/dashboard?scope=user:notanumber").status_code == 200
 
 
+def test_projects_list_filter_tolerates_empty_status(ui: TestClient) -> None:
+    """The status filter's 'All' option submits status_id= (empty); the list must
+    not 422 on it, alone or combined with a scope switch."""
+    assert ui.get("/ui/projects?status_id=").status_code == 200
+    assert ui.get("/ui/projects?status_id=&view=active&scope=all").status_code == 200
+    assert ui.get("/ui/projects?status_id=&scope=unassigned").status_code == 200
+    assert ui.get("/ui/projects?status_id=abc").status_code == 200  # non-numeric ignored
+
+
 def test_root_redirects_to_dashboard(ui: TestClient) -> None:
     resp = ui.get("/", follow_redirects=False)
     assert resp.headers["location"] == "/ui/dashboard"
