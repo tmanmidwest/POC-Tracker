@@ -205,3 +205,40 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { clear(); if (input) input.blur(); }
   });
 })();
+
+// Mobile/tablet off-canvas sidebar drawer. The hamburger toggle and dim overlay
+// only appear under the responsive breakpoint (see app.css); on desktop the
+// sidebar is a static grid column and this code stays dormant.
+(function () {
+  const toggle = document.getElementById('sidebar-toggle');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (!toggle || !sidebar || !overlay) return;
+
+  function open() {
+    sidebar.classList.add('is-open');
+    overlay.hidden = false;
+    // next frame so the opacity transition runs
+    requestAnimationFrame(() => overlay.classList.add('is-visible'));
+    toggle.setAttribute('aria-expanded', 'true');
+  }
+
+  function close() {
+    sidebar.classList.remove('is-open');
+    overlay.classList.remove('is-visible');
+    toggle.setAttribute('aria-expanded', 'false');
+    setTimeout(() => { overlay.hidden = true; }, 200);
+  }
+
+  toggle.addEventListener('click', () => {
+    sidebar.classList.contains('is-open') ? close() : open();
+  });
+  overlay.addEventListener('click', close);
+  // Close after tapping a nav link so the drawer doesn't linger over the new page
+  sidebar.querySelectorAll('.sidebar__link').forEach((link) => {
+    link.addEventListener('click', close);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar.classList.contains('is-open')) close();
+  });
+})();

@@ -30,7 +30,9 @@
 
   <div class="app-shell">
 
-    <aside class="sidebar">
+    <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
+
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar__brand">
         <div class="sidebar__brand-lockup">
           <svg class="sidebar__brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -108,6 +110,12 @@
     </aside>
 
     <header class="topbar">
+      <button type="button" class="topbar__menu-toggle" id="sidebar-toggle"
+              aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M2 4h12M2 8h12M2 12h12"/>
+        </svg>
+      </button>
       <div class="topbar__breadcrumb">
         {% block breadcrumb %}{% endblock %}
       </div>
