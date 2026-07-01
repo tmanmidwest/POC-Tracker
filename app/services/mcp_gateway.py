@@ -1,17 +1,18 @@
-"""Manage the MCP server's *inbound* access control from the UI.
+"""Manage the MCP server's *inbound* host allow-list from the UI.
 
-Two pieces of inbound config let a gateway (Saviynt, etc.) call the MCP server:
+A gateway (Saviynt, another project, etc.) calls the MCP server with two pieces of
+inbound config:
 
-* a **gateway token** — the bearer secret the gateway must present, and
+* a **bearer token** — now multiple named, revocable tokens managed in
+  :mod:`app.services.mcp_gateway_tokens`, and
 * an optional **allowed-hosts** list — Host headers permitted past a DNS-rebinding
-  check (empty = allow any host; bearer auth is the primary control).
+  check (empty = allow any host; bearer auth is the primary control), handled here.
 
-Both are persisted on the data volume so they can be created/rotated entirely from
-the app UI. The MCP server reads them **live on each request**, so configuring or
-rotating in the UI takes effect immediately — the MCP container needs no secrets at
-deploy time. Environment variables (``POCT_MCP_AUTH_TOKEN`` /
-``POCT_MCP_ALLOWED_HOSTS``) still override the files for remote MCP hosts that can't
-see the volume.
+The allowed-hosts list is persisted on the data volume so it can be set/cleared
+entirely from the app UI. The MCP server reads it **live on each request**, so
+changes take effect immediately — the MCP container needs no secrets at deploy
+time. ``POCT_MCP_ALLOWED_HOSTS`` still overrides the file for remote MCP hosts that
+can't see the volume.
 
 This is distinct from the *outbound* token in :mod:`app.services.mcp_token` (which
 the MCP server uses to call the app's REST API).
@@ -21,16 +22,13 @@ from __future__ import annotations
 
 import logging
 import os
-import secrets
 from pathlib import Path
 
 from app.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
-GATEWAY_TOKEN_FILENAME = "mcp_gateway_token"
 ALLOWED_HOSTS_FILENAME = "mcp_allowed_hosts"
-GATEWAY_TOKEN_PREFIX = "poctgw_"
 
 
 # ---------------------------------------------------------------------------
@@ -38,53 +36,8 @@ GATEWAY_TOKEN_PREFIX = "poctgw_"
 # ---------------------------------------------------------------------------
 
 
-def gateway_token_path(settings: Settings | None = None) -> Path:
-    return (settings or get_settings()).data_dir / GATEWAY_TOKEN_FILENAME
-
-
 def allowed_hosts_path(settings: Settings | None = None) -> Path:
     return (settings or get_settings()).data_dir / ALLOWED_HOSTS_FILENAME
-
-
-# ---------------------------------------------------------------------------
-# Gateway token
-# ---------------------------------------------------------------------------
-
-
-def read_gateway_token(settings: Settings | None = None) -> str | None:
-    """Resolve the inbound gateway token: env override, then the volume file."""
-    env = os.environ.get("POCT_MCP_AUTH_TOKEN")
-    if env:
-        return env
-    path = gateway_token_path(settings)
-    if not path.exists():
-        return None
-    return path.read_text().strip() or None
-
-
-def rotate_gateway_token(settings: Settings | None = None) -> str:
-    """Generate, persist, and return a new gateway token (plaintext, shown once)."""
-    settings = settings or get_settings()
-    settings.ensure_data_dir()
-    token = f"{GATEWAY_TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
-    path = gateway_token_path(settings)
-    path.write_text(token)
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
-    log.info("mcp_gateway_token_rotated")
-    return token
-
-
-def clear_gateway_token(settings: Settings | None = None) -> bool:
-    """Remove the gateway token file. Returns True if one existed."""
-    path = gateway_token_path(settings)
-    if not path.exists():
-        return False
-    path.unlink(missing_ok=True)
-    log.info("mcp_gateway_token_cleared")
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -154,13 +107,8 @@ def host_allowed(host: str, patterns: list[str]) -> bool:
 
 
 def status(settings: Settings | None = None) -> dict[str, object]:
-    """Describe inbound config for the settings page (never the secret itself)."""
-    path = gateway_token_path(settings)
-    token = path.read_text().strip() if path.exists() else ""
+    """Describe inbound host config for the settings page."""
     return {
-        "configured": bool(token),
-        "prefix": (token[:14] if token else None),
-        "token_path": str(path),
         "allowed_hosts": _split(
             allowed_hosts_path(settings).read_text()
             if allowed_hosts_path(settings).exists()

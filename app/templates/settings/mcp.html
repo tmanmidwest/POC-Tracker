@@ -15,45 +15,80 @@
 
 {# ===================== INBOUND: gateway → MCP server ===================== #}
 <h2 class="card__title" style="margin: var(--s-2) 0 var(--s-3);">Inbound — gateway access (e.g. Saviynt → MCP server)</h2>
+<p class="text-muted" style="max-width: 720px; margin-bottom: var(--s-4);">
+  Issue a separate bearer token per app or project that connects to the MCP server,
+  and revoke any one of them independently. Until at least one token exists the MCP
+  HTTP endpoint <strong>rejects every request</strong> (returns 503) — so it's safe to
+  deploy the MCP container before configuring it here.
+</p>
 
 {% if new_gateway_token %}
-<div class="card" style="margin-bottom: var(--s-4);">
-  <div class="card__header"><h2 class="card__title">New gateway token</h2></div>
-  <div class="card__body">
-    <p class="text-muted">Paste this into your gateway's <strong>Authorization / bearer token</strong>
-    field. It won't be shown again.</p>
-    <input class="input mono" value="{{ new_gateway_token }}" readonly onclick="this.select()" style="width:100%;" />
+<div class="secret-reveal" style="max-width: 720px;">
+  <div class="secret-reveal__label">New gateway token created — copy it now</div>
+  <div class="secret-reveal__value">{{ new_gateway_token }}</div>
+  <div class="secret-reveal__warning">
+    Paste this into the consuming app's <strong>Authorization / bearer token</strong> field.
+    This is the only time the full token is shown.
   </div>
 </div>
 {% endif %}
 
 <div class="card" style="max-width: 720px; margin-bottom: var(--s-4);">
-  <div class="card__body">
-    {% if gateway.configured %}
-    <div style="display:grid; grid-template-columns: 160px 1fr; gap: var(--s-3) var(--s-4);">
-      <div class="text-muted">Gateway token</div><div class="mono">{{ gateway.prefix }}… <span class="badge badge--success">set</span></div>
-      <div class="text-muted">Stored at</div><div class="mono text-xs">{{ gateway.token_path }}</div>
+  <div class="card__header"><h2 class="card__title">Gateway tokens</h2></div>
+  <form method="post" action="/ui/settings/mcp/gateway/tokens/new">
+    <div class="card__body" style="display:flex; gap: var(--s-3); align-items:flex-end;">
+      <div style="flex:1;">
+        <label class="label" for="gw-name">Token name</label>
+        <input class="input" id="gw-name" name="name" required style="width:100%;"
+               placeholder="e.g. Saviynt prod, Project Atlas, Reporting bot" />
+      </div>
+      <button class="btn btn--primary">+ Generate token</button>
     </div>
-    {% else %}
-    <p class="text-muted">No gateway token set. Until you generate one, the MCP HTTP endpoint
-    <strong>rejects every request</strong> (returns 503) — so it's safe to deploy the MCP
-    container before configuring it here.</p>
-    {% endif %}
+  </form>
+  {% if gateway_tokens %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Prefix</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th style="text-align:right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in gateway_tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td class="mono text-muted">{{ t.token_prefix }}…</td>
+        <td>
+          {% if t.revoked_at %}<span class="badge badge--neutral">Revoked</span>
+          {% else %}<span class="badge badge--success">Active</span>{% endif %}
+        </td>
+        <td class="mono text-muted">{{ t.created_at.strftime("%Y-%m-%d") }}</td>
+        <td class="table__actions">
+          {% if not t.revoked_at %}
+          <form action="/ui/settings/mcp/gateway/tokens/{{ t.id }}/revoke" method="post" style="margin:0;"
+                onsubmit="return confirm('Revoke this gateway token? The app using it stops working immediately.');">
+            <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
+          </form>
+          {% endif %}
+          <form action="/ui/settings/mcp/gateway/tokens/{{ t.id }}/delete" method="post" style="margin:0;"
+                onsubmit="return confirm('Permanently delete this gateway token record?');">
+            <button type="submit" class="btn btn--ghost btn--sm" style="color: var(--danger);">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   </div>
-  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
-    <form method="post" action="/ui/settings/mcp/gateway/rotate" style="margin:0;">
-      <button class="btn btn--primary"
-        {% if gateway.configured %}onclick="return confirm('Rotate the gateway token? You will need to update the new value in your gateway (e.g. Saviynt) — the old one stops working immediately.');"{% endif %}>
-        {{ "Rotate gateway token" if gateway.configured else "Generate gateway token" }}
-      </button>
-    </form>
-    {% if gateway.configured %}
-    <form method="post" action="/ui/settings/mcp/gateway/clear" style="margin:0;"
-          onsubmit="return confirm('Clear the gateway token? The MCP endpoint will reject all calls until you generate a new one.');">
-      <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
-    </form>
-    {% endif %}
+  {% else %}
+  <div class="card__body" style="padding-top:0;">
+    <p class="text-muted">No gateway tokens yet — generate one above to let an app connect.</p>
   </div>
+  {% endif %}
 </div>
 
 <div class="card" style="max-width: 720px; margin-bottom: var(--s-5);">

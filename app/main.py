@@ -72,6 +72,12 @@ async def lifespan(_app: FastAPI) -> Any:
     SessionLocal = get_session_factory()
     with SessionLocal() as db:
         seed_database(db, settings)
+        # Rebuild the inbound MCP gateway-token file from the DB so the DB-less MCP
+        # container verifies against current state, and drop the retired single-token
+        # file if an older deploy left one behind.
+        from app.services import mcp_gateway_tokens
+
+        mcp_gateway_tokens.sync_active_tokens(db, settings)
 
     # Enforce the audit retention window once at startup, then daily.
     from app.services import system_config

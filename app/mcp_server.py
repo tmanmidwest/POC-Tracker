@@ -41,7 +41,6 @@ feature type) may be passed by name or id — names are resolved case-insensitiv
 
 from __future__ import annotations
 
-import hmac
 import os
 from pathlib import Path
 from typing import Any
@@ -59,11 +58,12 @@ API_KEY = os.environ.get("POCT_MCP_API_KEY", "")
 MCP_TRANSPORT = os.environ.get("POCT_MCP_TRANSPORT", "stdio")
 MCP_HOST = os.environ.get("POCT_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("POCT_MCP_PORT", "8011"))
-# Inbound access control for the HTTP transports (the bearer token a gateway must
+# Inbound access control for the HTTP transports (the bearer tokens a gateway must
 # present, and the optional Host allow-list) is managed in the app UI and read
-# live from the data volume — see app.services.mcp_gateway and
-# GatewayAuthMiddleware below. POCT_MCP_AUTH_TOKEN / POCT_MCP_ALLOWED_HOSTS still
-# override the UI-managed files for remote MCP hosts that can't see the volume.
+# live from the data volume — see app.services.mcp_gateway_tokens (tokens),
+# app.services.mcp_gateway (allowed hosts), and GatewayAuthMiddleware below.
+# POCT_MCP_AUTH_TOKEN / POCT_MCP_ALLOWED_HOSTS still override the UI-managed files
+# for remote MCP hosts that can't see the volume.
 
 mcp = FastMCP("poc-tracker", host=MCP_HOST, port=MCP_PORT)
 
@@ -550,7 +550,7 @@ class GatewayAuthMiddleware:
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
-        from app.services import mcp_gateway
+        from app.services import mcp_gateway, mcp_gateway_tokens
 
         headers = dict(scope.get("headers") or [])
 
@@ -564,18 +564,19 @@ class GatewayAuthMiddleware:
             )
             return
 
-        token = mcp_gateway.read_gateway_token()
-        if not token:
+        # No tokens configured yet → 503 so it's safe to deploy before setup.
+        if not mcp_gateway_tokens.is_configured():
             await _send_json(
                 send, 503,
-                b'{"error":"unconfigured","detail":"MCP gateway token not set. '
+                b'{"error":"unconfigured","detail":"No MCP gateway token set. '
                 b'Generate one in the app UI (Settings -> MCP)."}',
             )
             return
 
+        # Presented bearer must match one of the active tokens (or the env override).
         raw = headers.get(b"authorization", b"").decode("latin-1")
         provided = raw[7:].strip() if raw[:7].lower() == "bearer " else ""
-        if not provided or not hmac.compare_digest(provided, token):
+        if not mcp_gateway_tokens.verify(provided):
             await _send_json(
                 send, 401,
                 b'{"error":"unauthorized","detail":"Missing or invalid bearer token."}',

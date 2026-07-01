@@ -18,6 +18,7 @@ from app.models.customer import Customer
 from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
 from app.models.library_set import LibrarySet
+from app.models.mcp_gateway_token import McpGatewayToken
 from app.models.note_attachment import NoteAttachment
 from app.models.oauth_client import OAuthClient
 from app.models.project import Project
@@ -46,6 +47,7 @@ __all__ = [
     "DashboardPref",
     "FeatureType",
     "LibrarySet",
+    "McpGatewayToken",
     "NoteAttachment",
     "OAuthClient",
     "Project",

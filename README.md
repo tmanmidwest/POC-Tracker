@@ -78,9 +78,10 @@ docker compose up -d --build
 
 You should see **two** containers: `poc-tracker` (app, 8010) and `poc-tracker-mcp` (MCP, 8011).
 The MCP server needs **no secrets to start** — it shares the data volume, so you do all the
-setup in the UI under **Settings → MCP**: generate the **gateway token** (what your gateway
-presents) and the **API token** (what the MCP server uses to call the app). Until the gateway
-token exists, the MCP endpoint returns `503`. Rotating either one needs no restart.
+setup in the UI under **Settings → MCP**: generate one or more **gateway tokens** (the bearer
+each connecting app/gateway presents — issue and revoke them per consumer) and the **API token**
+(what the MCP server uses to call the app). Until at least one gateway token exists, the MCP
+endpoint returns `503`. Adding, revoking, or rotating tokens needs no restart.
 
 Don't need the MCP server? Comment out the `mcp` service in `docker-compose.yml`.
 
@@ -228,11 +229,13 @@ deploy time**, and rotating takes effect on the next call with no restart:
 - **Outbound — MCP server → app.** The API token the MCP server uses to call the REST API.
   Generate it under **Settings → MCP**. (Resolution: `POCT_MCP_API_KEY` env override →
   `POCT_MCP_API_KEY_FILE` → the UI-managed file `<POCT_DATA_DIR>/mcp_api_key`.)
-- **Inbound — gateway → MCP server** (only for the HTTP transports below). The bearer token a
-  gateway must present, plus an optional Host allow-list. Generate them under **Settings →
-  MCP** too. Until a gateway token exists, the HTTP endpoint **rejects every call with `503`**,
-  so it's safe to start the MCP server before configuring it. (Resolution: `POCT_MCP_AUTH_TOKEN`
-  / `POCT_MCP_ALLOWED_HOSTS` env overrides → the UI-managed files.)
+- **Inbound — gateway → MCP server** (only for the HTTP transports below). One or more named
+  gateway tokens (a distinct bearer per connecting app/gateway, individually revocable), plus an
+  optional Host allow-list. Manage them under **Settings → MCP** too. Until at least one gateway
+  token exists, the HTTP endpoint **rejects every call with `503`**, so it's safe to start the
+  MCP server before configuring it. The app syncs the active token hashes to the shared volume
+  for the MCP server to verify against. (Resolution: `POCT_MCP_AUTH_TOKEN` provides a single
+  static override / `POCT_MCP_ALLOWED_HOSTS` env override → the UI-managed files.)
 
 Both UI-managed paths require the MCP server to **share the app's data volume**. A *remote*
 MCP host that can't see the volume uses the env overrides instead.
@@ -301,13 +304,13 @@ export POCT_DATA_DIR=/path/to/shared/data             # same data dir as the app
 poct-mcp
 ```
 
-Then, in the app UI under **Settings → MCP**, generate the **gateway token** (and, if needed,
-set **allowed hosts**) and the **API token**. The MCP server picks both up live from the shared
-volume — no restart.
+Then, in the app UI under **Settings → MCP**, generate a **gateway token** (one per connecting
+app; and, if needed, set **allowed hosts**) and the **API token**. The MCP server picks them up
+live from the shared volume — no restart.
 
 | Credential | Direction | Where it's managed |
 |---|---|---|
-| Gateway token | gateway → MCP server | **Settings → MCP** (the bearer the gateway presents) |
+| Gateway tokens | gateway → MCP server | **Settings → MCP** (named bearers each connecting app presents; revoke per app) |
 | API token | MCP server → app | **Settings → MCP** (lets the MCP server call the REST API) |
 
 **Three addresses in play:**
@@ -322,7 +325,7 @@ In the Saviynt gateway, enter:
 - **Base URL:** `http://<mcp-server-host>:8011` (the host/IP where `poct-mcp` runs — use a
   routable address, not `localhost`, if Saviynt is on another machine)
 - **MCP Endpoint:** `/mcp`
-- **Authorization / bearer token:** the **gateway token** from Settings → MCP
+- **Authorization / bearer token:** a **gateway token** from Settings → MCP (issue one per gateway)
 
 If the gateway only supports the older **SSE** transport, set
 `POCT_MCP_TRANSPORT=sse` and use **MCP Endpoint** `/sse` instead.

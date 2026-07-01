@@ -971,17 +971,30 @@ def test_mcp_token_settings_page_and_rotate(ui: TestClient) -> None:
     assert read_token() is None
 
 
-def test_mcp_gateway_token_and_allowed_hosts(ui: TestClient) -> None:
-    from app.services import mcp_gateway
+def test_mcp_gateway_tokens_and_allowed_hosts(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.services import mcp_gateway, mcp_gateway_tokens
 
     assert ui.get("/ui/settings/mcp").status_code == 200
-    assert mcp_gateway.read_gateway_token() is None
+    assert mcp_gateway_tokens.is_configured() is False  # nothing issued yet
 
-    # Generate the inbound gateway token.
-    r = ui.post("/ui/settings/mcp/gateway/rotate", follow_redirects=False)
+    # Create a named inbound gateway token.
+    r = ui.post("/ui/settings/mcp/gateway/tokens/new",
+                data={"name": "Saviynt"}, follow_redirects=False)
     assert r.status_code == 303
     assert "poctgw_" in ui.get("/ui/settings/mcp").text  # one-time reveal
-    assert mcp_gateway.read_gateway_token() is not None
+    assert mcp_gateway_tokens.is_configured() is True
+
+    db = get_session_factory()()
+    tokens = mcp_gateway_tokens.list_tokens(db)
+    assert len(tokens) == 1
+    token_id = tokens[0].id
+
+    # A second token coexists with the first.
+    ui.post("/ui/settings/mcp/gateway/tokens/new",
+            data={"name": "Project Atlas"}, follow_redirects=False)
+    db.expire_all()
+    assert len(mcp_gateway_tokens.list_tokens(db)) == 2
 
     # Save allowed hosts, then clear them.
     ui.post("/ui/settings/mcp/allowed-hosts",
@@ -990,9 +1003,14 @@ def test_mcp_gateway_token_and_allowed_hosts(ui: TestClient) -> None:
     ui.post("/ui/settings/mcp/allowed-hosts", data={"allowed_hosts": ""}, follow_redirects=False)
     assert mcp_gateway.read_allowed_hosts() == []
 
-    # Clearing the gateway token leaves the endpoint locked down.
-    ui.post("/ui/settings/mcp/gateway/clear", follow_redirects=False)
-    assert mcp_gateway.read_gateway_token() is None
+    # Revoke one token; the other keeps the endpoint configured.
+    ui.post(f"/ui/settings/mcp/gateway/tokens/{token_id}/revoke", follow_redirects=False)
+    assert mcp_gateway_tokens.is_configured() is True
+
+    # Delete it entirely.
+    ui.post(f"/ui/settings/mcp/gateway/tokens/{token_id}/delete", follow_redirects=False)
+    db.expire_all()
+    assert all(t.id != token_id for t in mcp_gateway_tokens.list_tokens(db))
 
 
 def test_mcp_key_flagged_and_protected_in_api_keys_list(ui: TestClient) -> None:

@@ -117,10 +117,15 @@ def test_http_gateway_auth_lifecycle(client, monkeypatch) -> None:  # type: igno
     session manager can only start once per process; the middleware reads live.)
     """
     from app import mcp_server
-    from app.services import mcp_gateway
+    from app.db import get_session_factory
+    from app.models import AppUser
+    from app.services import mcp_gateway, mcp_gateway_tokens
 
     monkeypatch.delenv("POCT_MCP_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("POCT_MCP_ALLOWED_HOSTS", raising=False)
+
+    db = get_session_factory()()
+    admin = db.query(AppUser).first()
 
     app = mcp_server.build_http_app("streamable-http")
     with TestClient(app) as c:
@@ -130,21 +135,30 @@ def test_http_gateway_auth_lifecycle(client, monkeypatch) -> None:  # type: igno
                 h["Authorization"] = f"Bearer {token}"
             return c.post("/mcp", json=_INIT, headers=h).status_code
 
-        # Deploy-time state: nothing configured → rejected.
+        # Deploy-time state: no tokens configured → rejected.
         assert post("anything") == 503
 
-        # Generate the gateway token in the UI (here, the service it calls).
-        token = mcp_gateway.rotate_gateway_token()
+        # Issue a named gateway token in the UI (here, the service it calls).
+        row, token = mcp_gateway_tokens.create(db, name="Saviynt", actor_id=admin.id)
         assert post(None) == 401
         assert post("nope") == 401
         assert post(token) == 200
 
+        # A second token authenticates independently of the first.
+        _, token2 = mcp_gateway_tokens.create(db, name="Project Atlas", actor_id=admin.id)
+        assert post(token2) == 200
+
+        # Revoking one token kills only that token; the other still works.
+        mcp_gateway_tokens.revoke(db, row.id)
+        assert post(token) == 401
+        assert post(token2) == 200
+
         # A configured allow-list that excludes the request Host → 403.
         mcp_gateway.set_allowed_hosts("only.example.com")
-        assert post(token) == 403
+        assert post(token2) == 403
         # Clearing it (empty = any host) opens it back up.
         mcp_gateway.set_allowed_hosts("")
-        assert post(token) == 200
+        assert post(token2) == 200
 
 
 def test_token_rotation_is_read_live(client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
