@@ -101,6 +101,53 @@ def test_unknown_status_name_is_a_clear_error(mcp_env) -> None:  # type: ignore[
     assert "Unknown use-case status" in result["errors"][0]["error"]
 
 
+def test_task_tools_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
+    m = mcp_env
+    from app.config import get_settings
+
+    owner = get_settings().initial_admin_username
+
+    # Lookups now surface task statuses/priorities by name.
+    lookups = m.list_lookups()
+    assert "task_statuses" in lookups and "task_priorities" in lookups
+    assert any(s["name"] == "In Progress" for s in lookups["task_statuses"])
+
+    # Create a task on the seeded sample project (id 1), resolving names.
+    task = m.create_task(
+        owner=owner, title="Prep demo env", status="To Do", priority="High",
+        project_id=1, due_date="2026-07-15", details="<p>Spin up sandbox</p>",
+    )
+    assert task["owner"]["username"] == owner
+    assert task["status"]["name"] == "To Do"
+    assert task["priority"]["name"] == "High"
+    assert task["project"]["id"] == 1
+
+    # It shows up when listing by owner.
+    listed = m.list_tasks(owner=owner)
+    assert any(t["id"] == task["id"] for t in listed)
+
+    # Status change + get by name resolution.
+    moved = m.set_task_status(task["id"], "In Progress")
+    assert moved["status"]["name"] == "In Progress"
+    assert m.get_task(task["id"])["status"]["name"] == "In Progress"
+
+    # Update fields, then delete.
+    upd = m.update_task(task["id"], title="Prep demo environment", priority="Urgent")
+    assert upd["title"] == "Prep demo environment"
+    assert upd["priority"]["name"] == "Urgent"
+    assert m.delete_task(task["id"])["deleted"] is True
+
+
+def test_task_unknown_owner_is_clear_error(mcp_env) -> None:  # type: ignore[no-untyped-def]
+    m = mcp_env
+    try:
+        m.create_task(owner="ghost", title="orphan")
+    except Exception as exc:  # RuntimeError surfaced from the REST 422
+        assert "owner" in str(exc).lower()
+    else:
+        raise AssertionError("expected an unknown-owner error")
+
+
 _INIT = {
     "jsonrpc": "2.0", "id": 1, "method": "initialize",
     "params": {"protocolVersion": "2024-11-05", "capabilities": {},

@@ -26,6 +26,9 @@ from app.models import (
     Project,
     ProjectStatus,
     ProjectUseCase,
+    Task,
+    TaskPriority,
+    TaskStatus,
     UseCaseLibrary,
     UseCaseStatus,
 )
@@ -39,6 +42,12 @@ from app.schemas.lookups import (
     ProjectStatusCreate,
     ProjectStatusOut,
     ProjectStatusUpdate,
+    TaskPriorityCreate,
+    TaskPriorityOut,
+    TaskPriorityUpdate,
+    TaskStatusCreate,
+    TaskStatusOut,
+    TaskStatusUpdate,
     UseCaseStatusCreate,
     UseCaseStatusOut,
     UseCaseStatusUpdate,
@@ -236,4 +245,28 @@ use_case_statuses_router = _make_lookup_router(
     references=lambda rid: [
         ("project use cases", ProjectUseCase, ProjectUseCase.status_id, rid)
     ],
+)
+
+task_statuses_router = _make_lookup_router(
+    prefix="/task-statuses",
+    model=TaskStatus,
+    out_schema=TaskStatusOut,
+    create_schema=TaskStatusCreate,
+    update_schema=TaskStatusUpdate,
+    noun="Task status",
+    event_noun="task_status",
+    order_by=TaskStatus.sort_order,
+    references=lambda rid: [("tasks", Task, Task.status_id, rid)],
+)
+
+task_priorities_router = _make_lookup_router(
+    prefix="/task-priorities",
+    model=TaskPriority,
+    out_schema=TaskPriorityOut,
+    create_schema=TaskPriorityCreate,
+    update_schema=TaskPriorityUpdate,
+    noun="Task priority",
+    event_noun="task_priority",
+    order_by=TaskPriority.sort_order,
+    references=lambda rid: [("tasks", Task, Task.priority_id, rid)],
 )

@@ -248,13 +248,16 @@ def list_use_case_library(
 
 @mcp.tool()
 def list_lookups() -> dict[str, list[dict]]:
-    """List the global lookup lists: project statuses, feature types,
-    use-case statuses, and contact roles. Use these names with the write tools."""
+    """List the global lookup lists: project statuses, feature types, use-case
+    statuses, contact roles, and task statuses/priorities. Use these names with
+    the write tools."""
     return {
         "project_statuses": _get("/project-statuses/"),
         "feature_types": _get("/feature-types/"),
         "use_case_statuses": _get("/use-case-statuses/"),
         "contact_roles": _get("/contact-roles/"),
+        "task_statuses": _get("/task-statuses/"),
+        "task_priorities": _get("/task-priorities/"),
     }
 
 
@@ -456,6 +459,125 @@ def delete_use_case(use_case_id: int) -> dict:
     """Delete a project use case (and its screenshots). Returns a confirmation."""
     _delete(f"/projects/use-cases/{use_case_id}")
     return {"deleted": True, "use_case_id": use_case_id}
+
+
+# ---------------------------------------------------------------------------
+# Task tools (per-user tasks; owner is explicit since MCP auth is machine-level)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_tasks(
+    owner: str | None = None,
+    status_id: int | None = None,
+    priority_id: int | None = None,
+    project_id: int | None = None,
+    include_archived: bool = False,
+) -> list[dict]:
+    """List tasks across all users, newest-updated first.
+
+    Tasks are per-user. Filter by `owner` (username or user id), `status_id`,
+    `priority_id`, `project_id`, or set `include_archived` to include archived
+    tasks. Returns each task with its owner, status, priority, and project.
+    """
+    params: dict[str, Any] = {"include_archived": include_archived}
+    if owner is not None:
+        params["owner"] = owner
+    if status_id is not None:
+        params["status_id"] = status_id
+    if priority_id is not None:
+        params["priority_id"] = priority_id
+    if project_id is not None:
+        params["project_id"] = project_id
+    return _get("/tasks/", params)
+
+
+@mcp.tool()
+def get_task(task_id: int) -> dict:
+    """Get one task in full (owner, status, priority, project, dates, details)."""
+    return _get(f"/tasks/{task_id}")
+
+
+@mcp.tool()
+def create_task(
+    owner: str,
+    title: str,
+    status: Any = None,
+    priority: Any = None,
+    project_id: int | None = None,
+    start_date: str | None = None,
+    due_date: str | None = None,
+    details: str | None = None,
+) -> dict:
+    """Create a task for a user.
+
+    `owner` (required) is the task owner — a username or user id (tasks are
+    per-user, and MCP authenticates as a machine, so the owner must be explicit).
+    `status` and `priority` accept a name or id (status defaults to the first
+    active status). Dates are ISO (YYYY-MM-DD). `details` may contain limited
+    HTML and is sanitized. Returns the created task.
+    """
+    body: dict[str, Any] = {
+        "owner": owner,
+        "title": title,
+        "status": status,
+        "priority": priority,
+        "project_id": project_id,
+        "start_date": start_date,
+        "due_date": due_date,
+        "details": details,
+    }
+    return _post("/tasks/", {k: v for k, v in body.items() if v is not None})
+
+
+@mcp.tool()
+def update_task(
+    task_id: int,
+    title: str | None = None,
+    status: Any = None,
+    priority: Any = None,
+    owner: Any = None,
+    project_id: int | None = None,
+    start_date: str | None = None,
+    due_date: str | None = None,
+    details: str | None = None,
+    is_archived: bool | None = None,
+) -> dict:
+    """Update a task. Only provided fields change. `status`/`priority` accept a
+    name or id; `owner` (username or id) reassigns ownership. Returns the task."""
+    body: dict[str, Any] = {}
+    if title is not None:
+        body["title"] = title
+    if status is not None:
+        body["status"] = status
+    if priority is not None:
+        body["priority"] = priority
+    if owner is not None:
+        body["owner"] = owner
+    if project_id is not None:
+        body["project_id"] = project_id
+    if start_date is not None:
+        body["start_date"] = start_date
+    if due_date is not None:
+        body["due_date"] = due_date
+    if details is not None:
+        body["details"] = details
+    if is_archived is not None:
+        body["is_archived"] = is_archived
+    return _patch(f"/tasks/{task_id}", body)
+
+
+@mcp.tool()
+def set_task_status(task_id: int, status: Any) -> dict:
+    """Set a task's status (by name, e.g. "In Progress", or id). Returns the task."""
+    return _patch(f"/tasks/{task_id}", {"status": status})
+
+
+@mcp.tool()
+def delete_task(task_id: int) -> dict:
+    """Delete a task. Returns a confirmation."""
+    _delete(f"/tasks/{task_id}")
+    return {"deleted": True, "task_id": task_id}
 
 
 # ---------------------------------------------------------------------------

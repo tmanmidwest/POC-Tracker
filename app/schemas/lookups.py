@@ -129,3 +129,67 @@ class UseCaseStatusUpdate(BaseModel):
     sort_order: int | None = None
     is_complete_status: bool | None = None
     is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# Task Status
+# ---------------------------------------------------------------------------
+
+
+class TaskStatusOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    sort_order: int
+    is_terminal: bool
+    is_active: bool
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskStatusCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    sort_order: int = 100
+    is_terminal: bool = False
+    is_active: bool = True
+
+
+class TaskStatusUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    sort_order: int | None = None
+    is_terminal: bool | None = None
+    is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# Task Priority
+# ---------------------------------------------------------------------------
+
+
+class TaskPriorityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    sort_order: int
+    color: str | None
+    is_active: bool
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskPriorityCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    sort_order: int = 100
+    color: str | None = Field(default=None, max_length=20)
+    is_active: bool = True
+
+
+class TaskPriorityUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    sort_order: int | None = None
+    color: str | None = Field(default=None, max_length=20)
+    is_active: bool | None = None
