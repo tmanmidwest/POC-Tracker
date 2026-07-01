@@ -242,3 +242,14 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sidebar.classList.contains('is-open')) close();
   });
 })();
+
+// Click a .code-block (config examples) to select its whole contents for easy copy.
+document.addEventListener('click', (e) => {
+  const block = e.target.closest('.code-block');
+  if (!block) return;
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+});

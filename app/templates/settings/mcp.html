@@ -91,6 +91,55 @@
   {% endif %}
 </div>
 
+<div class="card" style="max-width: 720px; margin-bottom: var(--s-4);">
+  <div class="card__header"><h2 class="card__title">Connect a Claude client</h2></div>
+  <div class="card__body">
+    <p class="text-muted">Point Claude at this MCP server with one of the gateway tokens above.
+    In each example, replace <span class="mono">your-mcp-host</span> with wherever the MCP server
+    (<span class="mono">poct-mcp</span>) is reachable — default port <span class="mono">8011</span>,
+    path <span class="mono">/mcp</span> — and swap <span class="mono">&lt;paste-a-gateway-token&gt;</span>
+    for a token you generated. If you set an allowed-hosts list below, the host here must match it.
+    Click a block to select it.</p>
+
+    <div class="code-label">Claude Desktop — <span class="text-muted">add to <span class="mono">claude_desktop_config.json</span> (Settings → Developer → Edit Config), then restart. Requires Node.js.</span></div>
+{% raw %}<pre class="code-block">{
+  "mcpServers": {
+    "poc-tracker": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://your-mcp-host:8011/mcp",
+        "--header",
+        "Authorization:${POCT_MCP_TOKEN}"
+      ],
+      "env": {
+        "POCT_MCP_TOKEN": "Bearer &lt;paste-a-gateway-token&gt;"
+      }
+    }
+  }
+}</pre>{% endraw %}
+    <p class="text-muted text-xs" style="margin-top: var(--s-2);">The token lives in <span class="mono">env</span> (spaces are fine there) while the header uses
+    <span class="mono">Authorization:${POCT_MCP_TOKEN}</span> with no space — a documented workaround for how
+    <span class="mono">npx</span> mangles spaces inside args on Claude Desktop/Windows.</p>
+
+    <div class="code-label">Claude Code — <span class="text-muted">one command:</span></div>
+{% raw %}<pre class="code-block">claude mcp add --transport http poc-tracker https://your-mcp-host:8011/mcp \
+  --header "Authorization: Bearer &lt;paste-a-gateway-token&gt;"</pre>{% endraw %}
+    <div class="code-label">…or add to <span class="mono">.mcp.json</span> (project) / <span class="mono">~/.claude.json</span>:</div>
+{% raw %}<pre class="code-block">{
+  "mcpServers": {
+    "poc-tracker": {
+      "type": "http",
+      "url": "https://your-mcp-host:8011/mcp",
+      "headers": {
+        "Authorization": "Bearer &lt;paste-a-gateway-token&gt;"
+      }
+    }
+  }
+}</pre>{% endraw %}
+  </div>
+</div>
+
 <div class="card" style="max-width: 720px; margin-bottom: var(--s-5);">
   <div class="card__header"><h2 class="card__title">Allowed hosts <span class="text-muted text-xs">(optional)</span></h2></div>
   <form method="post" action="/ui/settings/mcp/allowed-hosts">

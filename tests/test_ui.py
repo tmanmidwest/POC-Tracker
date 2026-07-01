@@ -975,8 +975,16 @@ def test_mcp_gateway_tokens_and_allowed_hosts(ui: TestClient) -> None:
     from app.db import get_session_factory
     from app.services import mcp_gateway, mcp_gateway_tokens
 
-    assert ui.get("/ui/settings/mcp").status_code == 200
+    page = ui.get("/ui/settings/mcp")
+    assert page.status_code == 200
     assert mcp_gateway_tokens.is_configured() is False  # nothing issued yet
+
+    # The "Connect a Claude client" example renders for both clients.
+    body = page.text
+    assert "Connect a Claude client" in body
+    assert "mcp-remote" in body  # Claude Desktop bridge
+    assert "claude mcp add --transport http" in body  # Claude Code CLI
+    assert "&lt;paste-a-gateway-token&gt;" in body  # placeholder, angle-brackets escaped
 
     # Create a named inbound gateway token.
     r = ui.post("/ui/settings/mcp/gateway/tokens/new",
