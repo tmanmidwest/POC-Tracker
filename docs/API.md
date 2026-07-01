@@ -25,6 +25,8 @@ curl -X POST http://localhost:8010/oauth/token \
 - `GET|POST /project-statuses/`, `…/{id}`
 - `GET|POST /feature-types/`, `…/{id}`
 - `GET|POST /use-case-statuses/`, `…/{id}`
+- `GET|POST /task-statuses/`, `…/{id}` — `name`, `sort_order`, `is_terminal`
+- `GET|POST /task-priorities/`, `…/{id}` — `name`, `sort_order`, `color`
 
 `is_system` rows and lookups still in use cannot be deleted (409).
 
@@ -42,6 +44,21 @@ curl -X POST http://localhost:8010/oauth/token \
 - `POST /projects/{id}/use-cases/from-library` — `{"library_ids": [...]}`, copies as
   snapshots (de-duplicated)
 - `PATCH|DELETE /projects/use-cases/{use_case_id}`
+
+### Tasks (per-user; admin-wide over the API)
+
+Tasks are owned by a user, but the API authenticates as a machine, so these
+operate across all users and take an explicit **`owner`** (username or id).
+
+- `GET /tasks/` — filters: `owner`, `status_id`, `priority_id`, `project_id`, `include_archived`
+- `GET /tasks/{id}`
+- `POST /tasks/` — body: `owner` (required), `title` (required), `status`, `priority`
+  (name or id), `project_id`, `start_date`, `due_date`, `details` (HTML, sanitized)
+- `PATCH /tasks/{id}` — any of the above; `owner` reassigns; `is_archived` archives
+- `DELETE /tasks/{id}`
+
+All `/tasks/*` return **404** when the Task Manager module is disabled. See
+[TASKS.md](TASKS.md).
 
 ## Notes
 

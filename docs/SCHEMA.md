@@ -19,6 +19,14 @@ customers ──< contacts ───────> contact_roles
 use_case_library ──> feature_types
 dashboard_prefs ──> app_users (one row per user)
 projects ──< project_grants ──> app_users (per-project read access for external viewers)
+
+tasks ──> task_statuses (status_id)
+  │   └─> task_priorities (priority_id, nullable)
+  │   └─> app_users       (owner_user_id; per-user ownership)
+  │   └┄> projects        (project_id, nullable; SET NULL on project delete)
+task_dashboard_prefs ──> app_users (one row per user)
+user_google_credentials ──> app_users (one row per connected user)
+google_tasks_config (singleton, id=1)
 ```
 
 ### Core tables
@@ -42,12 +50,35 @@ projects ──< project_grants ──> app_users (per-project read access for e
   `original_filename`, `content_type`, `size_bytes`, `caption`.
 - **dashboard_prefs** — `app_user_id` (unique), `config_json` (columns, statuses, sort).
 
+### Tasks (per-user)
+
+- **tasks** — a user-owned task: `owner_user_id` → app_users (`ON DELETE CASCADE`),
+  `title`, `status_id` → task_statuses, `priority_id` → task_priorities (nullable),
+  `project_id` → projects (nullable, `ON DELETE SET NULL`), `start_date`, `due_date`
+  (both nullable), `details` / `details_html` (rich text, same dual-storage as notes),
+  `is_archived` / `archived_at`. Google-sync columns (reserved in 0021, used by the
+  sync): `sync_enabled`, `external_id` (Google task id), `external_etag`, `last_synced_at`.
+- **task_dashboard_prefs** — `app_user_id` (unique), `config_json` (columns, statuses,
+  priorities, sort, owner scope, show-archived). Separate from `dashboard_prefs` so task
+  and project views don't clobber each other.
+
+### Google Tasks sync
+
+- **google_tasks_config** — singleton (`id=1`): the app's Google OAuth **client**
+  credentials — `client_id`, `client_secret_encrypted` (Fernet, recoverable), `is_enabled`.
+- **user_google_credentials** — one row per connected user: `app_user_id` (unique,
+  `ON DELETE CASCADE`), `refresh_token_encrypted` (Fernet), `scopes`, `google_email`,
+  `tasklist_id` (their dedicated "POC Tracker" list), `status` (`connected` /
+  `needs_reauth`), `connected_at`, `last_sync_at` (pull high-water mark), `last_error`.
+
 ### Lookups (admin-managed, `is_active` + `is_system`)
 
 - **contact_roles** — `name`.
 - **project_statuses** — `name`, `sort_order` (dashboard grouping), `is_terminal`.
 - **feature_types** — `name`, `description`.
 - **use_case_statuses** — `name`, `sort_order`, `is_complete_status` (drives progress %).
+- **task_statuses** — `name`, `sort_order` (dashboard grouping), `is_terminal` (→ Google `completed`).
+- **task_priorities** — `name`, `sort_order`, `color` (hex badge).
 
 `is_system` rows are seed defaults and cannot be deleted; a lookup still referenced by
 live data cannot be deleted either (deactivate it instead).

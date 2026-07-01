@@ -35,6 +35,10 @@ an MCP server so other tools and AI assistants can read and report on the data.
   makes importing from scratch easy.
 - **Dashboard** — projects grouped by status, with per-user preferences (columns, which
   statuses to show, sort).
+- **Tasks** — a per-user task manager alongside projects: admin-managed statuses and
+  priorities, optional start/due dates and project assignment, rich-text details, a
+  customizable dashboard, and an optional **two-way sync to each user's own Google Tasks**
+  account. See [docs/TASKS.md](docs/TASKS.md).
 - **Reporting** — an all-POCs overview and a print-friendly single-POC report.
 - **Global search** — one search box (in the top bar) over projects, use cases, the library,
   notes, customers, contacts, and files, with live as-you-type results and a full results page.
@@ -190,6 +194,30 @@ Two features use it:
 No API call is made until you configure a provider and trigger a feature; nothing is sent to a
 vendor automatically.
 
+## Tasks
+
+A **per-user task manager** sits alongside projects (toggle it under **Settings → System**).
+Each user manages their **own** tasks — title, status, optional priority, optional start/due
+dates, rich-text details, and an optional **project** assignment — from a dashboard that groups
+by status and is customizable per user. Statuses (To Do / In Progress / Blocked / Done) and
+priorities (Low / Medium / High / Urgent) are **admin-managed lists** under **Settings →
+Lookups**. A project's page shows the tasks assigned to it. Admins can view everyone's tasks;
+external viewers have none. Tasks are also exposed on the **REST API** (`/api/v1/tasks`) and via
+**MCP** — admin-wide with an explicit `owner`, since those interfaces authenticate as a machine.
+
+### Google Tasks sync (per user, two-way)
+
+Users can optionally sync their tasks to **their own Google account**. An admin registers **one**
+Google OAuth client under **Settings → Google Tasks** (the app's identity to Google — *not* a
+shared account); each user then clicks **Connect Google Tasks** on the Tasks page and consents
+with their own Google login. Their tasks sync into a dedicated **"POC Tracker"** list in their
+account. Refresh tokens are stored **encrypted** (Fernet); the flow uses PKCE + `state`.
+
+Because users bring **personal / external** Google accounts, the OAuth consent screen must be set
+to **External**, which brings Google's test-user limit and (until the app is published/verified)
+a weekly re-consent — POC Tracker handles that with a **Reconnect** prompt. The full Google Cloud
+walkthrough, field mapping, sync semantics, and troubleshooting are in **[docs/TASKS.md](docs/TASKS.md)**.
+
 ## REST API
 
 Authenticate with an API key (Settings → API Keys) or an OAuth access token:
@@ -205,11 +233,15 @@ Full interactive docs at `/docs`. See [docs/API.md](docs/API.md).
 The MCP server lets an AI assistant both **read** and **write** POC data over the REST API:
 
 - **Query/report** — `list_projects`, `find_projects`, `get_project`, `list_customers`,
-  `list_use_case_library`, `list_lookups`, `all_pocs_summary`, `project_report`.
+  `list_use_case_library`, `list_lookups`, `all_pocs_summary`, `project_report`, `list_tasks`,
+  `get_task`.
 - **Write** — `add_custom_use_cases` (bulk-add a list of use cases to a project — the main
   one for "here's a list, add them"), `add_custom_use_case`, `add_use_cases_from_library`,
   `update_use_case`, `set_use_case_status`, `delete_use_case`, `create_project`,
-  `create_customer`.
+  `create_customer`, `create_task`, `update_task`, `set_task_status`, `delete_task`.
+
+Task tools are **admin-wide** and take an explicit `owner` (username or id), since the MCP
+server authenticates as a machine rather than a logged-in user. See [docs/TASKS.md](docs/TASKS.md).
 
 Status and feature-type arguments accept a **name or id** (resolved case-insensitively), so
 an agent can say `status="Completed"` or `feature_type="JML"` without looking up ids.
@@ -378,3 +410,4 @@ ruff check app tests
 - [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — requirements and the design decisions behind them
 - [docs/SCHEMA.md](docs/SCHEMA.md) — the data model
 - [docs/API.md](docs/API.md) — REST API overview
+- [docs/TASKS.md](docs/TASKS.md) — the Task Manager and Google Tasks two-way sync (incl. Google Cloud setup)

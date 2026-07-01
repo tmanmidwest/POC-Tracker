@@ -28,6 +28,23 @@
       <input class="input mono" type="text" value="{{ redirect_uri }}" readonly onclick="this.select()" />
       <div class="form-hint">Copy this into your Google OAuth client’s “Authorized redirect URIs”.</div>
     </div>
+
+    <div class="inline-note" style="margin-top: var(--s-4); padding: var(--s-3) var(--s-4); border:1px solid var(--line); border-radius:8px; background: var(--surface-2, transparent);">
+      <div style="font-weight:600; margin-bottom: var(--s-1);">Consent screen: use “External”</div>
+      <p class="text-muted text-xs" style="margin-top:0;">
+        Because users connect their own personal / non-org Google accounts, set the
+        OAuth <strong>consent screen “User type” to External</strong> (Internal only
+        works if everyone shares one Google Workspace org). Then mind the publishing status:
+      </p>
+      <ul class="text-muted text-xs" style="margin:0; padding-left: var(--s-4);">
+        <li><strong>Testing</strong> (default): only Google accounts you add under
+          <em>Test users</em> can connect (max 100), and their access expires about
+          every 7 days — they’ll be prompted to reconnect here (that’s expected).</li>
+        <li><strong>In production</strong> (published): removes those limits. Since
+          <code>.../auth/tasks</code> is a “sensitive” scope, Google may require app
+          verification before publishing. Once verified, connections are long-lived.</li>
+      </ul>
+    </div>
   </div>
 </div>
 
