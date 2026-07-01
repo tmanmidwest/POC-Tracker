@@ -26,7 +26,7 @@ from app.models import (
     TaskPriority,
     TaskStatus,
 )
-from app.services import system_config
+from app.services import google_oauth, google_tasks_sync, system_config
 from app.services.access import accessible_project_ids
 from app.services.audit import record_event
 from app.services.rich_text import html_to_text, sanitize_note_html
@@ -170,6 +170,11 @@ def dashboard(
         total += len(tasks)
         groups.append({"status": status, "tasks": tasks})
 
+    # Google Tasks connection state (only when the admin has enabled the integration).
+    google = {"ready": google_oauth.is_ready(db), "cred": None}
+    if google["ready"]:
+        google["cred"] = google_tasks_sync.get_credential(db, user.id)
+
     return render(
         request,
         "tasks/index.html",
@@ -181,6 +186,7 @@ def dashboard(
         total_active=total,
         can_view_all=can_view_all_tasks(user),
         today=date.today().isoformat(),
+        google=google,
     )
 
 
@@ -358,6 +364,7 @@ async def create_task(
     db.add(task)
     db.commit()
     _task_event(request, user, task, "created", "Created")
+    google_tasks_sync.sync_after_change(db, task)
     flash(request, f"Task '{task.title}' created.", "success")
     return RedirectResponse(url="/ui/tasks", status_code=303)
 
@@ -428,6 +435,7 @@ async def update_task(
     task.details_html = details_html
     db.commit()
     _task_event(request, user, task, "updated", "Updated")
+    google_tasks_sync.sync_after_change(db, task)
     flash(request, "Task saved.", "success")
     return RedirectResponse(url="/ui/tasks", status_code=303)
 
@@ -449,6 +457,7 @@ async def set_status(
     task.status_id = status_id
     db.commit()
     _task_event(request, user, task, "status_changed", "Changed status of")
+    google_tasks_sync.sync_after_change(db, task)
     # Return to wherever the change was made (dashboard or a project page).
     back = request.headers.get("referer") or "/ui/tasks"
     return RedirectResponse(url=back, status_code=303)
@@ -469,6 +478,7 @@ def archive_task(
     task.archived_at = datetime.now(UTC)
     db.commit()
     _task_event(request, user, task, "archived", "Archived")
+    google_tasks_sync.sync_after_change(db, task)
     flash(request, "Task archived.", "success")
     return RedirectResponse(url="/ui/tasks", status_code=303)
 
@@ -488,6 +498,7 @@ def restore_task(
     task.archived_at = None
     db.commit()
     _task_event(request, user, task, "restored", "Restored")
+    google_tasks_sync.sync_after_change(db, task)
     flash(request, "Task restored.", "success")
     return RedirectResponse(url="/ui/tasks", status_code=303)
 
@@ -505,8 +516,11 @@ def delete_task(
         raise HTTPException(status_code=404, detail="Task not found.")
     title = task.title
     task_id_snapshot = task.id
+    owner_id = task.owner_user_id
+    external_id = task.external_id
     db.delete(task)
     db.commit()
+    google_tasks_sync.push_delete(db, owner_id, external_id)
     record_event(
         category="task",
         event_type="task.deleted",

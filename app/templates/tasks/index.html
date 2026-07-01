@@ -16,6 +16,33 @@
   </div>
 </div>
 
+{% if google and google.ready %}
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__body" style="display:flex; align-items:center; gap: var(--s-3); flex-wrap:wrap;">
+    {% set cred = google.cred %}
+    {% if cred and cred.status == 'connected' %}
+      <span class="badge badge--success badge--dot">Google Tasks connected</span>
+      <span class="text-muted text-xs">Syncing to your “POC Tracker” list{% if cred.google_email %} · {{ cred.google_email }}{% endif %}.</span>
+      {% if cred.last_error %}<span class="badge badge--warning" title="{{ cred.last_error }}">last sync had an issue</span>{% endif %}
+      <span style="flex:1;"></span>
+      <form method="post" action="/ui/tasks/google/disconnect" style="margin:0;"
+            onsubmit="return confirm('Disconnect Google Tasks? Your existing Google tasks stay, but new changes won’t sync.');">
+        <button class="btn btn--ghost btn--sm">Disconnect</button>
+      </form>
+    {% elif cred and cred.status == 'needs_reauth' %}
+      <span class="badge badge--warning badge--dot">Google Tasks needs reconnecting</span>
+      <span class="text-muted text-xs">Access was revoked or expired. Reconnect to resume syncing.</span>
+      <span style="flex:1;"></span>
+      <a href="/ui/tasks/google/connect" class="btn btn--primary btn--sm">Reconnect</a>
+    {% else %}
+      <span class="text-muted text-xs">Sync your tasks to your own Google Tasks account (two-way).</span>
+      <span style="flex:1;"></span>
+      <a href="/ui/tasks/google/connect" class="btn btn--secondary btn--sm">Connect Google Tasks</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% macro priority_badge(p) %}
   {% if p %}
     <span class="badge" style="{% if p.color %}background:{{ p.color }}1a; color:{{ p.color }}; border-color:{{ p.color }}66;{% endif %}">{{ p.name }}</span>

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser, Project, Task, TaskPriority, TaskStatus
 from app.schemas.task import TaskCreate, TaskOut, TaskUpdate
-from app.services import system_config
+from app.services import google_tasks_sync, system_config
 from app.services.audit import principal_actor, record_event
 from app.services.auth import Principal, get_authenticated_principal
 from app.services.rich_text import html_to_text, sanitize_note_html
@@ -212,6 +212,7 @@ def create_task(
     db.commit()
     db.refresh(task)
     _task_event(principal, task, "created", "Created")
+    google_tasks_sync.sync_after_change(db, task)
     return task
 
 
@@ -252,6 +253,7 @@ def update_task(
     db.commit()
     db.refresh(task)
     _task_event(principal, task, "updated", "Updated")
+    google_tasks_sync.sync_after_change(db, task)
     return task
 
 
@@ -267,8 +269,10 @@ def delete_task(
     title = task.title
     tid = task.id
     owner_id = task.owner_user_id
+    external_id = task.external_id
     db.delete(task)
     db.commit()
+    google_tasks_sync.push_delete(db, owner_id, external_id)
     record_event(
         category="task",
         event_type="task.deleted",

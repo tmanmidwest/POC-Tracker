@@ -17,6 +17,7 @@ from app.models.contact_role import ContactRole
 from app.models.customer import Customer
 from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
+from app.models.google_tasks_config import GoogleTasksConfig
 from app.models.library_set import LibrarySet
 from app.models.mcp_gateway_token import McpGatewayToken
 from app.models.note_attachment import NoteAttachment
@@ -34,6 +35,7 @@ from app.models.task_status import TaskStatus
 from app.models.use_case_library import UseCaseLibrary
 from app.models.use_case_status import UseCaseStatus
 from app.models.use_case_view_pref import UseCaseViewPref
+from app.models.user_google_credential import UserGoogleCredential
 from app.models.user_identity import UserIdentity
 
 __all__ = [
@@ -50,6 +52,7 @@ __all__ = [
     "Customer",
     "DashboardPref",
     "FeatureType",
+    "GoogleTasksConfig",
     "LibrarySet",
     "McpGatewayToken",
     "NoteAttachment",
@@ -67,5 +70,6 @@ __all__ = [
     "UseCaseLibrary",
     "UseCaseStatus",
     "UseCaseViewPref",
+    "UserGoogleCredential",
     "UserIdentity",
 ]

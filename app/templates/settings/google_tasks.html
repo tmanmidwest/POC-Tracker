@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set page_title = "Google Tasks" %}
+{% block breadcrumb %}<a href="/ui/settings">Settings</a> <span class="topbar__breadcrumb-sep">/</span> <span>Google Tasks</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Google Tasks sync</h1>
+    <p class="page-header__subtitle">Let users sync their tasks to their own Google Tasks account.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<div class="card" style="max-width: 720px; margin-bottom: var(--s-5);">
+  <div class="card__body">
+    <p class="text-muted text-xs" style="margin-top:0;">
+      This is a two-way, per-user integration. You provide one Google OAuth
+      <strong>client</strong> here; each user then connects their own Google
+      account from the Tasks page. Set it up in the
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud console</a>:
+      create an OAuth client (type “Web application”), enable the
+      <strong>Google Tasks API</strong>, add the <code>.../auth/tasks</code> scope
+      on the consent screen, and register this redirect URI:
+    </p>
+    <div class="form-row">
+      <label class="label">Authorized redirect URI</label>
+      <input class="input mono" type="text" value="{{ redirect_uri }}" readonly onclick="this.select()" />
+      <div class="form-hint">Copy this into your Google OAuth client’s “Authorized redirect URIs”.</div>
+    </div>
+  </div>
+</div>
+
+<form method="post" action="/ui/settings/google-tasks" class="card" style="max-width: 720px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="client_id">Client ID</label>
+      <input class="input" id="client_id" name="client_id" value="{{ form.client_id }}"
+             placeholder="1234567890-abc123.apps.googleusercontent.com" autocomplete="off" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="client_secret">Client secret</label>
+      <input class="input" id="client_secret" name="client_secret" type="password"
+             placeholder="{{ '•••••••• (leave blank to keep current)' if form.has_secret else 'GOCSPX-…' }}"
+             autocomplete="off" />
+      <div class="form-hint">
+        Stored encrypted. {% if form.has_secret %}A secret is already saved — leave blank to keep it.{% endif %}
+      </div>
+    </div>
+    <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+      <input type="checkbox" name="is_enabled" value="1" {% if form.is_enabled %}checked{% endif %} />
+      Enable Google Tasks sync
+    </label>
+    <div class="form-hint">When enabled, users see a “Connect Google Tasks” option on the Tasks page.</div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save settings</button>
+  </div>
+</form>
+{% endblock %}

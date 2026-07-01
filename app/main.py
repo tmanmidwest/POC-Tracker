@@ -195,6 +195,7 @@ def create_app() -> FastAPI:
         require_admin_ui,
         require_internal_ui,
     )
+    from app.ui.google_routes import router as ui_google_router
     from app.ui.grant_routes import router as ui_grant_router
     from app.ui.library_routes import router as ui_library_router
     from app.ui.lookup_routes import router as ui_lookup_router
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
     internal_only = [Depends(require_internal_ui)]
     app.include_router(ui_customer_router, dependencies=internal_only)
     app.include_router(ui_task_router, dependencies=internal_only)
+    app.include_router(ui_google_router, dependencies=internal_only)
     app.include_router(ui_audit_router, dependencies=internal_only)
     app.include_router(ui_grant_router)  # routes self-check can_grant_project
 

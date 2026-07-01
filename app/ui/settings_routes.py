@@ -1407,6 +1407,74 @@ def update_system(
 
 
 # ===========================================================================
+# Google Tasks integration (admin OAuth client config)
+# ===========================================================================
+
+
+@router.get("/google-tasks")
+def show_google_tasks(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    from app.services import google_oauth
+    from app.ui.google_routes import callback_uri
+
+    config = google_oauth.get_config(db)
+    return render(
+        request,
+        "settings/google_tasks.html",
+        current_user=user,
+        active_subsection="google_tasks",
+        form={
+            "client_id": config.client_id or "",
+            "is_enabled": config.is_enabled,
+            "has_secret": bool(config.client_secret_encrypted),
+        },
+        redirect_uri=callback_uri(request),
+    )
+
+
+@router.post("/google-tasks")
+def update_google_tasks(
+    request: Request,
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+    is_enabled: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    from app.services import google_oauth
+
+    client_id = client_id.strip()
+    enabled = bool(is_enabled)
+    config = google_oauth.get_config(db)
+
+    # Can't enable without credentials present (existing secret counts).
+    has_secret = bool(config.client_secret_encrypted) or bool(client_secret.strip())
+    if enabled and not (client_id and has_secret):
+        flash(request, "Add the client ID and secret before enabling sync.", "error")
+        return RedirectResponse(url="/ui/settings/google-tasks", status_code=303)
+
+    google_oauth.set_config(
+        db,
+        client_id=client_id,
+        client_secret=client_secret.strip() or None,
+        is_enabled=enabled,
+    )
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="google_tasks.settings.updated",
+        target_type="google_tasks_config",
+        message=f"{'Enabled' if enabled else 'Disabled'} Google Tasks sync",
+        detail={"is_enabled": enabled, "secret_rotated": bool(client_secret.strip())},
+    )
+    flash(request, "Google Tasks settings saved.", "success")
+    return RedirectResponse(url="/ui/settings/google-tasks", status_code=303)
+
+
+# ===========================================================================
 # Reset
 # ===========================================================================
 
