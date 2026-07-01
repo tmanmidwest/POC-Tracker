@@ -25,6 +25,18 @@
         Lowering this prunes older events immediately when you save.
       </div>
     </div>
+
+    <div class="form-row">
+      <label class="label">Task Manager</label>
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+        <input type="checkbox" name="tasks_enabled" value="1" {% if form.tasks_enabled %}checked{% endif %} />
+        Enable the per-user Task Manager
+      </label>
+      <div class="form-hint">
+        When enabled, internal users get a <strong>Tasks</strong> area for managing their own tasks.
+        Turning it off hides the Tasks nav item and pages; existing tasks are kept.
+      </div>
+    </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
     <a href="/ui/activity" class="btn btn--secondary">Cancel</a>

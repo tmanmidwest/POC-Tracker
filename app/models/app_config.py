@@ -11,7 +11,7 @@ can still set a starting default; the UI value then persists and overrides it.
 
 from __future__ import annotations
 
-from sqlalchemy import Integer
+from sqlalchemy import Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -30,6 +30,11 @@ class AppConfig(Base, TimestampMixin):
     # Delete audit/activity events older than this many days. 0 = keep forever.
     audit_retention_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=30
+    )
+    # Whether the per-user Task Manager module is enabled. When off, the Tasks
+    # nav item and routes are hidden. Defaults on.
+    tasks_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
     )
 
     def __repr__(self) -> str:

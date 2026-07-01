@@ -395,6 +395,62 @@
  </div>
 </div>
 
+{# ---- Tasks assigned to this project ---- #}
+{% if tasks_on %}
+<div id="tasks" class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="card__title">Tasks
+      {% if project_tasks %}<span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}
+    </h3>
+    <a href="/ui/tasks/new?project_id={{ project.id }}" class="btn btn--primary btn--sm">+ Add task</a>
+  </div>
+  <div class="card__body">
+    {% if not project_tasks %}
+    <p class="text-muted text-xs">No tasks assigned to this project yet.</p>
+    {% else %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Priority</th>
+          <th>Due</th>
+          <th style="width:180px;">Status</th>
+          {% if current_user.is_admin %}<th>Owner</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in project_tasks %}
+        <tr>
+          <td><strong>{{ task.title }}</strong></td>
+          <td>
+            {% if task.priority %}
+            <span class="badge" style="{% if task.priority.color %}background:{{ task.priority.color }}1a; color:{{ task.priority.color }}; border-color:{{ task.priority.color }}66;{% endif %}">{{ task.priority.name }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
+          <td>
+            <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;">
+              <select class="select" name="status_id" onchange="this.form.submit()">
+                {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+              </select>
+            </form>
+          </td>
+          {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
+          <td class="table__actions">
+            <a href="/ui/tasks/{{ task.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 {# ---- Add use cases ---- #}
 <div id="use-cases" class="page-header">
   <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>

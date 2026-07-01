@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% set page_title = "Task Preferences" %}
+{% block breadcrumb %}<a href="/ui/tasks">Tasks</a> <span class="topbar__breadcrumb-sep">/</span> <span>Customize</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Customize your tasks view</h1>
+    <p class="page-header__subtitle">Choose which columns and statuses to show, and how to sort.</p>
+  </div>
+</div>
+
+<form method="post" action="/ui/tasks/preferences" class="card" style="max-width: 640px;">
+  <div class="card__body">
+    {% if can_view_all %}
+    <div class="form-row">
+      <label class="label" for="owner">Show tasks for</label>
+      <select class="select" id="owner" name="owner">
+        <option value="mine" {% if prefs.owner == 'mine' %}selected{% endif %}>My tasks</option>
+        <option value="all" {% if prefs.owner == 'all' %}selected{% endif %}>All users' tasks</option>
+      </select>
+      <div class="form-hint">Admins can review everyone's tasks. Standard users only ever see their own.</div>
+    </div>
+    {% endif %}
+
+    <div class="form-row">
+      <label class="label">Columns</label>
+      {% for c in all_columns %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="col_{{ c.key }}" value="1" {% if c.key in prefs.columns %}checked{% endif %} />
+        {{ c.label }}{% if c.key == 'owner' and not can_view_all %} <span class="text-muted text-xs">(admins only)</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label class="label">Statuses to show</label>
+      <div class="form-hint">Leave all unchecked to show every status.</div>
+      {% for s in statuses %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="status_ids" value="{{ s.id }}"
+          {% if prefs.status_ids and s.id in prefs.status_ids %}checked{% endif %} />
+        {{ s.name }}{% if not s.is_active %} <span class="badge badge--neutral">inactive</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label class="label">Priorities to show</label>
+      <div class="form-hint">Leave all unchecked to show tasks of any priority.</div>
+      {% for p in priorities %}
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-1) 0;">
+        <input type="checkbox" name="priority_ids" value="{{ p.id }}"
+          {% if prefs.priority_ids and p.id in prefs.priority_ids %}checked{% endif %} />
+        {{ p.name }}
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="sort">Sort tasks within each status by</label>
+      <select class="select" id="sort" name="sort">
+        <option value="updated" {% if prefs.sort == 'updated' %}selected{% endif %}>Recently updated</option>
+        <option value="due_date" {% if prefs.sort == 'due_date' %}selected{% endif %}>Due date</option>
+        <option value="priority" {% if prefs.sort == 'priority' %}selected{% endif %}>Priority</option>
+        <option value="title" {% if prefs.sort == 'title' %}selected{% endif %}>Title</option>
+      </select>
+    </div>
+
+    <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+      <input type="checkbox" name="show_archived" value="1" {% if prefs.show_archived %}checked{% endif %} />
+      Include archived tasks
+    </label>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/tasks" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save preferences</button>
+  </div>
+</form>
+{% endblock %}

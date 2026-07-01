@@ -27,6 +27,10 @@ from app.models.project_note import ProjectNote
 from app.models.project_status import ProjectStatus
 from app.models.project_use_case import ProjectUseCase
 from app.models.screenshot import Screenshot
+from app.models.task import Task
+from app.models.task_dashboard_pref import TaskDashboardPref
+from app.models.task_priority import TaskPriority
+from app.models.task_status import TaskStatus
 from app.models.use_case_library import UseCaseLibrary
 from app.models.use_case_status import UseCaseStatus
 from app.models.use_case_view_pref import UseCaseViewPref
@@ -56,6 +60,10 @@ __all__ = [
     "ProjectStatus",
     "ProjectUseCase",
     "Screenshot",
+    "Task",
+    "TaskDashboardPref",
+    "TaskPriority",
+    "TaskStatus",
     "UseCaseLibrary",
     "UseCaseStatus",
     "UseCaseViewPref",

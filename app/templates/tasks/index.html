@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% set page_title = "Tasks" %}
+{% block breadcrumb %}<span>Tasks</span>{% endblock %}
+
+{% set cols = prefs.columns %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Tasks</h1>
+    <p class="page-header__subtitle">{{ total_active }} task(s), grouped by status.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/tasks/preferences" class="btn btn--secondary">Customize</a>
+    <a href="/ui/tasks/new" class="btn btn--primary">+ New Task</a>
+  </div>
+</div>
+
+{% macro priority_badge(p) %}
+  {% if p %}
+    <span class="badge" style="{% if p.color %}background:{{ p.color }}1a; color:{{ p.color }}; border-color:{{ p.color }}66;{% endif %}">{{ p.name }}</span>
+  {% else %}<span class="text-muted">—</span>{% endif %}
+{% endmacro %}
+
+{% for group in groups %}
+<div class="card card--flush" style="margin-bottom: var(--s-5);">
+  <div class="card__header">
+    <h2 class="card__title">{{ group.status.name }}
+      <span class="badge badge--neutral">{{ group.tasks | length }}</span>
+    </h2>
+  </div>
+  {% if not group.tasks %}
+    <div class="empty-state" style="padding: var(--s-5);">
+      <p class="empty-state__body">No tasks in this status.</p>
+    </div>
+  {% else %}
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Task</th>
+        {% if 'project' in cols %}<th>Project</th>{% endif %}
+        {% if 'priority' in cols %}<th>Priority</th>{% endif %}
+        {% if 'start_date' in cols %}<th>Start</th>{% endif %}
+        {% if 'due_date' in cols %}<th>Due</th>{% endif %}
+        {% if 'owner' in cols and can_view_all %}<th>Owner</th>{% endif %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in group.tasks %}
+      <tr onclick="window.location='/ui/tasks/{{ task.id }}/edit'" style="cursor:pointer;{% if task.is_archived %}opacity:0.55;{% endif %}">
+        <td>
+          <strong>{{ task.title }}</strong>
+          {% if task.is_archived %}<span class="badge badge--neutral">Archived</span>{% endif %}
+        </td>
+        {% if 'project' in cols %}
+        <td>{% if task.project %}<a href="/ui/projects/{{ task.project_id }}" onclick="event.stopPropagation()">{{ task.project.display_name }}</a>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        {% endif %}
+        {% if 'priority' in cols %}<td>{{ priority_badge(task.priority) }}</td>{% endif %}
+        {% if 'start_date' in cols %}<td class="mono text-muted">{{ task.start_date.isoformat() if task.start_date else "—" }}</td>{% endif %}
+        {% if 'due_date' in cols %}<td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>{% endif %}
+        {% if 'owner' in cols and can_view_all %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
+        <td class="table__actions" onclick="event.stopPropagation()">
+          {% if task.is_archived %}
+          <form method="post" action="/ui/tasks/{{ task.id }}/restore" style="margin:0;">
+            <button class="btn btn--ghost btn--sm">Restore</button>
+          </form>
+          {% else %}
+          <form method="post" action="/ui/tasks/{{ task.id }}/archive" style="margin:0;">
+            <button class="btn btn--ghost btn--sm" title="Archive task">Archive</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No tasks to show</h3>
+    <p class="empty-state__body">No statuses are selected, or you haven't created any tasks yet.</p>
+    <a href="/ui/tasks/new" class="btn btn--primary">+ New Task</a>
+  </div>
+{% endfor %}
+{% endblock %}

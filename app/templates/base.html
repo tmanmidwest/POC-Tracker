@@ -59,6 +59,15 @@
           Projects
         </a>
 
+        {% if current_user and current_user.is_internal and tasks_enabled %}
+        <a href="/ui/tasks" class="sidebar__link {% if active_section == 'tasks' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 4l1.5 1.5L6 3M2 9l1.5 1.5L6 8M9 4.5h5M9 9.5h5"/>
+          </svg>
+          Tasks
+        </a>
+        {% endif %}
+
         {% if current_user and current_user.is_internal %}
         <a href="/ui/customers" class="sidebar__link {% if active_section == 'customers' %}is-active{% endif %}">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">

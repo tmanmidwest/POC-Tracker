@@ -26,6 +26,8 @@ from app.models import (
     ProjectStatus,
     ProjectUseCase,
     Screenshot,
+    TaskPriority,
+    TaskStatus,
     UseCaseLibrary,
     UseCaseStatus,
 )
@@ -79,6 +81,22 @@ DEFAULT_USE_CASE_STATUSES: list[tuple[str, int, bool, bool]] = [
     ("Completed", 30, True, True),
     ("Blocked", 40, False, False),
     ("Not Applicable", 50, False, False),
+]
+
+# (name, sort_order, is_terminal, is_system)
+DEFAULT_TASK_STATUSES: list[tuple[str, int, bool, bool]] = [
+    ("To Do", 10, False, True),
+    ("In Progress", 20, False, True),
+    ("Blocked", 30, False, True),
+    ("Done", 40, True, True),
+]
+
+# (name, sort_order, color, is_system)
+DEFAULT_TASK_PRIORITIES: list[tuple[str, int, str, bool]] = [
+    ("Low", 10, "#16a34a", True),
+    ("Medium", 20, "#ca8a04", True),
+    ("High", 30, "#ea580c", True),
+    ("Urgent", 40, "#dc2626", True),
 ]
 
 # Master use-case library: (category, ref, name, description, success, feature_type_name)
@@ -163,6 +181,8 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
     seed_project_statuses(db)
     seed_feature_types(db)
     seed_use_case_statuses(db)
+    seed_task_statuses(db)
+    seed_task_priorities(db)
     seed_library_sets(db)
     seed_use_case_library(db)
     seed_admin_user(db, settings)
@@ -275,6 +295,48 @@ def seed_use_case_statuses(db: Session) -> int:
     if inserted:
         db.flush()
         log.info("seeded_use_case_statuses", extra={"inserted": inserted})
+    return inserted
+
+
+def seed_task_statuses(db: Session) -> int:
+    existing = {row[0] for row in db.execute(select(TaskStatus.name)).all()}
+    inserted = 0
+    for name, sort_order, is_terminal, is_system in DEFAULT_TASK_STATUSES:
+        if name not in existing:
+            db.add(
+                TaskStatus(
+                    name=name,
+                    sort_order=sort_order,
+                    is_terminal=is_terminal,
+                    is_active=True,
+                    is_system=is_system,
+                )
+            )
+            inserted += 1
+    if inserted:
+        db.flush()
+        log.info("seeded_task_statuses", extra={"inserted": inserted})
+    return inserted
+
+
+def seed_task_priorities(db: Session) -> int:
+    existing = {row[0] for row in db.execute(select(TaskPriority.name)).all()}
+    inserted = 0
+    for name, sort_order, color, is_system in DEFAULT_TASK_PRIORITIES:
+        if name not in existing:
+            db.add(
+                TaskPriority(
+                    name=name,
+                    sort_order=sort_order,
+                    color=color,
+                    is_active=True,
+                    is_system=is_system,
+                )
+            )
+            inserted += 1
+    if inserted:
+        db.flush()
+        log.info("seeded_task_priorities", extra={"inserted": inserted})
     return inserted
 
 
@@ -529,6 +591,22 @@ def reset_use_case_statuses(db: Session) -> int:
     db.query(UseCaseStatus).delete()
     db.flush()
     inserted = seed_use_case_statuses(db)
+    db.commit()
+    return inserted
+
+
+def reset_task_statuses(db: Session) -> int:
+    db.query(TaskStatus).delete()
+    db.flush()
+    inserted = seed_task_statuses(db)
+    db.commit()
+    return inserted
+
+
+def reset_task_priorities(db: Session) -> int:
+    db.query(TaskPriority).delete()
+    db.flush()
+    inserted = seed_task_priorities(db)
     db.commit()
     return inserted
 

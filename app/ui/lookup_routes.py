@@ -16,7 +16,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import AppUser, ContactRole, FeatureType, ProjectStatus, UseCaseStatus
+from app.models import (
+    AppUser,
+    ContactRole,
+    FeatureType,
+    ProjectStatus,
+    TaskPriority,
+    TaskStatus,
+    UseCaseStatus,
+)
 from app.services.audit import record_event
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
@@ -76,6 +84,32 @@ LOOKUPS: dict[str, dict[str, Any]] = {
             {"name": "name", "label": "Name", "type": "text", "required": True},
             {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
             {"name": "is_complete_status", "label": "Counts as completed", "type": "checkbox"},
+        ],
+    },
+    "task-statuses": {
+        "model": TaskStatus,
+        "title": "Task Statuses",
+        "subtitle": "Statuses a task can be in. The task dashboard groups by these.",
+        "subsection": "task_statuses",
+        "event_noun": "task_status",
+        "order_by": TaskStatus.sort_order,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
+            {"name": "is_terminal", "label": "Terminal (e.g. Done)", "type": "checkbox"},
+        ],
+    },
+    "task-priorities": {
+        "model": TaskPriority,
+        "title": "Task Priorities",
+        "subtitle": "Priority levels selectable on a task (Low, High, Urgent, …).",
+        "subsection": "task_priorities",
+        "event_noun": "task_priority",
+        "order_by": TaskPriority.sort_order,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
+            {"name": "color", "label": "Color (hex, e.g. #dc2626)", "type": "text", "required": False},
         ],
     },
 }

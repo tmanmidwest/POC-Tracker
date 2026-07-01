@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% import "_macros.html" as M %}
+{% set page_title = "Task" %}
+{% block breadcrumb %}<a href="/ui/tasks">Tasks</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit" if task else "New" }}</span>{% endblock %}
+{% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
+{% block body_scripts %}{% include "_rte_scripts.html" %}{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ "Edit task" if task else "New task" }}</h1>
+  </div>
+</div>
+
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 720px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="title">Title<span class="label__required">*</span></label>
+      <input class="input" id="title" name="title" value="{{ form.title or '' }}" maxlength="300" required placeholder="e.g. Follow up with Acme on SSO config" />
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="status_id">Status<span class="label__required">*</span></label>
+        <select class="select" id="status_id" name="status_id" required>
+          {% for s in statuses %}
+          <option value="{{ s.id }}" {% if form.status_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="label" for="priority_id">Priority</label>
+        <select class="select" id="priority_id" name="priority_id">
+          <option value="">— None —</option>
+          {% for p in priorities %}
+          <option value="{{ p.id }}" {% if form.priority_id == p.id %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="project_id">Project</label>
+      <select class="select" id="project_id" name="project_id">
+        <option value="">— Not tied to a project —</option>
+        {% for pr in projects %}
+        <option value="{{ pr.id }}" {% if form.project_id == pr.id %}selected{% endif %}>{{ pr.display_name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-hint">Optional — assign this task to a POC project to see it on that project's page.</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="start_date">Start date</label>
+        <input class="input" type="date" id="start_date" name="start_date" value="{{ form.start_date or '' }}" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="due_date">Due date</label>
+        <input class="input" type="date" id="due_date" name="due_date" value="{{ form.due_date or '' }}" />
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="label">Details</label>
+      <div class="rte" data-rte-target="#details" data-placeholder="Task details…">{{ M.rte_seed(form.details_html, form.details) }}</div>
+      <input type="hidden" id="details" name="details" />
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/tasks" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">{{ "Save changes" if task else "Create task" }}</button>
+  </div>
+</form>
+
+{% if task %}
+<div style="margin-top: var(--s-5); max-width: 720px; display:flex; gap: var(--s-2);">
+  {% if task.is_archived %}
+  <form method="post" action="/ui/tasks/{{ task.id }}/restore" style="margin:0;">
+    <button class="btn btn--ghost btn--sm">Restore task</button>
+  </form>
+  {% else %}
+  <form method="post" action="/ui/tasks/{{ task.id }}/archive" style="margin:0;">
+    <button class="btn btn--ghost btn--sm">Archive task</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/ui/tasks/{{ task.id }}/delete" style="margin:0;"
+        onsubmit="return confirm('Delete this task? This cannot be undone.');">
+    <button type="submit" class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete task</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

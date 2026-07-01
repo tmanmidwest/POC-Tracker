@@ -1333,7 +1333,10 @@ def show_system(
         "settings/system.html",
         current_user=user,
         active_subsection="system",
-        form={"audit_retention_days": config.audit_retention_days},
+        form={
+            "audit_retention_days": config.audit_retention_days,
+            "tasks_enabled": config.tasks_enabled,
+        },
     )
 
 
@@ -1341,6 +1344,7 @@ def show_system(
 def update_system(
     request: Request,
     audit_retention_days: int = Form(...),
+    tasks_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -1350,15 +1354,31 @@ def update_system(
             "settings/system.html",
             current_user=user,
             active_subsection="system",
-            form={"audit_retention_days": audit_retention_days},
+            form={
+                "audit_retention_days": audit_retention_days,
+                "tasks_enabled": bool(tasks_enabled),
+            },
             error=(
                 f"Retention must be between 0 and {_MAX_RETENTION_DAYS} days "
                 "(0 keeps events forever)."
             ),
         )
 
-    previous = system_config.get_config(db).audit_retention_days
+    config = system_config.get_config(db)
+    previous = config.audit_retention_days
+    tasks_was = config.tasks_enabled
+    tasks_now = bool(tasks_enabled)
     system_config.set_retention_days(db, audit_retention_days)
+    if tasks_now != tasks_was:
+        system_config.set_tasks_enabled(db, tasks_now)
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="system.settings.updated",
+            target_type="app_config",
+            message=f"{'Enabled' if tasks_now else 'Disabled'} the Task Manager module",
+            detail={"tasks_enabled": tasks_now},
+        )
 
     # Apply the new window immediately so lowering it takes effect now rather
     # than waiting for the next daily sweep.

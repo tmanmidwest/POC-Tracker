@@ -17,6 +17,7 @@ from app.models.project_status import ProjectStatus
 if TYPE_CHECKING:
     from app.models.project_note import ProjectNote
     from app.models.project_use_case import ProjectUseCase
+    from app.models.task import Task
 
 
 class Project(Base, TimestampMixin):
@@ -104,6 +105,9 @@ class Project(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="ProjectNote.note_date.desc(), ProjectNote.id.desc()",
     )
+    # User tasks assigned to this project. Tasks are user-owned and survive the
+    # project's deletion (their project_id is set null), so this is not a cascade.
+    tasks: Mapped[list[Task]] = relationship("Task", back_populates="project")
 
     @property
     def display_name(self) -> str:

@@ -32,6 +32,8 @@ from app.models import (
     ProjectStatus,
     ProjectUseCase,
     Screenshot,
+    Task,
+    TaskStatus,
     UseCaseLibrary,
     UseCaseStatus,
     UseCaseViewPref,
@@ -39,6 +41,8 @@ from app.models import (
 from app.models.project_use_case import SOURCE_CUSTOM
 from app.services import note_attachments as note_store
 from app.services import screenshots as screenshot_store
+from app.services import system_config
+from app.services.tasks import base_task_query, can_view_all_tasks
 from app.services.access import (
     can_grant_project,
     can_view_project,
@@ -593,6 +597,25 @@ def detail(
             if u.id not in granted_ids
         ]
 
+    # Tasks assigned to this project, scoped to what the viewer may see (their
+    # own; admins see everyone's). Only for internal users when the module is on.
+    project_tasks: list[Task] = []
+    task_statuses: list[TaskStatus] = []
+    tasks_on = user.is_internal and system_config.tasks_enabled()
+    if tasks_on:
+        project_tasks = (
+            base_task_query(db, user, "all" if can_view_all_tasks(user) else "mine")
+            .filter(Task.project_id == project.id, Task.is_archived.is_(False))
+            .order_by(Task.due_date.is_(None), Task.due_date, Task.updated_at.desc())
+            .all()
+        )
+        task_statuses = (
+            db.query(TaskStatus)
+            .filter(TaskStatus.is_active.is_(True))
+            .order_by(TaskStatus.sort_order)
+            .all()
+        )
+
     return render(
         request, "projects/detail.html", current_user=user, active_section="projects",
         project=project, use_case_groups=_group_use_cases(visible),
@@ -603,6 +626,7 @@ def detail(
         uc_field_options=ALL_UC_FIELDS, uc_filtered_count=len(visible),
         can_share=can_share, grants=grants, grantable_users=grantable_users,
         ai_configured=default_provider(db) is not None,
+        tasks_on=tasks_on, project_tasks=project_tasks, task_statuses=task_statuses,
     )
 
 

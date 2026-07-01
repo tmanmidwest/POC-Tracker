@@ -56,17 +56,19 @@ def _load() -> dict[str, Any]:
     from app.models.app_config import APP_CONFIG_ID, AppConfig
 
     retention = _default_retention_days()
+    tasks_enabled = True
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
         if row is not None:
             retention = row.audit_retention_days
+            tasks_enabled = row.tasks_enabled
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
     finally:
         db.close()
-    return {"audit_retention_days": retention}
+    return {"audit_retention_days": retention, "tasks_enabled": tasks_enabled}
 
 
 def current_retention_days() -> int:
@@ -77,9 +79,25 @@ def current_retention_days() -> int:
     return int(_cache["audit_retention_days"])
 
 
+def tasks_enabled() -> bool:
+    """Return whether the Task Manager module is enabled (cached)."""
+    global _cache
+    if _cache is None:
+        _cache = _load()
+    return bool(_cache["tasks_enabled"])
+
+
 def set_retention_days(db: Session, days: int) -> None:
     """Persist a new audit retention window and refresh the cache."""
     row = get_config(db)
     row.audit_retention_days = days
+    db.commit()
+    invalidate()
+
+
+def set_tasks_enabled(db: Session, enabled: bool) -> None:
+    """Persist the Task Manager module toggle and refresh the cache."""
+    row = get_config(db)
+    row.tasks_enabled = enabled
     db.commit()
     invalidate()
