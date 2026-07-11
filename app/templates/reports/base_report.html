@@ -60,6 +60,7 @@
       background: var(--soft); border: 1px solid var(--line-strong); color: var(--ink);
     }
     .badge--ok { background: #dcfce7; border-color: #bbf7d0; color: var(--ok); }
+    .badge--internal { background: #fef3c7; border-color: #fde68a; color: #92400e; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -97,10 +98,34 @@
 <body>
   <div class="report-toolbar">
     <strong>{{ project.display_name }} — Report</strong>
+    {% if include_internal %}<span class="badge badge--internal" title="This report includes internal-only items — not for external sharing">Internal copy</span>{% endif %}
     <span class="spacer"></span>
-    <a class="btn btn--primary" href="/ui/reports/projects/{{ project.id }}/pdf?v={{ cache_bust }}">⬇ Download PDF</a>
-    <a class="btn" href="/ui/reports/projects/{{ project.id }}/report.docx?v={{ cache_bust }}">⬇ Download Word</a>
-    {% if has_artifacts %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/artifacts.zip?v={{ cache_bust }}">⬇ Download all (.zip)</a>{% endif %}
+    {% if can_choose_audience %}
+    <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px;" title="Client-facing reports exclude internal-only notes and tasks; internal reports include everything">Audience:
+      <select id="reportAudience" aria-label="Report audience" onchange="window.location='/ui/reports/projects/{{ project.id }}?audience='+this.value">
+        <option value="client" {% if not include_internal %}selected{% endif %}>Client-facing</option>
+        <option value="internal" {% if include_internal %}selected{% endif %}>Internal (all)</option>
+      </select>
+    </label>
+    {% endif %}
+    <a class="btn btn--primary" href="/ui/reports/projects/{{ project.id }}/pdf?v={{ cache_bust }}&audience={{ audience }}">⬇ Download PDF</a>
+    <a class="btn" href="/ui/reports/projects/{{ project.id }}/report.docx?v={{ cache_bust }}&audience={{ audience }}">⬇ Download Word</a>
+    <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px;" title="Working copy has live status dropdowns you can edit; Read-only is a protected snapshot to share">Excel:
+      <select id="trackerMode" aria-label="Excel tracker mode">
+        <option value="working">Working copy</option>
+        <option value="readonly">Read-only</option>
+      </select>
+    </label>
+    <a class="btn" href="/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}" title="Download a formatted use-case tracker (Summary + color-coded, filterable use cases)" onclick="this.href='/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}&mode='+document.getElementById('trackerMode').value">⬇ Download Excel</a>
+    <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px;" title="Choose the deck's color theme (Dark uses your template's dark layout)">Deck:
+      <select id="deckTheme" aria-label="Deck theme">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+    <a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Download deck</a>
+    {% if ai_available %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}" title="Generate the deck with AI-written summary and next-steps bullets" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Deck (AI)</a>{% endif %}
+    {% if has_artifacts %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/artifacts.zip?v={{ cache_bust }}&audience={{ audience }}">⬇ Download all (.zip)</a>{% endif %}
     <button class="btn" onclick="window.print()">Print</button>
     <a class="btn" href="/ui/projects/{{ project.id }}">Open project</a>
   </div>

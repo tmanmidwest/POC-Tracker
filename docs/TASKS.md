@@ -56,6 +56,7 @@ task can't be deleted (deactivate it instead).
 | **Project** | Optional single project (or none — a standalone personal to-do). |
 | **Start date / Due date** | Both optional. |
 | **Details** | Rich text (the same Quill editor + sanitizer as project notes). Stored as sanitized HTML plus a plain-text rendering for search/export. |
+| **Internal only** | Optional checkbox. Off by default. When set, hides the task from external viewers on a shared project (see Ownership & visibility). |
 | **Archived** | Tasks archive (reversible) rather than being deleted, mirroring projects. |
 
 ## The tasks dashboard
@@ -78,7 +79,15 @@ delete its tasks — their `project_id` is set null, so they survive unassigned.
 - A user sees and manages **their own** tasks.
 - **Admins can view all** users' tasks (a "Show tasks for: My / All users"
   toggle appears for admins in the dashboard preferences).
-- **External viewers** have no task access at all (the routes are internal-only).
+- **External viewers** have no access to the Tasks dashboard or `/ui/tasks` routes (internal-only).
+  But on a **project shared with them**, the project page's Tasks card shows that project's tasks
+  **read-only** — every non-`internal_only` task assigned to the project, regardless of owner
+  (`services/tasks.visible_project_tasks`). No add/edit/status controls for viewers.
+- A task can be marked **Internal only** (`is_internal_only`), in the UI or over the REST API / MCP
+  (`create_task` / `update_task`). It's filtered out for external viewers wherever they'd see tasks,
+  the same way `visible_project_notes` handles journal notes. **Default is visible**, so mark
+  sensitive tasks Internal only; internal users get a reminder on the project's Tasks card. Every
+  task API response includes the flag.
 
 ## REST API & MCP
 
@@ -93,6 +102,8 @@ caller says whose task it is.
   `priority_id`, `project_id`, `include_archived`.
 - `GET /tasks/{id}`, `POST /tasks/`, `PATCH /tasks/{id}`, `DELETE /tasks/{id}`.
 - `status` / `priority` accept a **name or id**; `details` is sanitized.
+- `is_internal_only` (bool) hides a task from external viewers — settable on create and
+  update, returned on every task, defaults to visible.
 - Task lookups: `GET|POST /task-statuses/`, `GET|POST /task-priorities/`,
   and `…/{id}` (PATCH/DELETE).
 - All task endpoints return `404` when the module is disabled.
@@ -109,7 +120,7 @@ status="To Do", priority="High", project_id=1)`.
 
 ## Google Tasks sync
 
-Optional, **per-user**, **two-way** sync between a user's POC Tracker tasks and
+Optional, **per-user**, **two-way** sync between a user's Questlog tasks and
 **their own** Google Tasks account.
 
 ### How it works
@@ -127,7 +138,7 @@ Optional, **per-user**, **two-way** sync between a user's POC Tracker tasks and
 
 Google Tasks is intentionally minimal, so some fields don't round-trip:
 
-| POC Tracker | Google Tasks | Notes |
+| Questlog | Google Tasks | Notes |
 |---|---|---|
 | Title | `title` | |
 | Details | `notes` | **Plain text only** — Google notes carry no HTML. |
@@ -147,14 +158,15 @@ These are the decisions the two-way design settled on:
 | Task **deleted in Google** | The POC task is **archived** (reversible), not deleted. |
 | Task **created directly in the Google "POC Tracker" list** | **Imported** as a new POC task for that user (default status, no project). |
 | Completion | Any terminal POC status → `completed`; coming back, `completed` maps to your lowest-sorted terminal status ("Done"). |
-| Google-side **note edit** | Flattens the POC task's `details` to plain text (HTML formatting only survives for edits made in POC Tracker). |
+| Google-side **note edit** | Flattens the POC task's `details` to plain text (HTML formatting only survives for edits made in Questlog). |
 | POC task **archived** | Removed from the Google list (its link is cleared, so restoring re-creates it). |
 
 **Timing.** Pushes (POC → Google) happen **inline** on save, but *best-effort* —
 a Google outage never blocks saving a task; the failure is recorded and retried.
-Pulls (Google → POC) run on a periodic reconcile pass plus on opening the Tasks
-page, so Google-side changes appear with a short delay (polling; Google Tasks has
-no push webhooks).
+Pulls (Google → POC) run on a periodic background reconcile pass (every ~5 min for
+all connected users) and on demand via the **Sync now** button on the Tasks page,
+so Google-side changes appear with a short delay (polling; Google Tasks has no push
+webhooks). See [GOOGLE_TASKS_SYNC.md](GOOGLE_TASKS_SYNC.md) for the design details.
 
 ### Admin setup — Google Cloud
 
@@ -175,7 +187,7 @@ accounts through it. All of this is a one-time operator task in the
    - **Publishing status** matters:
      - **Testing** (default): only Google accounts you add under **Test users**
        can connect (max 100), and their granted access **expires ~every 7 days**,
-       so those users are re-prompted to reconnect (POC Tracker shows a
+       so those users are re-prompted to reconnect (Questlog shows a
        **Reconnect** button — this is expected, not a bug).
      - **In production** (published): removes those limits. Because
        `.../auth/tasks` is a **sensitive** scope, Google may require **app
@@ -185,10 +197,10 @@ accounts through it. All of this is a one-time operator task in the
    credentials → OAuth client ID*):
    - **Application type = Web application**.
    - **Authorized redirect URI** = the value shown on **Settings → Google Tasks**
-     in POC Tracker (it's `<your app base URL>/ui/tasks/google/callback`). Copy it
+     in Questlog (it's `<your app base URL>/ui/tasks/google/callback`). Copy it
      exactly — a mismatch causes a redirect error at consent time.
    - Copy the generated **Client ID** and **Client secret**.
-5. **In POC Tracker, Settings → Google Tasks:** paste the Client ID and secret,
+5. **In Questlog, Settings → Google Tasks:** paste the Client ID and secret,
    tick **Enable Google Tasks sync**, and save. The secret is stored **encrypted
    at rest** (Fernet) and never shown back.
 
@@ -200,7 +212,7 @@ accounts through it. All of this is a one-time operator task in the
 ### Connecting (per user)
 
 Once an admin has enabled the integration, each user opens **Tasks** and clicks
-**Connect Google Tasks**, consents at Google, and is returned to POC Tracker.
+**Connect Google Tasks**, consents at Google, and is returned to Questlog.
 The dashboard banner then shows **Connected** (with the account email) and a
 **Disconnect** button. Disconnecting revokes the token at Google and drops the
 stored credential; existing Google tasks are left as-is.
@@ -223,7 +235,7 @@ stored credential; existing Google tasks are left as-is.
 |---|---|
 | Banner says **"needs reconnecting"** | The refresh token was rejected — usually the weekly expiry while the OAuth app is in **Testing**, or the user revoked access. Click **Reconnect**. Publish/verify the app to remove the weekly expiry. |
 | **redirect_uri_mismatch** at Google | The redirect URI registered on the OAuth client doesn't exactly match the one on **Settings → Google Tasks**. Copy it verbatim (scheme, host, port, path). |
-| **"Google did not return a refresh token"** | Happens if a prior grant exists without offline access. The app requests `access_type=offline` + `prompt=consent`, so reconnecting resolves it; otherwise remove POC Tracker from the account's [third-party access](https://myaccount.google.com/permissions) and reconnect. |
+| **"Google did not return a refresh token"** | Happens if a prior grant exists without offline access. The app requests `access_type=offline` + `prompt=consent`, so reconnecting resolves it; otherwise remove Questlog from the account's [third-party access](https://myaccount.google.com/permissions) and reconnect. |
 | A user can't connect at all (Testing mode) | Add their Google address under **Test users** on the consent screen, or publish the app. |
 | "Connect Google Tasks" doesn't appear | The admin hasn't **enabled** the integration (or filled in client id/secret) under **Settings → Google Tasks**, or the Task Manager module is disabled. |
 | Sync silently stops | Check the credential's **last error** (shown as a small "last sync had an issue" badge on the dashboard) and the server logs (`google_push_failed`). |

@@ -82,6 +82,27 @@ are limited to managing lookups, the library, users, identity providers, and set
 **Decision — screenshots stored on the data volume**, not as DB blobs, matching the
 named-volume model and keeping the DB/backups small.
 
+## Internal-only content (notes & tasks)
+
+Individual journal notes and tasks can be marked **Internal only** so they stay hidden from
+external viewers on an otherwise-shared project.
+
+| Requirement | Implementation |
+|---|---|
+| Hide selected notes/tasks from external viewers | `project_notes.is_internal_only` / `tasks.is_internal_only` (boolean, default false) |
+| Applies everywhere a viewer could see the content | `services/access.visible_project_notes()` filters the project page, on-screen report, PDF/DOCX, and artifacts zip |
+
+**Decision — opt-in hiding, filtered server-side.** Everything is visible by default; you mark a
+single item to hide it (rather than defaulting content to private). Filtering happens in the route
+before render, so internal-only content never reaches an external client — not merely hidden in the
+template. The flag applies to both notes and **tasks** (external task visibility went live in the
+invitations feature, Phase 4).
+
+**Decision — plain `ADD COLUMN`, no index.** The migration (0023) uses an in-place
+`ALTER TABLE ADD COLUMN` rather than Alembic batch mode: batch recreates the table on SQLite and
+would drop the FTS search-index triggers on `project_notes`. The flag isn't indexed — visibility is
+filtered in Python over already-loaded rows, so an index would only add write cost.
+
 ## Task Manager
 
 A per-user task manager alongside projects. Full details in [TASKS.md](TASKS.md).
@@ -122,7 +143,7 @@ Full setup and semantics in [TASKS.md](TASKS.md).
 | Requirement | Implementation |
 |---|---|
 | Per-user integration to their own calendar/tasks | One admin-registered OAuth **client** (`google_tasks_config`); each user connects their own account (`user_google_credentials`, encrypted refresh token) |
-| Creating a task in POC Tracker creates it in Google | Best-effort **push** on every task change (`google_tasks_sync`), into a dedicated "POC Tracker" list |
+| Creating a task in Questlog creates it in Google | Best-effort **push** on every task change (`google_tasks_sync`), into a dedicated "POC Tracker" list |
 
 **Decision — Google Tasks, not Calendar events.** A to-do maps naturally to Google Tasks
 (title/notes/due/complete); Calendar events would force a time-of-day model. Trade-off:
@@ -142,3 +163,39 @@ verified — handled by a **Reconnect** prompt).
 the OAuth/token plumbing; increment 2 (planned) is the reconcile poll that pulls Google-side
 changes back. Built and tested against a mocked Google backend; a live Google project is only
 needed to actually sync.
+
+## External-user invitations
+
+Invite customers/partners to view a specific project (read-only) by email. Built in phases;
+full detail in [INVITATIONS.md](INVITATIONS.md).
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Outbound email (SMTP) admin config + test-send | **Done** |
+| 2 | `email` / `company` on users, invite tokens, accept-and-set-password flow | **Done** |
+| 3 | Invite from a project's "Shared access" panel; an "External users" box on the Users page | **Done** |
+| 4 | External viewers see a project's non-`internal_only` tasks | **Done** |
+
+**Decision — email is a singleton SMTP config, encrypted like other integrations.** One
+`smtp_config` row mirrors `google_tasks_config`: password Fernet-encrypted via `secret_box`,
+admin-managed under **Settings → Email**, with a test-send to verify before relying on it.
+Sending is intentionally minimal (stdlib `smtplib`, sync) — the only consumer will be invitations.
+
+**Decision — invited users get local accounts; email is their login id.** An invite provisions
+an external `AppUser` with `email` as the username (normalized/lowercased) and no password until
+they accept. Invites never link to or elevate an existing internal account (anti-takeover, same
+principle as OIDC JIT). Tokens are hashed (SHA-256), single-use, and expire in 7 days — the same
+storage model as API keys. SSO remains the separate path for federated customers.
+
+**Decision — inviting is project-driven, not an admin-only surface.** You invite from a project's
+Share panel, and the ability follows the existing sharing rule (`can_grant_project`): an admin or
+the project's assigned Sales Engineer — not admins only. The Users page (admin-only) is for
+*viewing/managing* external users (resend, remove), not the primary way to invite. This keeps
+"who can share this project" and "who can invite a viewer to it" the same question.
+
+**Decision — external task visibility is default-visible, filtered by `is_internal_only`.** On a
+shared project, external viewers see all project-assigned tasks (any internal owner's) except those
+marked Internal only — read-only, via `services/tasks.visible_project_tasks` (the task analogue of
+`visible_project_notes`). Consistent with notes: visible by default, so sensitive tasks must be
+marked Internal only. Internal users get a reminder on the project's Tasks card. Tasks are not added
+to the report/PDF/zip (no tasks section exists there for anyone).

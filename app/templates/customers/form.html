@@ -11,7 +11,8 @@
 
 {% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
 
-<form method="post" action="{{ form_action }}" class="card" style="max-width: 560px;">
+{% set logo_uri = customer_logo_uri(customer) %}
+<form method="post" action="{{ form_action }}" class="card" style="max-width: 560px;" enctype="multipart/form-data">
   <div class="card__body">
     <div class="form-row">
       <label class="label" for="name">Company name<span class="label__required">*</span></label>
@@ -20,6 +21,24 @@
     <div class="form-row">
       <label class="label" for="website">Website</label>
       <input class="input" id="website" name="website" value="{{ form.website or '' }}" maxlength="255" placeholder="https://…" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="logo">Logo</label>
+      <div style="display:flex; gap: var(--s-3); align-items:center;">
+        <span style="flex:none; width:64px; height:64px; border:1px solid var(--border); border-radius:8px; display:flex; align-items:center; justify-content:center; background:#fff; overflow:hidden;">
+          {% if logo_uri %}<img src="{{ logo_uri }}" alt="{{ customer.name }} logo" style="max-width:56px; max-height:56px; object-fit:contain;" />
+          {% else %}<span class="text-muted text-xs">None</span>{% endif %}
+        </span>
+        <div style="flex:1;">
+          <input class="input" id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          <div class="form-hint">Shown on this customer's projects, portal, and reports. PNG, JPG, or WebP — max 5 MB.</div>
+          {% if logo_uri %}
+          <label class="text-xs" style="display:inline-flex; align-items:center; gap:6px; margin-top: var(--s-1);">
+            <input type="checkbox" name="remove_logo" value="1" /> Remove current logo
+          </label>
+          {% endif %}
+        </div>
+      </div>
     </div>
     <div class="form-row">
       <label class="label" for="notes">Notes</label>

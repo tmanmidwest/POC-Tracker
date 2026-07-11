@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset password · {{ branding.name }}</title>
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}" />
+  <link rel="icon" href="{{ branding.favicon }}" />
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-card__brand">
+        <h1 class="auth-card__title">{{ branding.name }}</h1>
+        <p class="auth-card__subtitle">Reset link</p>
+      </div>
+
+      <div class="inline-error">This password-reset link is invalid, has expired, or was already used.</div>
+
+      <p class="text-muted text-xs" style="text-align:center; margin-top: var(--s-4);">
+        <a href="/forgot-password">Request a new link</a> or
+        <a href="/ui/login">go back to sign in</a>.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

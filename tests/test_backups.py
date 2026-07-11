@@ -47,6 +47,40 @@ def _rebuild_engine() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_backup_route_failure_is_recorded(
+    client: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed backup from the UI lands in the activity log, not just a flash."""
+    import json
+
+    settings = get_settings()
+    resp = client.post(  # type: ignore[attr-defined]
+        "/ui/login",
+        data={
+            "username": settings.initial_admin_username,
+            "password": settings.initial_admin_password,
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(backups, "create_backup", boom)
+
+    resp = client.post("/ui/settings/backups/create", follow_redirects=False)  # type: ignore[attr-defined]
+    assert resp.status_code == 303  # redirects back, no crash
+
+    events = json.loads(
+        client.get("/ui/activity/export.json?category=system").text  # type: ignore[attr-defined]
+    )
+    failures = [e for e in events if e["event_type"] == "backup.failed"]
+    assert len(failures) == 1
+    assert failures[0]["outcome"] == "failure"
+    assert "disk full" in failures[0]["detail"]["error"]
+
+
 def test_create_backup_roundtrip(db_session: Session) -> None:
     run = backups.create_backup(db_session, created_by="tester")
     assert run.status == STATUS_SUCCESS

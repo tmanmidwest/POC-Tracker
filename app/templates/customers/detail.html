@@ -3,12 +3,20 @@
 {% block breadcrumb %}<a href="/ui/customers">Customers</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ customer.name }}</span>{% endblock %}
 
 {% block main %}
+{% set logo_uri = customer_logo_uri(customer) %}
 <div class="page-header">
-  <div class="page-header__text">
-    <h1 class="page-header__title">{{ customer.name }}</h1>
-    <p class="page-header__subtitle">
-      {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener">{{ customer.website }}</a>{% else %}No website on file{% endif %}
-    </p>
+  <div class="page-header__text" style="display:flex; align-items:center; gap: var(--s-4);">
+    {% if logo_uri %}
+    <span style="flex:none; width:52px; height:52px; border-radius:10px; border:1px solid var(--border); background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+      <img src="{{ logo_uri }}" alt="{{ customer.name }} logo" style="max-width:44px; max-height:44px; object-fit:contain;" />
+    </span>
+    {% endif %}
+    <div>
+      <h1 class="page-header__title">{{ customer.name }}</h1>
+      <p class="page-header__subtitle">
+        {% if customer.website %}<a href="{{ customer.website }}" target="_blank" rel="noopener">{{ customer.website }}</a>{% else %}No website on file{% endif %}
+      </p>
+    </div>
   </div>
   <div class="page-header__actions">
     <a href="/ui/customers/{{ customer.id }}/edit" class="btn btn--secondary">Edit</a>

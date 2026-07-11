@@ -35,6 +35,11 @@ def _default_retention_days() -> int:
     return get_settings().audit_retention_days
 
 
+def _default_external_ttl_days() -> int:
+    """The starting external-user lifetime used when the config row is created."""
+    return get_settings().external_user_ttl_days
+
+
 def get_config(db: Session) -> Any:
     """Return the singleton AppConfig row, creating it from env defaults if absent."""
     from app.models.app_config import APP_CONFIG_ID, AppConfig
@@ -42,7 +47,9 @@ def get_config(db: Session) -> Any:
     row = db.get(AppConfig, APP_CONFIG_ID)
     if row is None:
         row = AppConfig(
-            id=APP_CONFIG_ID, audit_retention_days=_default_retention_days()
+            id=APP_CONFIG_ID,
+            audit_retention_days=_default_retention_days(),
+            external_user_ttl_days=_default_external_ttl_days(),
         )
         db.add(row)
         db.commit()
@@ -57,18 +64,24 @@ def _load() -> dict[str, Any]:
 
     retention = _default_retention_days()
     tasks_enabled = True
+    external_ttl = _default_external_ttl_days()
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
         if row is not None:
             retention = row.audit_retention_days
             tasks_enabled = row.tasks_enabled
+            external_ttl = row.external_user_ttl_days
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
     finally:
         db.close()
-    return {"audit_retention_days": retention, "tasks_enabled": tasks_enabled}
+    return {
+        "audit_retention_days": retention,
+        "tasks_enabled": tasks_enabled,
+        "external_user_ttl_days": external_ttl,
+    }
 
 
 def current_retention_days() -> int:
@@ -87,10 +100,26 @@ def tasks_enabled() -> bool:
     return bool(_cache["tasks_enabled"])
 
 
+def current_external_user_ttl_days() -> int:
+    """Return the cached default external-user lifetime in days (0 = never)."""
+    global _cache
+    if _cache is None:
+        _cache = _load()
+    return int(_cache["external_user_ttl_days"])
+
+
 def set_retention_days(db: Session, days: int) -> None:
     """Persist a new audit retention window and refresh the cache."""
     row = get_config(db)
     row.audit_retention_days = days
+    db.commit()
+    invalidate()
+
+
+def set_external_user_ttl_days(db: Session, days: int) -> None:
+    """Persist the default external-user lifetime and refresh the cache."""
+    row = get_config(db)
+    row.external_user_ttl_days = max(0, days)
     db.commit()
     invalidate()
 

@@ -1,4 +1,4 @@
-"""MCP server for POC Tracker.
+"""MCP server for Questlog.
 
 Exposes tools so an AI assistant can query POC data, generate reports, and make
 changes — in particular, take a list of use cases from a conversation and push
@@ -462,6 +462,74 @@ def delete_use_case(use_case_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Project note tools (dated journal entries)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_notes(project_id: int) -> list[dict]:
+    """List a project's dated journal notes, newest first. Each note has its
+    date, text body, author, and whether it's internal-only (hidden from
+    external viewers of the project)."""
+    return _get(f"/projects/{project_id}/notes")
+
+
+@mcp.tool()
+def get_note(note_id: int) -> dict:
+    """Get one project note in full (date, body, internal-only flag, attachments)."""
+    return _get(f"/projects/notes/{note_id}")
+
+
+@mcp.tool()
+def add_note(
+    project_id: int,
+    body: str,
+    note_date: str | None = None,
+    is_internal_only: bool = False,
+    created_by: str | None = None,
+) -> dict:
+    """Add a dated journal note to a project.
+
+    `body` may contain limited HTML and is sanitized. `note_date` is ISO
+    (YYYY-MM-DD) and defaults to today. `is_internal_only` hides the note from
+    external viewers. `created_by` is a display label (defaults to this MCP
+    caller). Returns the created note.
+    """
+    payload: dict[str, Any] = {"body": body, "is_internal_only": is_internal_only}
+    if note_date is not None:
+        payload["note_date"] = note_date
+    if created_by is not None:
+        payload["created_by"] = created_by
+    return _post(f"/projects/{project_id}/notes", payload)
+
+
+@mcp.tool()
+def update_note(
+    note_id: int,
+    body: str | None = None,
+    note_date: str | None = None,
+    is_internal_only: bool | None = None,
+) -> dict:
+    """Update a project note. Only provided fields change. `body` is sanitized
+    HTML; `note_date` is ISO (YYYY-MM-DD). Returns the updated note."""
+    payload: dict[str, Any] = {}
+    if body is not None:
+        payload["body"] = body
+    if note_date is not None:
+        payload["note_date"] = note_date
+    if is_internal_only is not None:
+        payload["is_internal_only"] = is_internal_only
+    return _patch(f"/projects/notes/{note_id}", payload)
+
+
+@mcp.tool()
+def delete_note(note_id: int) -> dict:
+    """Delete a project note (and its attachments). Returns a confirmation."""
+    _delete(f"/projects/notes/{note_id}")
+    return {"deleted": True, "note_id": note_id}
+
+
+# ---------------------------------------------------------------------------
 # Task tools (per-user tasks; owner is explicit since MCP auth is machine-level)
 # ---------------------------------------------------------------------------
 
@@ -508,6 +576,7 @@ def create_task(
     start_date: str | None = None,
     due_date: str | None = None,
     details: str | None = None,
+    is_internal_only: bool = False,
 ) -> dict:
     """Create a task for a user.
 
@@ -515,7 +584,8 @@ def create_task(
     per-user, and MCP authenticates as a machine, so the owner must be explicit).
     `status` and `priority` accept a name or id (status defaults to the first
     active status). Dates are ISO (YYYY-MM-DD). `details` may contain limited
-    HTML and is sanitized. Returns the created task.
+    HTML and is sanitized. `is_internal_only` hides the task from external
+    viewers (default false). Returns the created task.
     """
     body: dict[str, Any] = {
         "owner": owner,
@@ -526,6 +596,7 @@ def create_task(
         "start_date": start_date,
         "due_date": due_date,
         "details": details,
+        "is_internal_only": is_internal_only,
     }
     return _post("/tasks/", {k: v for k, v in body.items() if v is not None})
 
@@ -542,9 +613,11 @@ def update_task(
     due_date: str | None = None,
     details: str | None = None,
     is_archived: bool | None = None,
+    is_internal_only: bool | None = None,
 ) -> dict:
     """Update a task. Only provided fields change. `status`/`priority` accept a
-    name or id; `owner` (username or id) reassigns ownership. Returns the task."""
+    name or id; `owner` (username or id) reassigns ownership. `is_internal_only`
+    toggles whether the task is hidden from external viewers. Returns the task."""
     body: dict[str, Any] = {}
     if title is not None:
         body["title"] = title
@@ -564,6 +637,8 @@ def update_task(
         body["details"] = details
     if is_archived is not None:
         body["is_archived"] = is_archived
+    if is_internal_only is not None:
+        body["is_internal_only"] = is_internal_only
     return _patch(f"/tasks/{task_id}", body)
 
 
@@ -606,9 +681,13 @@ def all_pocs_summary() -> str:
 
 
 @mcp.tool()
-def project_report(project_id: int) -> str:
+def project_report(project_id: int, include_internal: bool = False) -> str:
     """Generate a full text report for one POC: header, dates, people, and every
-    use case grouped by category with status, comments, and validation."""
+    use case grouped by category with status, comments, and validation.
+
+    ``include_internal`` selects the audience: the default (False) is a
+    client-facing report that omits internal-only journal notes; pass True for an
+    internal report that includes them (each flagged ``[internal only]``)."""
     p = _get(f"/projects/{project_id}")
     name = p.get("name") or p["customer"]["name"]
     out = [
@@ -637,6 +716,16 @@ def project_report(project_id: int) -> str:
                 out.append(f"    Success: {uc['success_validation']}")
             if uc.get("comments"):
                 out.append(f"    Comments: {uc['comments']}")
+        out.append("")
+    notes = _get(f"/projects/{project_id}/notes")
+    if not include_internal:
+        # Client-facing report: drop internal-only notes entirely.
+        notes = [n for n in notes if not n.get("is_internal_only")]
+    if notes:
+        out.append("## Journal notes")
+        for n in notes:
+            flag = " [internal only]" if n.get("is_internal_only") else ""
+            out.append(f"- {n.get('note_date') or '—'}{flag}: {n.get('body') or ''}")
         out.append("")
     return "\n".join(out)
 

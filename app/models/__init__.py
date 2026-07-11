@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for POC Tracker.
+"""SQLAlchemy ORM models for Questlog.
 
 Import order matters here because of foreign keys — leaf/lookup tables first,
 then tables that reference them.
@@ -22,12 +22,19 @@ from app.models.library_set import LibrarySet
 from app.models.mcp_gateway_token import McpGatewayToken
 from app.models.note_attachment import NoteAttachment
 from app.models.oauth_client import OAuthClient
+from app.models.password_reset_token import PasswordResetToken
+from app.models.poc_template import PocTemplate
+from app.models.poc_template_task import PocTemplateTask
+from app.models.poc_template_use_case import PocTemplateUseCase
 from app.models.project import Project
+from app.models.project_category_order import ProjectCategoryOrder
 from app.models.project_grant import ProjectGrant
 from app.models.project_note import ProjectNote
+from app.models.project_share_link import ProjectShareLink
 from app.models.project_status import ProjectStatus
 from app.models.project_use_case import ProjectUseCase
 from app.models.screenshot import Screenshot
+from app.models.smtp_config import SmtpConfig
 from app.models.task import Task
 from app.models.task_dashboard_pref import TaskDashboardPref
 from app.models.task_priority import TaskPriority
@@ -37,6 +44,7 @@ from app.models.use_case_status import UseCaseStatus
 from app.models.use_case_view_pref import UseCaseViewPref
 from app.models.user_google_credential import UserGoogleCredential
 from app.models.user_identity import UserIdentity
+from app.models.user_invite import UserInvite
 
 __all__ = [
     "AIProvider",
@@ -57,12 +65,19 @@ __all__ = [
     "McpGatewayToken",
     "NoteAttachment",
     "OAuthClient",
+    "PasswordResetToken",
+    "PocTemplate",
+    "PocTemplateTask",
+    "PocTemplateUseCase",
     "Project",
+    "ProjectCategoryOrder",
     "ProjectGrant",
     "ProjectNote",
+    "ProjectShareLink",
     "ProjectStatus",
     "ProjectUseCase",
     "Screenshot",
+    "SmtpConfig",
     "Task",
     "TaskDashboardPref",
     "TaskPriority",
@@ -72,4 +87,5 @@ __all__ = [
     "UseCaseViewPref",
     "UserGoogleCredential",
     "UserIdentity",
+    "UserInvite",
 ]

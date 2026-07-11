@@ -4,8 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "poc-tracker"
-version = "0.1.0"
-description = "POC Tracker — track proof-of-concept engagements: customers, projects, use cases, and reporting, with a REST API and MCP access."
+# Version is read from app/__init__.py (__version__) — the single source of
+# truth. Bump it there; see [tool.setuptools.dynamic] below and docs/RELEASING.md.
+dynamic = ["version"]
+description = "Questlog — track proof-of-concept engagements: customers, projects, use cases, and reporting, with a REST API and MCP access."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -13,7 +15,7 @@ authors = [{ name = "tmanmidwest" }]
 keywords = ["poc", "sales-engineering", "presales", "rest-api", "mcp"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.12",
     "Framework :: FastAPI",
     "Topic :: Office/Business",
@@ -40,6 +42,7 @@ dependencies = [
     "pypdf>=5.0",
     "openpyxl>=3.1",
     "python-docx>=1.1",
+    "python-pptx>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -61,7 +64,11 @@ Issues = "https://github.com/tmanmidwest/POC-Tracker/issues"
 
 [project.scripts]
 poct-reset-admin = "app.scripts.reset_admin_password:main"
+poct-seed-demo = "app.scripts.seed_demo:main"
 poct-mcp = "app.mcp_server:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "app.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]

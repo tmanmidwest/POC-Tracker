@@ -17,7 +17,9 @@ from datetime import date, datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.properties import PageSetupProperties
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -96,7 +98,7 @@ def build_template_xlsx(db: Session) -> bytes:
     ws["A1"].comment = Comment(
         "Leave 'Id' blank for new use cases. On export it's filled in; keep it to "
         "update an existing use case instead of creating a duplicate.",
-        "POC Tracker",
+        "Questlog",
     )
     statuses = [s.name for s in _active(db, UseCaseStatus)]
     features = [f.name for f in _active(db, FeatureType)]
@@ -368,7 +370,7 @@ def build_library_template_xlsx(db: Session) -> bytes:
     ws["A1"].comment = Comment(
         "Leave 'Id' blank for new entries. On export it's filled in; keep it to "
         "update an existing library entry instead of creating a duplicate.",
-        "POC Tracker",
+        "Questlog",
     )
     _add_dropdown(ws, "G", [f.name for f in _active(db, FeatureType)])  # Feature Type
     _add_dropdown(ws, "H", ["Yes", "No"])  # Active
@@ -557,3 +559,237 @@ def build_library_presentation_xlsx(
         ws.column_dimensions[chr(ord("A") + i)].width = w
     ws.freeze_panes = f"A{header_row + 1}"
     return _to_bytes(wb)
+
+
+# ===========================================================================
+# Project "tracker" export — a polished, two-tab .xlsx for the report page.
+# A dashboard "Summary" sheet plus a color-coded, filterable "Use case
+# tracker" sheet grouped by category. Two flavors: a working copy (status
+# dropdowns, unlocked, editable) and a read-only snapshot (protected).
+# ===========================================================================
+
+_TRACKER_HEADERS = [
+    "Ref #", "Category", "Name", "Description", "Success validation",
+    "Feature", "Status", "Comments", "Completed on",
+]
+_TRACKER_WIDTHS = [8, 18, 30, 50, 40, 14, 16, 34, 14]
+_TRACKER_STATUS_COL = 7  # 1-based index of the "Status" column (G)
+
+# Status → (fill, font) by bucket. Chosen to echo the on-screen report badges.
+_STATUS_STYLES = {
+    "done": ("FFDCFCE7", "FF15803D"),
+    "progress": ("FFFEF3C7", "FF92400E"),
+    "blocked": ("FFFEE2E2", "FF991B1B"),
+    "pending": ("FFF1F5F9", "FF475569"),
+}
+
+
+def _status_bucket(status) -> str:
+    """Classify a use-case status for coloring and the summary counts.
+
+    ``is_complete_status`` is authoritative for "done"; the rest are inferred
+    from the (user-configurable) status name, defaulting to "pending".
+    """
+    if status is None:
+        return "pending"
+    if getattr(status, "is_complete_status", False):
+        return "done"
+    name = (status.name or "").lower()
+    if any(w in name for w in ("block", "hold", "fail", "reject")):
+        return "blocked"
+    if any(w in name for w in ("progress", "wip", "started", "testing", "active")):
+        return "progress"
+    return "pending"
+
+
+def build_project_tracker_xlsx(
+    db: Session, project: Project, groups: list[dict], *, editable: bool = True
+) -> bytes:
+    """A polished two-tab tracker .xlsx for a project's use cases.
+
+    ``groups`` is the report's category-grouped use cases (list of
+    ``{"category", "use_cases", ...}`` dicts). ``editable`` toggles a working
+    copy (status dropdowns, unlocked cells) versus a read-only snapshot
+    (protected sheets, no dropdowns) — both share the same look.
+    """
+    accent = _accent_hex()  # 8-char ARGB
+    header_fill = PatternFill("solid", fgColor=accent)
+    banner_fill = PatternFill("solid", fgColor="FFF1F5F9")
+    white_bold = Font(bold=True, color="FFFFFFFF")
+    banner_font = Font(bold=True, color="FF0F172A")
+    muted = Font(color="FF64748B")
+    thin = Side(style="thin", color="FFE2E8F0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wrap_top = Alignment(wrap_text=True, vertical="top")
+    top = Alignment(vertical="top")
+    center = Alignment(horizontal="center", vertical="center")
+
+    wb = Workbook()
+    _build_tracker_summary(wb.active, project, groups, accent, header_fill, white_bold, muted)
+    _build_tracker_sheet(
+        wb.create_sheet("Use case tracker"), db, groups, editable,
+        header_fill, white_bold, banner_fill, banner_font, border, wrap_top, top, center,
+    )
+    return _to_bytes(wb)
+
+
+def _build_tracker_summary(
+    ws, project, groups, accent, header_fill, white_bold, muted
+) -> None:
+    ws.title = "Summary"
+    all_ucs = [uc for g in groups for uc in g["use_cases"]]
+    counts = {"done": 0, "progress": 0, "blocked": 0, "pending": 0}
+    for uc in all_ucs:
+        counts[_status_bucket(uc.status)] += 1
+    total = len(all_ucs)
+    pct = counts["done"] / total if total else 0
+
+    # Branded title band (rows 1–2).
+    ws.merge_cells("A1:E1")
+    ws["A1"] = project.display_name
+    ws["A1"].fill = header_fill
+    ws["A1"].font = Font(bold=True, size=15, color="FFFFFFFF")
+    ws["A1"].alignment = Alignment(vertical="center", indent=1)
+    ws.row_dimensions[1].height = 26
+    ws.merge_cells("A2:E2")
+    ws["A2"] = f"Use case tracker · generated {date.today().strftime('%b %-d, %Y')}"
+    ws["A2"].fill = header_fill
+    ws["A2"].font = Font(color="FFDBEAFE")
+    ws["A2"].alignment = Alignment(vertical="center", indent=1)
+
+    # Metric row (labels row 4, values row 5).
+    metrics = [
+        ("Total", total, "FF0F172A"),
+        ("Completed", counts["done"], _STATUS_STYLES["done"][1]),
+        ("In progress", counts["progress"], _STATUS_STYLES["progress"][1]),
+        ("Pending / blocked", counts["pending"] + counts["blocked"], _STATUS_STYLES["blocked"][1]),
+        ("Complete", pct, accent),
+    ]
+    for i, (label, value, color) in enumerate(metrics, start=1):
+        lbl = ws.cell(row=4, column=i, value=label)
+        lbl.font = muted
+        val = ws.cell(row=5, column=i, value=value)
+        val.font = Font(bold=True, size=18, color=color)
+        if label == "Complete":
+            val.number_format = "0%"
+
+    # Per-category breakdown table (starts row 7).
+    head_row = 7
+    for i, head in enumerate(["Category", "Done", "Total", "Complete"], start=1):
+        cell = ws.cell(row=head_row, column=i, value=head)
+        cell.fill = header_fill
+        cell.font = white_bold
+    r = head_row + 1
+    for g in groups:
+        ucs = g["use_cases"]
+        done = sum(1 for uc in ucs if _status_bucket(uc.status) == "done")
+        ws.cell(row=r, column=1, value=g["category"])
+        ws.cell(row=r, column=2, value=done)
+        ws.cell(row=r, column=3, value=len(ucs))
+        pcell = ws.cell(row=r, column=4, value=(done / len(ucs) if ucs else 0))
+        pcell.number_format = "0%"
+        r += 1
+
+    for i, w in enumerate([28, 10, 10, 12, 12], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.sheet_view.showGridLines = False
+
+
+def _build_tracker_sheet(
+    ws, db, groups, editable,
+    header_fill, white_bold, banner_fill, banner_font, border, wrap_top, top, center,
+) -> None:
+    ncols = len(_TRACKER_HEADERS)
+
+    # Header row (row 1), with autofilter and frozen pane below it.
+    for i, head in enumerate(_TRACKER_HEADERS, start=1):
+        cell = ws.cell(row=1, column=i, value=head)
+        cell.fill = header_fill
+        cell.font = white_bold
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[1].height = 22
+
+    # Body: an unmerged colored banner per category, then its use cases as
+    # collapsible (outline level 1) rows. Banners stay unmerged so autofilter
+    # and sorting keep working; the label just overflows the empty cells.
+    r = 2
+    for g in groups:
+        for c in range(1, ncols + 1):
+            bcell = ws.cell(row=r, column=c)
+            bcell.fill = banner_fill
+            bcell.border = border
+        label = ws.cell(row=r, column=1, value=g["category"])
+        label.font = banner_font
+        label.alignment = Alignment(vertical="center", indent=1)
+        r += 1
+        for uc in g["use_cases"]:
+            _write_tracker_row(ws, r, uc, border, wrap_top, top, center)
+            ws.row_dimensions[r].outlineLevel = 1
+            r += 1
+    last_row = r - 1
+
+    ws.sheet_properties.outlinePr.summaryBelow = False  # banners sit above their rows
+    if last_row >= 2:
+        ws.auto_filter.ref = f"A1:{get_column_letter(ncols)}{last_row}"
+
+    for i, w in enumerate(_TRACKER_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+    # Landscape, fit-to-width, repeat the header row on every printed page.
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.print_title_rows = "1:1"
+
+    if editable and last_row >= 2:
+        # Live status dropdown on the working copy.
+        statuses = [s.name for s in _active(db, UseCaseStatus)]
+        col = get_column_letter(_TRACKER_STATUS_COL)
+        _add_dropdown_range(ws, f"{col}2:{col}{last_row}", statuses)
+    elif not editable:
+        # Read-only snapshot: lock the sheet but keep filtering usable.
+        ws.protection.sheet = True
+        ws.protection.autoFilter = False
+        ws.protection.selectLockedCells = False
+
+
+def _write_tracker_row(ws, r, uc, border, wrap_top, top, center) -> None:
+    values = [
+        uc.reference_number or "",
+        uc.category or "",
+        uc.name or "",
+        uc.description or "",
+        uc.success_validation or "",
+        uc.feature_type.name if uc.feature_type else "",
+        uc.status.name if uc.status else "",
+        uc.comments or "",
+    ]
+    for i, val in enumerate(values, start=1):
+        cell = ws.cell(row=r, column=i, value=val)
+        cell.border = border
+        cell.alignment = wrap_top if i in (4, 5, 8) else top
+    # Completed on as a real date so Excel sorts/formats it.
+    dcell = ws.cell(row=r, column=9, value=uc.completed_on)
+    dcell.border = border
+    dcell.alignment = top
+    if uc.completed_on:
+        dcell.number_format = "yyyy-mm-dd"
+    # Color-code the status cell by bucket.
+    fill_hex, font_hex = _STATUS_STYLES[_status_bucket(uc.status)]
+    scell = ws.cell(row=r, column=_TRACKER_STATUS_COL)
+    scell.fill = PatternFill("solid", fgColor=fill_hex)
+    scell.font = Font(bold=True, color=font_hex)
+    scell.alignment = center
+
+
+def _add_dropdown_range(ws, cell_range: str, values: list[str]) -> None:
+    """Add an Excel list-validation dropdown to an explicit range."""
+    joined = ",".join(v for v in values if v and "," not in v)
+    if not joined or len(joined) > 250:  # Excel inline-list limit
+        return
+    dv = DataValidation(type="list", formula1=f'"{joined}"', allow_blank=True)
+    ws.add_data_validation(dv)
+    dv.add(cell_range)

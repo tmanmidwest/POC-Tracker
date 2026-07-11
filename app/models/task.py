@@ -74,6 +74,14 @@ class Task(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    # Internal-only: when true, hidden from external (viewer) users. Internal
+    # users always see it. Defaults to false — tasks are shared unless marked.
+    # (External users cannot see any tasks today; this future-proofs for when
+    # they can.)
+    is_internal_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+
     # --- Phase-2 Google Tasks sync (reserved; unused in phase 1) ---
     sync_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -207,6 +207,7 @@ def create_task(
         due_date=body.due_date,
         details=html_to_text(details_html),
         details_html=details_html,
+        is_internal_only=body.is_internal_only,
     )
     db.add(task)
     db.commit()
@@ -249,6 +250,8 @@ def update_task(
     if "is_archived" in fields and fields["is_archived"] is not None:
         task.is_archived = fields["is_archived"]
         task.archived_at = datetime.now(UTC) if task.is_archived else None
+    if "is_internal_only" in fields and fields["is_internal_only"] is not None:
+        task.is_internal_only = fields["is_internal_only"]
 
     db.commit()
     db.refresh(task)

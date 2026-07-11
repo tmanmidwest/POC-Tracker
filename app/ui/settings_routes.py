@@ -20,6 +20,7 @@ from app.models import (
     AppBranding,
     AppUser,
     AuthProvider,
+    Customer,
     OAuthClient,
     Project,
     ProjectGrant,
@@ -31,6 +32,9 @@ from app.models.auth_provider import DEFAULT_SCOPES
 from app.models.backup_run import BackupRun
 from app.services import backups as backup_service
 from app.services import branding as branding_service
+from app.services import demo_data
+from app.services import login_security
+from app.services import report_template
 from app.services import (
     mcp_gateway,
     mcp_gateway_tokens,
@@ -49,7 +53,7 @@ from app.services.tokens import (
     generate_oauth_client_secret,
     hash_token,
 )
-from app.ui.dependencies import require_ui_user
+from app.ui.dependencies import require_admin_ui, require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
 
@@ -105,6 +109,7 @@ def settings_hub(
         "settings/index.html",
         current_user=user,
         active_subsection="settings",
+        demo_tools_enabled=get_settings().enable_demo_tools,
     )
 
 
@@ -119,14 +124,94 @@ def list_admins(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
+    from app.models import AuthProvider, ProjectGrant, UserIdentity, UserInvite
+
     users = db.query(AppUser).order_by(AppUser.username).all()
+    internal_users = [u for u in users if not u.is_external]
+
+    # Identity source per internal user: their SSO provider(s) if linked, else a
+    # local password account. One bulk query keyed by user id (no N+1).
+    internal_ids = [u.id for u in internal_users]
+    providers_by_user: dict[int, list[str]] = {}
+    if internal_ids:
+        rows = (
+            db.query(UserIdentity.user_id, AuthProvider.display_name)
+            .join(AuthProvider, UserIdentity.provider_id == AuthProvider.id)
+            .filter(UserIdentity.user_id.in_(internal_ids))
+            .order_by(AuthProvider.display_name)
+            .all()
+        )
+        for uid, provider_name in rows:
+            providers_by_user.setdefault(uid, []).append(provider_name)
+    identity_sources: dict[int, str] = {}
+    for u in internal_users:
+        names = providers_by_user.get(u.id)
+        if names:
+            identity_sources[u.id] = ", ".join(names)
+        elif u.password_hash is not None:
+            identity_sources[u.id] = "Local"
+        else:
+            identity_sources[u.id] = "—"
+
+    # External users shown in a distinct box with their company, sign-in status,
+    # and which projects they can view.
+    now = datetime.now(UTC)
+    external_users = []
+    for u in (x for x in users if x.is_external):
+        grants = (
+            db.query(ProjectGrant).filter(ProjectGrant.user_id == u.id).all()
+        )
+        latest_invite = (
+            db.query(UserInvite)
+            .filter(UserInvite.user_id == u.id)
+            .order_by(UserInvite.id.desc())
+            .first()
+        )
+        if u.password_hash is not None:
+            # Accepted account: distinguish live vs. expired/deactivated.
+            if not u.is_active:
+                status = "account_expired" if u.is_expired else "disabled"
+            else:
+                status = "active"
+        elif latest_invite is None:
+            status = "none"
+        elif latest_invite.status == "revoked":
+            status = "revoked"
+        else:
+            exp = latest_invite.expires_at
+            if exp is not None and exp.tzinfo is None:
+                exp = exp.replace(tzinfo=UTC)
+            status = "invite_expired" if (exp is not None and exp < now) else "pending"
+        days_left = u.days_until_expiry
+        external_users.append({
+            "user": u,
+            "projects": [g.project for g in grants if g.project],
+            "accepted": u.password_hash is not None,
+            "status": status,
+            "expires_at": u.expires_at_aware,
+            "days_left": days_left,
+            "expiring_soon": days_left is not None and 0 <= days_left <= 7,
+        })
+
     return render(
         request,
         "settings/admin_users.html",
         current_user=user,
         active_subsection="admin_users",
-        users=users,
+        internal_users=internal_users,
+        identity_sources=identity_sources,
+        external_users=external_users,
     )
+
+
+def _normalize_optional_email(raw: str) -> str | None:
+    """Normalize a submitted email to match the invitation flow (strip + lower).
+
+    Returns ``None`` for a blank value so it stores as NULL — an empty string
+    would collide on the unique constraint if two accounts left it blank.
+    """
+    norm = (raw or "").strip().lower()
+    return norm or None
 
 
 @router.get("/admin-users/new")
@@ -150,24 +235,43 @@ def create_admin(
     password: str = Form(...),
     role: str = Form("standard"),
     display_name: str = Form(""),
+    email: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     username = username.strip()
     display = display_name.strip() or None
-    if len(password) < 8:
+    email_norm = _normalize_optional_email(email)
+
+    def _reject(message: str) -> Response:
         return render(
             request,
             "settings/admin_user_new.html",
             current_user=user,
             active_subsection="admin_users",
-            form={"username": username, "role": role, "display_name": display},
-            error="Password must be at least 8 characters.",
+            form={
+                "username": username,
+                "role": role,
+                "display_name": display,
+                "email": email_norm,
+            },
+            error=message,
         )
+
+    if len(password) < 8:
+        return _reject("Password must be at least 8 characters.")
+    if email_norm is not None and "@" not in email_norm:
+        return _reject("Enter a valid email address, or leave it blank.")
+    if (
+        email_norm is not None
+        and db.query(AppUser).filter(AppUser.email == email_norm).first() is not None
+    ):
+        return _reject(f"The email '{email_norm}' is already in use.")
 
     new_user = AppUser(
         username=username,
         display_name=display,
+        email=email_norm,
         password_hash=hash_password(password),
         is_active=True,
         is_seeded=False,
@@ -179,13 +283,8 @@ def create_admin(
         db.commit()
     except IntegrityError:
         db.rollback()
-        return render(
-            request,
-            "settings/admin_user_new.html",
-            current_user=user,
-            active_subsection="admin_users",
-            form={"username": username, "role": role, "display_name": display},
-            error=f"Username '{username}' is already taken.",
+        return _reject(
+            f"Username '{username}' or that email is already taken."
         )
     log.info(
         "ui_admin_created",
@@ -247,14 +346,43 @@ def update_user(
     user_id: int,
     request: Request,
     display_name: str = Form(""),
+    email: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     target = db.get(AppUser, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found.")
+    email_norm = _normalize_optional_email(email)
+
+    def _reject(message: str) -> Response:
+        return render(
+            request,
+            "settings/admin_user_edit.html",
+            current_user=user,
+            active_subsection="admin_users",
+            target_user=target,
+            error=message,
+        )
+
+    if email_norm is not None and "@" not in email_norm:
+        return _reject("Enter a valid email address, or leave it blank.")
+    if email_norm is not None:
+        clash = (
+            db.query(AppUser)
+            .filter(AppUser.email == email_norm, AppUser.id != target.id)
+            .first()
+        )
+        if clash is not None:
+            return _reject(f"The email '{email_norm}' is already in use.")
+
     target.display_name = display_name.strip() or None
-    db.commit()
+    target.email = email_norm
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return _reject("That email is already in use.")
     _settings_event(
         request, user,
         category="admin_user",
@@ -262,10 +390,10 @@ def update_user(
         target_type="app_user",
         target_id=target.id,
         target_label=target.username,
-        message=f"Updated display name for '{target.username}'",
-        detail={"display_name": target.display_name},
+        message=f"Updated profile for '{target.username}'",
+        detail={"display_name": target.display_name, "email": target.email},
     )
-    flash(request, f"Updated display name for '{target.username}'.", "success")
+    flash(request, f"Updated profile for '{target.username}'.", "success")
     return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
 
 
@@ -302,6 +430,8 @@ def change_password(
         )
 
     target.password_hash = hash_password(new_password)
+    # Setting a fresh password also lifts any failed-login lockout.
+    login_security.clear_lockout(target)
     db.commit()
     log.info(
         "ui_password_changed",
@@ -318,6 +448,126 @@ def change_password(
     )
     flash(request, f"Password updated for {target.username}.", "success")
     return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+
+@router.post("/admin-users/{user_id}/unlock")
+def unlock_user(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Lift a failed-login lockout so the user can sign in again."""
+    target = db.get(AppUser, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if not target.is_locked:
+        flash(request, f"{target.username} is not locked.", "info")
+        return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+    login_security.clear_lockout(target)
+    db.commit()
+    _settings_event(
+        request, user,
+        category="admin_user",
+        event_type="admin_user.unlocked",
+        target_type="app_user",
+        target_id=target.id,
+        target_label=target.username,
+        message=f"Unlocked '{target.username}' after a failed-login lockout",
+    )
+    flash(request, f"Unlocked {target.username}.", "success")
+    return RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+
+@router.post("/admin-users/{user_id}/resend-invite")
+def resend_user_invite(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Re-send the latest invitation for an external user who hasn't accepted."""
+    from app.models import UserInvite
+    from app.services import email as email_service
+    from app.services import invitations
+
+    back = RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+    target = db.get(AppUser, user_id)
+    if target is None or not target.is_external:
+        raise HTTPException(status_code=404, detail="External user not found.")
+
+    invite = (
+        db.query(UserInvite)
+        .filter(UserInvite.user_id == user_id)
+        .order_by(UserInvite.id.desc())
+        .first()
+    )
+    if invite is None:
+        flash(request, "There's no invitation to resend for this user.", "error")
+        return back
+    if invite.status == "accepted":
+        flash(request, f"{target.email or target.username} already accepted.", "info")
+        return back
+
+    base_url = get_settings().public_base_url or str(request.base_url).rstrip("/")
+    try:
+        invitations.resend_invite(db, invite, base_url=base_url)
+    except (invitations.InvitationError, email_service.EmailError) as exc:
+        record_event(
+            category="invitation",
+            event_type="invitation.resend_failed",
+            outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="user_invite", target_id=invite.id,
+            target_label=target.email or target.username,
+            message=f"Failed to resend invitation to {target.email or target.username}",
+            detail={"surface": "ui", "error": str(exc), "error_type": type(exc).__name__},
+            request=request,
+        )
+        flash(request, f"Couldn't resend the invitation: {exc}", "error")
+        return back
+
+    _settings_event(
+        request, user,
+        category="invitation",
+        event_type="invitation.resent",
+        target_type="user_invite",
+        target_id=invite.id,
+        target_label=target.email or target.username,
+        message=f"Resent invitation to {target.email or target.username}",
+    )
+    flash(request, f"Invitation resent to {target.email or target.username}.", "success")
+    return back
+
+
+@router.post("/admin-users/{user_id}/extend")
+def extend_external_user(
+    user_id: int,
+    request: Request,
+    preset: str = Form(""),
+    until: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Extend (and reactivate) an external user's account expiry."""
+    from app.services import external_expiry
+
+    back = RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+    target = db.get(AppUser, user_id)
+    if target is None or not target.is_external:
+        raise HTTPException(status_code=404, detail="External user not found.")
+    try:
+        new_expiry = external_expiry.resolve_extension(preset or None, until or None)
+    except ValueError as exc:
+        flash(request, str(exc), "error")
+        return back
+    external_expiry.extend_user(db, target, until=new_expiry, actor=user, request=request)
+    flash(
+        request,
+        f"{target.email or target.username} now expires {new_expiry.date().isoformat()}.",
+        "success",
+    )
+    return back
 
 
 @router.post("/admin-users/{user_id}/delete")
@@ -1235,6 +1485,8 @@ def show_branding(
         },
         icon_presets=branding_service.ICON_PRESETS,
         default_color=branding_service.DEFAULT_COLOR,
+        has_deck_template=report_template.has_template(),
+        has_deck_logo=report_template.has_logo(),
     )
 
 
@@ -1269,6 +1521,8 @@ def update_branding(
             form=form,
             icon_presets=branding_service.ICON_PRESETS,
             default_color=branding_service.DEFAULT_COLOR,
+            has_deck_template=report_template.has_template(),
+        has_deck_logo=report_template.has_logo(),
             error=message,
         )
 
@@ -1313,6 +1567,119 @@ def update_branding(
     return RedirectResponse(url="/ui/settings/branding", status_code=303)
 
 
+@router.post("/branding/deck-template")
+async def upload_deck_template(
+    request: Request,
+    template_file: UploadFile = File(...),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Store an admin-supplied .pptx used as the readout deck's base template."""
+    if not template_file or not template_file.filename:
+        flash(request, "Choose a .pptx file to upload.", "error")
+        return RedirectResponse(url="/ui/settings/branding", status_code=303)
+    data = await template_file.read()
+    try:
+        report_template.save_template(data)
+    except report_template.TemplateError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+    _settings_event(
+        request, user,
+        category="branding",
+        event_type="branding.deck_template_uploaded",
+        target_type="branding",
+        target_label=template_file.filename,
+        message=f"Uploaded readout deck template ({template_file.filename})",
+        detail={"bytes": len(data)},
+    )
+    flash(request, "Deck template uploaded.", "success")
+    return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+
+@router.post("/branding/deck-template/delete")
+def delete_deck_template(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Remove the admin-supplied readout deck template."""
+    removed = report_template.delete_template()
+    if removed:
+        _settings_event(
+            request, user,
+            category="branding",
+            event_type="branding.deck_template_removed",
+            target_type="branding",
+            message="Removed the readout deck template",
+        )
+        flash(request, "Deck template removed.", "success")
+    else:
+        flash(request, "No deck template to remove.", "info")
+    return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+
+@router.post("/branding/deck-logo")
+async def upload_deck_logo(
+    request: Request,
+    logo_file: UploadFile = File(...),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Store an image stamped on every readout deck slide."""
+    if not logo_file or not logo_file.filename:
+        flash(request, "Choose an image to upload.", "error")
+        return RedirectResponse(url="/ui/settings/branding", status_code=303)
+    data = await logo_file.read()
+    try:
+        report_template.save_logo(data)
+    except report_template.TemplateError as exc:
+        flash(request, str(exc), "error")
+        return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+    _settings_event(
+        request, user,
+        category="branding",
+        event_type="branding.deck_logo_uploaded",
+        target_type="branding",
+        target_label=logo_file.filename,
+        message=f"Uploaded readout deck logo ({logo_file.filename})",
+        detail={"bytes": len(data)},
+    )
+    flash(request, "Deck logo uploaded.", "success")
+    return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+
+@router.post("/branding/deck-logo/delete")
+def delete_deck_logo(
+    request: Request,
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Remove the readout deck logo."""
+    removed = report_template.delete_logo()
+    if removed:
+        _settings_event(
+            request, user,
+            category="branding",
+            event_type="branding.deck_logo_removed",
+            target_type="branding",
+            message="Removed the readout deck logo",
+        )
+        flash(request, "Deck logo removed.", "success")
+    else:
+        flash(request, "No deck logo to remove.", "info")
+    return RedirectResponse(url="/ui/settings/branding", status_code=303)
+
+
+@router.get("/branding/deck-logo/preview")
+def preview_deck_logo(
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Serve the stored deck logo for the Branding page preview."""
+    path = report_template.logo_path_if_present()
+    if path is None:
+        raise HTTPException(status_code=404, detail="No logo uploaded.")
+    return FileResponse(path, media_type="image/png")
+
+
 # ===========================================================================
 # System settings
 # ===========================================================================
@@ -1336,6 +1703,7 @@ def show_system(
         form={
             "audit_retention_days": config.audit_retention_days,
             "tasks_enabled": config.tasks_enabled,
+            "external_user_ttl_days": config.external_user_ttl_days,
         },
     )
 
@@ -1344,11 +1712,12 @@ def show_system(
 def update_system(
     request: Request,
     audit_retention_days: int = Form(...),
+    external_user_ttl_days: int = Form(60),
     tasks_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
-    if audit_retention_days < 0 or audit_retention_days > _MAX_RETENTION_DAYS:
+    def _reject(message: str) -> Response:
         return render(
             request,
             "settings/system.html",
@@ -1357,18 +1726,38 @@ def update_system(
             form={
                 "audit_retention_days": audit_retention_days,
                 "tasks_enabled": bool(tasks_enabled),
+                "external_user_ttl_days": external_user_ttl_days,
             },
-            error=(
-                f"Retention must be between 0 and {_MAX_RETENTION_DAYS} days "
-                "(0 keeps events forever)."
-            ),
+            error=message,
+        )
+
+    if audit_retention_days < 0 or audit_retention_days > _MAX_RETENTION_DAYS:
+        return _reject(
+            f"Retention must be between 0 and {_MAX_RETENTION_DAYS} days "
+            "(0 keeps events forever)."
+        )
+    if external_user_ttl_days < 0 or external_user_ttl_days > _MAX_RETENTION_DAYS:
+        return _reject(
+            f"External user lifetime must be between 0 and {_MAX_RETENTION_DAYS} days "
+            "(0 means never expire)."
         )
 
     config = system_config.get_config(db)
     previous = config.audit_retention_days
     tasks_was = config.tasks_enabled
     tasks_now = bool(tasks_enabled)
+    ttl_was = config.external_user_ttl_days
     system_config.set_retention_days(db, audit_retention_days)
+    if external_user_ttl_days != ttl_was:
+        system_config.set_external_user_ttl_days(db, external_user_ttl_days)
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="system.settings.updated",
+            target_type="app_config",
+            message=f"Set external user lifetime to {external_user_ttl_days} day(s)",
+            detail={"external_user_ttl_days": external_user_ttl_days},
+        )
     if tasks_now != tasks_was:
         system_config.set_tasks_enabled(db, tasks_now)
         _settings_event(
@@ -1472,6 +1861,137 @@ def update_google_tasks(
     )
     flash(request, "Google Tasks settings saved.", "success")
     return RedirectResponse(url="/ui/settings/google-tasks", status_code=303)
+
+
+# ===========================================================================
+# Email (SMTP)
+# ===========================================================================
+
+
+@router.get("/email")
+def show_email(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    from app.services import email as email_service
+
+    config = email_service.get_config(db)
+    return render(
+        request,
+        "settings/email.html",
+        current_user=user,
+        active_subsection="email",
+        form={
+            "host": config.host or "",
+            "port": config.port,
+            "security": config.security,
+            "username": config.username or "",
+            "from_email": config.from_email or "",
+            "from_name": config.from_name or "",
+            "is_enabled": config.is_enabled,
+            "has_password": config.has_password,
+        },
+    )
+
+
+@router.post("/email")
+def update_email(
+    request: Request,
+    host: str = Form(""),
+    port: str = Form("587"),
+    security: str = Form("starttls"),
+    username: str = Form(""),
+    password: str = Form(""),
+    from_email: str = Form(""),
+    from_name: str = Form(""),
+    is_enabled: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    from app.models.smtp_config import VALID_SECURITY
+    from app.services import email as email_service
+
+    host = host.strip()
+    from_email = from_email.strip()
+    enabled = bool(is_enabled)
+    try:
+        port_num = int(port)
+    except (TypeError, ValueError):
+        port_num = 587
+    if security not in VALID_SECURITY:
+        security = "starttls"
+
+    # Can't enable without the minimum needed to send.
+    if enabled and not (host and from_email):
+        flash(request, "Add the SMTP host and a from address before enabling email.", "error")
+        return RedirectResponse(url="/ui/settings/email", status_code=303)
+
+    email_service.set_config(
+        db,
+        host=host,
+        port=port_num,
+        security=security,
+        username=username,
+        password=password.strip() or None,
+        from_email=from_email,
+        from_name=from_name,
+        is_enabled=enabled,
+    )
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="email.settings.updated",
+        target_type="smtp_config",
+        message=f"{'Enabled' if enabled else 'Disabled'} outbound email",
+        detail={
+            "is_enabled": enabled, "host": host, "security": security,
+            "password_rotated": bool(password.strip()),
+        },
+    )
+    flash(request, "Email settings saved.", "success")
+    return RedirectResponse(url="/ui/settings/email", status_code=303)
+
+
+@router.post("/email/test")
+def send_test_email(
+    request: Request,
+    test_recipient: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    from app.services import email as email_service
+
+    recipient = test_recipient.strip()
+    if not recipient:
+        flash(request, "Enter an address to send the test email to.", "error")
+        return RedirectResponse(url="/ui/settings/email", status_code=303)
+
+    app_name = get_settings().app_name
+    try:
+        email_service.send_test_email(db, to=recipient, app_name=app_name)
+    except email_service.EmailError as exc:
+        record_event(
+            category="system", event_type="email.test", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="smtp_config",
+            message=f"SMTP test to {recipient} failed",
+            detail={"surface": "ui", "recipient": recipient, "error": str(exc)},
+            request=request,
+        )
+        flash(request, f"Test email failed: {exc}", "error")
+        return RedirectResponse(url="/ui/settings/email", status_code=303)
+
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="email.test",
+        target_type="smtp_config",
+        message=f"Sent SMTP test email to {recipient}",
+        detail={"recipient": recipient},
+    )
+    flash(request, f"Test email sent to {recipient}.", "success")
+    return RedirectResponse(url="/ui/settings/email", status_code=303)
 
 
 # ===========================================================================
@@ -1592,6 +2112,119 @@ def do_reset(
 
 
 # ===========================================================================
+# Demo data (local demo/testing instances only)
+# ===========================================================================
+
+# Typed-confirmation phrase for the destructive "remove" action, validated
+# server-side in addition to the client-side button gate in app.js.
+_DEMO_REMOVE_PHRASE = "REMOVE"
+
+
+def _require_demo_tools() -> None:
+    """404 the demo-data routes unless explicitly enabled. Keeps the feature
+    absent on production, where POCT_ENABLE_DEMO_TOOLS is unset."""
+    if not get_settings().enable_demo_tools:
+        raise HTTPException(status_code=404)
+
+
+def _demo_present_count(db: Session) -> int:
+    """How many of the demo customers currently exist (so the page can show
+    whether demo data is loaded)."""
+    return (
+        db.query(Customer)
+        .filter(Customer.name.in_(demo_data.DEMO_CUSTOMER_NAMES))
+        .count()
+    )
+
+
+@router.get("/demo-data")
+def show_demo_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin_ui),
+) -> Response:
+    _require_demo_tools()
+    return render(
+        request,
+        "settings/demo_data.html",
+        current_user=user,
+        active_subsection="demo_data",
+        present_count=_demo_present_count(db),
+        total_customers=len(demo_data.DEMO_CUSTOMER_NAMES),
+        remove_phrase=_DEMO_REMOVE_PHRASE,
+        demo_user_password=demo_data.DEMO_USER_PASSWORD,
+    )
+
+
+@router.post("/demo-data")
+def do_demo_data(
+    request: Request,
+    action: str = Form(...),
+    confirm: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_admin_ui),
+) -> Response:
+    _require_demo_tools()
+
+    try:
+        if action == "load":
+            summary = demo_data.seed_demo_data(db)
+            created = summary["customers"]
+            if created:
+                flash(
+                    request,
+                    f"Loaded demo data: {created} customer(s), "
+                    f"{summary['projects']} project(s), "
+                    f"{summary['use_cases']} use case(s).",
+                    "success",
+                )
+            else:
+                flash(
+                    request,
+                    "Demo data was already present — nothing to add.",
+                    "info",
+                )
+            _settings_event(
+                request, user,
+                category="system",
+                event_type="system.demo_data_loaded",
+                message="Loaded demo data via UI",
+                detail=dict(summary),
+            )
+        elif action == "remove":
+            if confirm.strip() != _DEMO_REMOVE_PHRASE:
+                flash(
+                    request,
+                    f"Type {_DEMO_REMOVE_PHRASE} to confirm removing demo data.",
+                    "error",
+                )
+                return RedirectResponse(url="/ui/settings/demo-data", status_code=303)
+            removed = demo_data.purge_demo_data(db)
+            flash(
+                request,
+                f"Removed demo data: {removed['customers']} customer(s), "
+                f"{removed['projects']} project(s), "
+                f"{removed['engineers']} demo engineer account(s).",
+                "success",
+            )
+            _settings_event(
+                request, user,
+                category="system",
+                event_type="system.demo_data_removed",
+                message="Removed demo data via UI",
+                detail=dict(removed),
+            )
+        else:
+            flash(request, "Unknown action.", "error")
+    except Exception as exc:  # noqa: BLE001 — surface any failure to the admin
+        db.rollback()
+        log.exception("ui_demo_data_failed", extra={"by": user.username, "action": action})
+        flash(request, f"Demo data action failed: {exc}", "error")
+
+    return RedirectResponse(url="/ui/settings/demo-data", status_code=303)
+
+
+# ===========================================================================
 # Backups
 # ===========================================================================
 
@@ -1640,6 +2273,15 @@ def create_backup(
     try:
         run = backup_service.create_backup(db, created_by=user.username, passphrase=phrase)
     except Exception as exc:
+        log.exception("ui_backup_failed", extra={"by": user.username})
+        record_event(
+            category="system", event_type="backup.failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="backup",
+            message="Backup creation failed",
+            detail={"surface": "ui", "encrypted": bool(phrase), "error": str(exc)},
+            request=request,
+        )
         flash(request, f"Backup failed: {exc}", "error")
         return RedirectResponse(url="/ui/settings/backups", status_code=303)
     _settings_event(
@@ -1739,10 +2381,26 @@ async def restore_backup(
                 out.write(chunk)
         manifest = backup_service.stage_restore(tmp, passphrase.strip() or None)
     except backup_service.BackupError as exc:
+        record_event(
+            category="system", event_type="restore.failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="backup", target_label=backup_file.filename,
+            message=f"Restore rejected ({backup_file.filename})",
+            detail={"surface": "ui", "reason": "validation", "error": str(exc)},
+            request=request,
+        )
         flash(request, f"Restore rejected: {exc}", "error")
         return RedirectResponse(url="/ui/settings/backups", status_code=303)
     except Exception as exc:
         log.exception("ui_restore_stage_failed", extra={"by": user.username})
+        record_event(
+            category="system", event_type="restore.failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="backup", target_label=backup_file.filename,
+            message=f"Restore failed ({backup_file.filename})",
+            detail={"surface": "ui", "reason": "unexpected", "error": str(exc)},
+            request=request,
+        )
         flash(request, f"Restore failed: {exc}", "error")
         return RedirectResponse(url="/ui/settings/backups", status_code=303)
     finally:

@@ -3,7 +3,12 @@
 {% set page_title = "Dashboard" %}
 {% block breadcrumb %}<span>Dashboard</span>{% endblock %}
 
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.49.1/dist/apexcharts.min.js" defer></script>
+{% endblock %}
+
 {% set cols = prefs.columns %}
+{% set k = insights.kpis %}
 
 {% block main %}
 <div class="page-header">
@@ -21,6 +26,113 @@
     <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
   </div>
 </div>
+
+{% if insights.has_data %}
+<section class="insights" aria-label="Portfolio insights">
+  <div class="kpi-grid">
+    <a class="kpi-card" href="/ui/projects?scope={{ scope }}">
+      <div class="kpi-card__label">Active POCs</div>
+      <div class="kpi-card__value">{{ k.active }}</div>
+      <div class="kpi-card__hint">in current view →</div>
+    </a>
+    <a class="kpi-card" href="/ui/reports">
+      <div class="kpi-card__label">Avg completion</div>
+      <div class="kpi-card__value">{{ k.avg_completion }}<span class="kpi-card__unit">%</span></div>
+      <div class="kpi-card__meter"><span style="width: {{ k.avg_completion }}%;"></span></div>
+    </a>
+    <a class="kpi-card {% if k.at_risk %}kpi-card--danger{% endif %}" href="/ui/projects?filter=at_risk&scope={{ scope }}">
+      <div class="kpi-card__label">At risk</div>
+      <div class="kpi-card__value">{{ k.at_risk }}</div>
+      <div class="kpi-card__hint">past end date, incomplete →</div>
+    </a>
+    <a class="kpi-card {% if k.stalled %}kpi-card--warning{% endif %}" href="/ui/projects?filter=stalled&scope={{ scope }}">
+      <div class="kpi-card__label">Stalled</div>
+      <div class="kpi-card__value">{{ k.stalled }}</div>
+      <div class="kpi-card__hint">no update in {{ insights.stalled_days }}+ days →</div>
+    </a>
+  </div>
+
+  <div class="chart-grid">
+    <div class="card chart-panel">
+      <div class="chart-panel__title">Projects by status</div>
+      <div id="chart-status" class="chart-panel__body"></div>
+    </div>
+    {% if insights.se_series | length > 1 %}
+    <div class="card chart-panel">
+      <div class="chart-panel__title">Portfolio by engineer</div>
+      <div id="chart-se" class="chart-panel__body"></div>
+    </div>
+    {% endif %}
+    {% if insights.uc_status_series %}
+    <div class="card chart-panel">
+      <div class="chart-panel__title">Use cases by status</div>
+      <div id="chart-ucstatus" class="chart-panel__body"></div>
+    </div>
+    {% endif %}
+    {% if insights.feature_series | length > 1 %}
+    <div class="card chart-panel">
+      <div class="chart-panel__title">Use cases by feature area</div>
+      <div id="chart-feature" class="chart-panel__body"></div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if insights.attention or (current_user.is_admin and insights.expiring) %}
+  <div class="attention-grid">
+    {% if insights.attention %}
+    <div class="card attention-panel">
+      <div class="chart-panel__title">
+        Needs attention
+        <span class="badge badge--neutral">{{ insights.attention_total }}</span>
+      </div>
+      <ul class="attention-list">
+        {% for a in insights.attention %}
+        <li class="attention-item" onclick="window.location='/ui/projects/{{ a.project_id }}'">
+          <div class="attention-item__main">
+            <span class="attention-item__name">{{ a.customer }}{% if a.name %} · {{ a.name }}{% endif %}</span>
+            <span class="attention-item__meta">{{ a.status }} · {{ a.pct }}% complete</span>
+          </div>
+          <div class="attention-item__flags">
+            {% for r in a.reasons %}
+            <span class="pill pill--{{ r.kind }}">{{ r.label }}</span>
+            {% endfor %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if current_user.is_admin and insights.expiring %}
+    <div class="card attention-panel">
+      <div class="chart-panel__title">External accounts expiring</div>
+      <ul class="attention-list">
+        {% for e in insights.expiring %}
+        <li class="attention-item attention-item--static">
+          <div class="attention-item__main">
+            <span class="attention-item__name">{{ e.name }}</span>
+            <span class="attention-item__meta">{{ e.email or "" }}</span>
+          </div>
+          <span class="pill {% if e.days_left <= 3 %}pill--overdue{% else %}pill--stalled{% endif %}">
+            {% if e.days_left < 0 %}expired{% elif e.days_left == 0 %}today{% else %}{{ e.days_left }}d left{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <script type="application/json" id="insights-data">
+    {{ {
+      "status_series": insights.status_series,
+      "se_series": insights.se_series,
+      "uc_status_series": insights.uc_status_series,
+      "feature_series": insights.feature_series
+    } | tojson }}
+  </script>
+</section>
+{% endif %}
 
 {% for group in groups %}
 <div class="card card--flush" style="margin-bottom: var(--s-5);">
@@ -81,9 +193,115 @@
 </div>
 {% else %}
   <div class="empty-state">
-    <h3 class="empty-state__title">Nothing to show</h3>
-    <p class="empty-state__body">No statuses are selected, or there are no projects yet.</p>
-    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+    <h3 class="empty-state__title">No active quests</h3>
+    <p class="empty-state__body">No statuses are selected, or there are no POCs yet.</p>
+    <a href="/ui/projects/wizard" class="btn btn--primary">+ New POC</a>
   </div>
 {% endfor %}
+{% endblock %}
+
+{% block body_scripts %}
+{% if insights.has_data %}
+<script>
+(function () {
+  var dataEl = document.getElementById('insights-data');
+  if (!dataEl) return;
+  var data;
+  try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
+
+  var charts = [];
+
+  function render() {
+    if (!window.ApexCharts) return;
+    charts.forEach(function (c) { try { c.destroy(); } catch (e) {} });
+    charts = [];
+
+    var css = getComputedStyle(document.documentElement);
+    var v = function (name) { return css.getPropertyValue(name).trim(); };
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var muted = v('--text-muted');
+    var line = v('--line');
+    var surface = v('--surface');
+    var palette = [
+      v('--primary'), v('--info'), v('--success'), v('--warning'),
+      v('--danger'), '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#c2410c'
+    ];
+
+    var base = {
+      chart: { fontFamily: 'inherit', foreColor: muted, toolbar: { show: false },
+               animations: { enabled: true, speed: 350 } },
+      tooltip: { theme: isDark ? 'dark' : 'light' },
+      dataLabels: { enabled: false },
+      legend: { position: 'bottom', fontSize: '12px', labels: { colors: muted },
+                markers: { width: 9, height: 9, radius: 3 }, itemMargin: { horizontal: 8, vertical: 2 } },
+      states: { hover: { filter: { type: 'lighten', value: 0.08 } } }
+    };
+
+    function mk(id, opts) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      var c = new ApexCharts(el, opts);
+      c.render();
+      charts.push(c);
+    }
+
+    function donut(id, series) {
+      if (!series || !series.length) return;
+      mk(id, Object.assign({}, base, {
+        chart: Object.assign({}, base.chart, { type: 'donut', height: 268 }),
+        series: series.map(function (s) { return s.count; }),
+        labels: series.map(function (s) { return s.label; }),
+        colors: palette,
+        stroke: { colors: [surface], width: 2 },
+        plotOptions: { pie: { donut: { size: '66%', labels: { show: true,
+          value: { color: v('--text'), fontSize: '22px', fontWeight: 600 },
+          total: { show: true, label: 'Total', color: muted, fontSize: '12px',
+            formatter: function (w) {
+              return w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0);
+            } } } } } }
+      }));
+    }
+
+    function hbar(id, series) {
+      if (!series || !series.length) return;
+      mk(id, Object.assign({}, base, {
+        chart: Object.assign({}, base.chart, { type: 'bar',
+          height: Math.max(200, series.length * 40 + 40) }),
+        series: [{ name: 'Count', data: series.map(function (s) { return s.count; }) }],
+        xaxis: { categories: series.map(function (s) { return s.label; }),
+          axisBorder: { color: line }, axisTicks: { color: line },
+          labels: { style: { colors: muted } } },
+        yaxis: { labels: { style: { colors: muted } } },
+        grid: { borderColor: line, strokeDashArray: 4 },
+        colors: [v('--primary')],
+        plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '60%',
+          distributed: false } },
+        dataLabels: { enabled: true, style: { colors: ['#fff'], fontWeight: 600 },
+          offsetX: 2 },
+        legend: { show: false }
+      }));
+    }
+
+    donut('chart-status', data.status_series);
+    hbar('chart-se', data.se_series);
+    donut('chart-ucstatus', data.uc_status_series);
+    hbar('chart-feature', data.feature_series);
+  }
+
+  function boot() {
+    if (window.ApexCharts) { render(); }
+    else { setTimeout(boot, 60); }
+  }
+  boot();
+
+  // Re-theme charts live when the user toggles dark/light (no page reload).
+  var themeObserver = new MutationObserver(function (muts) {
+    for (var i = 0; i < muts.length; i++) {
+      if (muts[i].attributeName === 'data-theme') { render(); break; }
+    }
+  });
+  themeObserver.observe(document.documentElement, { attributes: true });
+})();
+</script>
+{% endif %}
 {% endblock %}

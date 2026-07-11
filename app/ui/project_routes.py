@@ -7,17 +7,26 @@ import json
 import logging
 import random
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from itertools import groupby
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import (
     FileResponse,
     RedirectResponse,
     Response,
     StreamingResponse,
 )
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.models import (
@@ -26,7 +35,9 @@ from app.models import (
     FeatureType,
     LibrarySet,
     NoteAttachment,
+    PocTemplate,
     Project,
+    ProjectCategoryOrder,
     ProjectGrant,
     ProjectNote,
     ProjectStatus,
@@ -40,22 +51,26 @@ from app.models import (
 )
 from app.models.project_use_case import SOURCE_CUSTOM
 from app.services import note_attachments as note_store
+from app.services import portal as portal_service
 from app.services import screenshots as screenshot_store
 from app.services import system_config
-from app.services.tasks import base_task_query, can_view_all_tasks
+from app.services.tasks import visible_project_tasks
 from app.services.access import (
     can_grant_project,
     can_view_project,
+    visible_project_notes,
 )
 from app.services.ai.base import GenerationError
 from app.services.ai.extraction import extract_use_cases
 from app.services.ai.registry import get_provider_spec
+from app.services.ai.salesforce_update import stream_salesforce_update
 from app.services.ai.summaries import (
     default_provider,
     generate_project_summary,
     stream_project_summary,
 )
 from app.services.audit import record_event
+from app.services.insights import is_at_risk, is_stalled
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.scope import (
     resolve_scope,
@@ -69,6 +84,20 @@ from app.services.use_case_io import (
     build_template_xlsx,
     classify_rows,
     parse_spreadsheet,
+)
+from app.services.library_sets import list_library_sets
+from app.services.poc_templates import (
+    create_template_from_project,
+    get_template,
+    list_templates,
+    template_to_wizard_context,
+)
+from app.services.poc_wizard import (
+    CustomUseCaseInput,
+    TaskInput,
+    WizardError,
+    WizardInput,
+    create_poc_from_wizard,
 )
 from app.services.use_cases import (
     added_library_ids,
@@ -164,21 +193,50 @@ def _ref_sort_key(ref: str | None) -> tuple:
     return tuple(parts)
 
 
-def _group_use_cases(use_cases: list[ProjectUseCase]) -> list[dict]:
-    """Group the given use cases by category, each list sorted by reference number."""
+# Categories without an explicit sort number sort after all numbered ones.
+_UNORDERED_CATEGORY = 1_000_000
+
+
+def _group_use_cases(
+    use_cases: list[ProjectUseCase], order: dict[str, int] | None = None
+) -> list[dict]:
+    """Group the given use cases by category.
+
+    Category sections sort by their explicit order number when one is set
+    (ascending), and alphabetically otherwise — numbered categories come first.
+    Use cases within a category sort by reference number. ``order`` maps a
+    lower-cased category name to its assigned sort number.
+    """
+    order = order or {}
+
+    def _cat_key(u: ProjectUseCase) -> tuple:
+        cat = u.category.lower()
+        return (order.get(cat, _UNORDERED_CATEGORY), cat)
+
     ucs = sorted(
         use_cases,
-        key=lambda u: (u.category.lower(), _ref_sort_key(u.reference_number), u.name.lower()),
+        key=lambda u: (*_cat_key(u), _ref_sort_key(u.reference_number), u.name.lower()),
     )
     groups = []
     for category, items in groupby(ucs, key=lambda u: u.category):
-        groups.append({"category": category, "use_cases": list(items)})
+        groups.append(
+            {
+                "category": category,
+                "use_cases": list(items),
+                "order": order.get(category.lower()),
+            }
+        )
     return groups
 
 
+def _category_order_map(project: Project) -> dict[str, int]:
+    """Map lower-cased category name -> assigned sort number for this project."""
+    return {co.category.lower(): co.sort_order for co in project.category_orders}
+
+
 def _grouped_use_cases(project: Project) -> list[dict]:
-    """All of a project's use cases, grouped by category."""
-    return _group_use_cases(list(project.use_cases))
+    """All of a project's use cases, grouped by category (honoring category order)."""
+    return _group_use_cases(list(project.use_cases), _category_order_map(project))
 
 
 # Toggleable use-case fields on the project page. "name" and "status" always show.
@@ -198,7 +256,11 @@ _UC_FIELD_KEYS = {f["key"] for f in ALL_UC_FIELDS}
 
 def _load_uc_view(db: Session, user: AppUser) -> dict[str, object]:
     """Load the user's use-case view prefs (visible fields + status filter)."""
-    prefs: dict[str, object] = {"fields": DEFAULT_UC_FIELDS, "status_filter": "all"}
+    prefs: dict[str, object] = {
+        "fields": DEFAULT_UC_FIELDS,
+        "status_filter": "all",
+        "tasks_collapsed": False,
+    }
     row = (
         db.query(UseCaseViewPref)
         .filter(UseCaseViewPref.app_user_id == user.id)
@@ -211,6 +273,7 @@ def _load_uc_view(db: Session, user: AppUser) -> dict[str, object]:
                 prefs["fields"] = [f for f in stored["fields"] if f in _UC_FIELD_KEYS]
             if stored.get("status_filter"):
                 prefs["status_filter"] = str(stored["status_filter"])
+            prefs["tasks_collapsed"] = bool(stored.get("tasks_collapsed"))
         except (ValueError, TypeError):
             log.warning("uc_view_prefs_parse_failed", extra={"user": user.username})
     return prefs
@@ -275,6 +338,15 @@ def _form_dropdowns(db: Session) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# Computed signal filters (not stored columns) — applied in Python after the
+# query, using the same predicates the dashboard KPIs use. Maps a query value
+# to its (predicate, human label).
+_SIGNAL_FILTERS = {
+    "at_risk": (is_at_risk, "At risk"),
+    "stalled": (is_stalled, "Stalled"),
+}
+
+
 @router.get("/")
 def list_projects(
     request: Request,
@@ -283,6 +355,8 @@ def list_projects(
     status_id: str | None = None,
     view: str = "active",
     scope: str | None = None,
+    # Computed-signal filter, e.g. the dashboard's "At risk" / "Stalled" cards.
+    filter_: str | None = Query(None, alias="filter"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -300,12 +374,23 @@ def list_projects(
     visible_ids = scoped_project_ids(db, user, scope)
     if visible_ids is not None:
         query = query.filter(Project.id.in_(visible_ids))
+
+    signal = _SIGNAL_FILTERS.get(filter_ or "")
+    if signal is not None:
+        # Need use cases + statuses to evaluate the predicate; eager-load them.
+        query = query.options(selectinload(Project.use_cases))
     projects = query.order_by(Project.updated_at.desc()).all()
+    if signal is not None:
+        predicate, _ = signal
+        projects = [p for p in projects if predicate(p)]
+
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
     return render(
         request, "projects/list.html", current_user=user, active_section="projects",
         projects=projects, statuses=statuses, view=view, status_id=sid,
         scope=scope, scope_engineers=selectable_engineers(db, user),
+        signal_filter=filter_ if signal else None,
+        signal_label=signal[1] if signal else None,
     )
 
 
@@ -390,6 +475,219 @@ async def create_project(
     )
     flash(request, "Project created. Now add use cases.", "success")
     return RedirectResponse(url=f"/ui/projects/{project.id}", status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# New POC wizard — customer + project + use cases + tasks in one atomic flow.
+# Declared before the "/{project_id}" routes so "/wizard" isn't parsed as an id.
+# ---------------------------------------------------------------------------
+
+
+def _wizard_library(db: Session) -> list[dict]:
+    """Active library entries grouped by set → category, for the picker step."""
+    entries = (
+        db.query(UseCaseLibrary).filter(UseCaseLibrary.is_active.is_(True)).all()
+    )
+    by_set: dict[int, list[UseCaseLibrary]] = {}
+    for e in entries:
+        by_set.setdefault(e.library_set_id, []).append(e)
+    result: list[dict] = []
+    for s in list_library_sets(db, include_inactive=False):
+        items = sorted(
+            by_set.get(s.id, []),
+            key=lambda x: (x.category.lower(), _ref_sort_key(x.default_reference_number), x.name.lower()),
+        )
+        groups = [
+            {"category": cat, "entries": list(g)}
+            for cat, g in groupby(items, key=lambda x: x.category)
+        ]
+        if groups:
+            result.append({"set": s, "groups": groups})
+    return result
+
+
+def _render_wizard(request, db, user, *, form, error=None, selected_library_ids=None,
+                   custom_rows=None, task_rows=None, active_template=None):
+    return render(
+        request, "projects/wizard.html", current_user=user, active_section="new_poc",
+        form=form, error=error,
+        selected_library_ids=selected_library_ids or set(),
+        custom_rows=custom_rows or [], task_rows=task_rows or [],
+        templates=list_templates(db, include_inactive=False),
+        active_template=active_template,
+        library=_wizard_library(db), **_form_dropdowns(db),
+    )
+
+
+@router.get("/wizard")
+def wizard_form(
+    request: Request,
+    template_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    form = {"sales_engineer_id": user.id}
+    ctx: dict = {}
+    active_template = None
+    if template_id is not None:
+        active_template = get_template(db, template_id)
+        if active_template is not None:
+            ctx = template_to_wizard_context(db, active_template, base_date=date.today())
+            # Keep the current user as the default SE while taking template defaults.
+            form = {**ctx.pop("form", {}), "sales_engineer_id": user.id}
+    return _render_wizard(
+        request, db, user, form=form, active_template=active_template,
+        selected_library_ids=ctx.get("selected_library_ids"),
+        custom_rows=ctx.get("custom_rows"), task_rows=ctx.get("task_rows"),
+    )
+
+
+@router.post("/wizard")
+async def wizard_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    form = await request.form()
+
+    def g(key: str) -> str | None:
+        return form.get(key)  # type: ignore[return-value]
+
+    mode = g("customer_mode") or "new"
+    existing_id = g("existing_customer_id")
+    existing_customer_id = int(existing_id) if mode == "existing" and existing_id and existing_id.isdigit() else None
+    new_customer = {
+        "name": _clean(g("new_customer_name")),
+        "website": _clean(g("new_customer_website")),
+        "notes": _clean(g("new_customer_notes")),
+    }
+
+    notes_html = sanitize_note_html(g("notes"))
+    project = {
+        "name": _clean(g("name")),
+        "status_id": int(g("status_id")) if g("status_id") and g("status_id").isdigit() else None,
+        "start_date": _parse_date(g("start_date")),
+        "end_date": _parse_date(g("end_date")),
+        "sales_engineer_id": int(g("sales_engineer_id")) if g("sales_engineer_id") and g("sales_engineer_id").isdigit() else None,
+        "account_executive": _clean(g("account_executive")),
+        "account_executive_email": _clean(g("account_executive_email")),
+        "salesforce_opp_url": _clean_url(g("salesforce_opp_url")),
+        "notebook_url": _clean_url(g("notebook_url")),
+        "poc_instance_url": _clean_url(g("poc_instance_url")),
+        "notes": html_to_text(notes_html),
+        "notes_html": notes_html,
+    }
+
+    library_ids = [int(x) for x in form.getlist("library_ids") if str(x).isdigit()]  # type: ignore[attr-defined]
+
+    # Parallel repeater arrays; a row counts only if it has a name/title.
+    custom_rows = list(zip(
+        form.getlist("custom_category"), form.getlist("custom_name"),  # type: ignore[attr-defined]
+        form.getlist("custom_description"), form.getlist("custom_success"),  # type: ignore[attr-defined]
+    ))
+    custom_use_cases = [
+        CustomUseCaseInput(
+            category=_clean(cat) or "Uncategorized", name=_clean(name),
+            description=_clean(desc), success_validation=_clean(succ),
+        )
+        for cat, name, desc, succ in custom_rows if _clean(name)
+    ]
+
+    task_rows = list(zip(
+        form.getlist("task_title"), form.getlist("task_start"), form.getlist("task_due"),  # type: ignore[attr-defined]
+    ))
+    tasks = [
+        TaskInput(title=_clean(title), start_date=_parse_date(start), due_date=_parse_date(due))
+        for title, start, due in task_rows if _clean(title)
+    ]
+
+    data = WizardInput(
+        existing_customer_id=existing_customer_id, new_customer=new_customer,
+        project=project, library_ids=library_ids,
+        custom_use_cases=custom_use_cases, tasks=tasks,
+    )
+
+    # Echo of the raw submission, so a validation error re-renders with input intact.
+    echo = {
+        "customer_mode": mode, "existing_customer_id": existing_id,
+        "new_customer_name": new_customer["name"], "new_customer_website": new_customer["website"],
+        "new_customer_notes": new_customer["notes"], **project,
+    }
+
+    try:
+        proj = create_poc_from_wizard(db, user, data)
+        db.commit()
+    except WizardError as exc:
+        db.rollback()
+        return _render_wizard(
+            request, db, user, form=echo, error=str(exc),
+            selected_library_ids=set(library_ids),
+            custom_rows=[{"category": c.category, "name": c.name, "description": c.description,
+                          "success_validation": c.success_validation} for c in custom_use_cases],
+            task_rows=[{"title": t.title,
+                        "start_date": t.start_date.isoformat() if t.start_date else "",
+                        "due_date": t.due_date.isoformat() if t.due_date else ""} for t in tasks],
+        )
+
+    uc_count = len(proj.use_cases)
+    task_count = len(data.tasks)
+    if existing_customer_id is None:
+        record_event(
+            category="customer", event_type="customer.created", actor_type="user",
+            actor_label=user.username, actor_id=user.id, target_type="customer",
+            target_id=proj.customer_id, target_label=proj.customer.name,
+            message=f"Created customer '{proj.customer.name}'",
+            detail={"surface": "ui", "via": "poc_wizard"}, request=request,
+        )
+    record_event(
+        category="project", event_type="project.created", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=proj.id, target_label=proj.display_name,
+        message=f"Created project '{proj.display_name}' via the New POC wizard",
+        detail={"surface": "ui", "via": "poc_wizard", "use_cases": uc_count, "tasks": task_count},
+        request=request,
+    )
+    flash(
+        request,
+        f"POC created — {uc_count} use case(s)" + (f" and {task_count} task(s)" if task_count else "") + ".",
+        "success",
+    )
+    return RedirectResponse(url=f"/ui/projects/{proj.id}", status_code=303)
+
+
+@router.post("/{project_id}/save-as-template")
+async def save_as_template(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    form = await request.form()
+    name = _clean(form.get("name"))  # type: ignore[arg-type]
+    description = _clean(form.get("description"))  # type: ignore[arg-type]
+    if not name:
+        flash(request, "A template name is required.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}", status_code=303)
+    if db.query(PocTemplate).filter(PocTemplate.name == name).first() is not None:
+        flash(request, f"A template named '{name}' already exists.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}", status_code=303)
+
+    template = create_template_from_project(
+        db, project, name=name, description=description, created_by=user.username
+    )
+    db.commit()
+    record_event(
+        category="project", event_type="poc_template.created", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="poc_template",
+        target_id=template.id, target_label=template.name,
+        message=f"Saved project '{project.display_name}' as template '{template.name}'",
+        detail={"surface": "ui", "project_id": project_id,
+                "use_cases": len(template.use_cases), "tasks": len(template.tasks)},
+        request=request,
+    )
+    flash(request, f"Saved as template '{template.name}'.", "success")
+    return RedirectResponse(url=f"/ui/templates/{template.id}", status_code=303)
 
 
 @router.get("/{project_id}/edit")
@@ -581,6 +879,8 @@ def detail(
     can_share = can_grant_project(user, project)
     grants: list[ProjectGrant] = []
     grantable_users: list[AppUser] = []
+    share_link = None
+    portal_base_url = ""
     if can_share:
         grants = (
             db.query(ProjectGrant)
@@ -596,37 +896,46 @@ def detail(
             .all()
             if u.id not in granted_ids
         ]
+        # Public customer status link (may be absent/disabled). The full URL uses
+        # the configured public base, falling back to the request's own origin.
+        share_link = portal_service.get_link(db, project.id)
+        from app.config import get_settings
 
-    # Tasks assigned to this project, scoped to what the viewer may see (their
-    # own; admins see everyone's). Only for internal users when the module is on.
+        portal_base_url = get_settings().public_base_url or str(request.base_url).rstrip("/")
+
+    # Tasks assigned to this project. Internal users see their own (admins: all);
+    # external viewers see the project's non-internal-only tasks (any owner),
+    # read-only. Gated by the task-module toggle.
     project_tasks: list[Task] = []
     task_statuses: list[TaskStatus] = []
-    tasks_on = user.is_internal and system_config.tasks_enabled()
+    tasks_on = system_config.tasks_enabled()
     if tasks_on:
-        project_tasks = (
-            base_task_query(db, user, "all" if can_view_all_tasks(user) else "mine")
-            .filter(Task.project_id == project.id, Task.is_archived.is_(False))
-            .order_by(Task.due_date.is_(None), Task.due_date, Task.updated_at.desc())
-            .all()
-        )
-        task_statuses = (
-            db.query(TaskStatus)
-            .filter(TaskStatus.is_active.is_(True))
-            .order_by(TaskStatus.sort_order)
-            .all()
-        )
+        project_tasks = visible_project_tasks(db, project, user)
+        if user.is_internal:
+            # The inline status dropdown is internal-only; external view is read-only.
+            task_statuses = (
+                db.query(TaskStatus)
+                .filter(TaskStatus.is_active.is_(True))
+                .order_by(TaskStatus.sort_order)
+                .all()
+            )
 
     return render(
         request, "projects/detail.html", current_user=user, active_section="projects",
-        project=project, use_case_groups=_group_use_cases(visible),
+        project=project,
+        use_case_groups=_group_use_cases(visible, _category_order_map(project)),
+        notes=visible_project_notes(project, user),
         library_picker=library_picker, uc_statuses=uc_statuses, feature_types=feature_types,
         progress={"total": total, "done": done, "pct": round(done / total * 100) if total else 0},
         today=date.today().isoformat(),
+        sf_default_start=(date.today() - timedelta(days=7)).isoformat(),
         uc_fields=set(uc_view["fields"]), uc_status_filter=str(uc_view["status_filter"]),
         uc_field_options=ALL_UC_FIELDS, uc_filtered_count=len(visible),
         can_share=can_share, grants=grants, grantable_users=grantable_users,
+        share_link=share_link, portal_base_url=portal_base_url,
         ai_configured=default_provider(db) is not None,
         tasks_on=tasks_on, project_tasks=project_tasks, task_statuses=task_statuses,
+        tasks_collapsed=bool(uc_view.get("tasks_collapsed")),
     )
 
 
@@ -646,6 +955,14 @@ def generate_exec_summary(
     try:
         result = generate_project_summary(db, project)
     except GenerationError as exc:
+        record_event(
+            category="project", event_type="exec_summary.failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="project", target_id=project.id, target_label=project.display_name,
+            message=f"Executive summary generation failed for '{project.display_name}'",
+            detail={"surface": "ui", "error": str(exc)},
+            request=request,
+        )
         flash(request, f"Could not generate summary: {exc}", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}#summary", status_code=303)
     project.exec_summary = result.text
@@ -683,7 +1000,44 @@ def stream_exec_summary(
     if provider is None or spec is None or not spec.implemented or not provider.has_key:
         return Response("AI provider not configured", status_code=400)
     return StreamingResponse(
-        stream_project_summary(project.id), media_type="text/plain; charset=utf-8"
+        stream_project_summary(project.id, actor_label=user.username),
+        media_type="text/plain; charset=utf-8",
+    )
+
+
+@router.post("/{project_id}/salesforce-update/stream")
+def stream_salesforce_update_route(
+    project_id: int,
+    start: str = Form(""),
+    end: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Stream a short, ephemeral Salesforce status update for a date range.
+
+    Nothing is persisted — the update is meant to be copied into Salesforce. On a
+    non-200 the client shows the returned text in the modal (no page reload).
+    """
+    project = _get_project(db, project_id)
+    provider = default_provider(db)
+    spec = get_provider_spec(provider.provider) if provider else None
+    if provider is None or spec is None or not spec.implemented or not provider.has_key:
+        return Response(
+            "No AI provider is configured. Add one in Settings → AI Assistant.",
+            status_code=400,
+        )
+    try:
+        start_date = date.fromisoformat(start) if start else None
+        end_date = date.fromisoformat(end) if end else None
+    except ValueError:
+        return Response("Enter a valid date range.", status_code=400)
+    if start_date and end_date and start_date > end_date:
+        return Response("The start date must be on or before the end date.", status_code=400)
+    return StreamingResponse(
+        stream_salesforce_update(
+            project.id, start_date, end_date, actor_label=user.username
+        ),
+        media_type="text/plain; charset=utf-8",
     )
 
 
@@ -777,6 +1131,14 @@ async def import_extract(
             db, combined, project=project, documents=documents or None
         )
     except GenerationError as exc:
+        record_event(
+            category="project", event_type="use_case.import_failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="project", target_id=project.id, target_label=project.display_name,
+            message=f"Use-case import extraction failed for '{project.display_name}'",
+            detail={"surface": "ui", "error": str(exc)},
+            request=request,
+        )
         flash(request, f"Could not extract use cases: {exc}", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}/import", status_code=303)
 
@@ -1017,7 +1379,16 @@ async def save_use_case_view(
     config = {
         "fields": fields,  # empty list = show only name + status
         "status_filter": _clean(status_filter) or "all",
+        # Preserve the unrelated tasks-collapsed flag stored in the same blob.
+        "tasks_collapsed": bool(_load_uc_view(db, user).get("tasks_collapsed")),
     }
+    _save_uc_view(db, user, config)
+    flash(request, "Use-case view updated.", "success")
+    return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+
+def _save_uc_view(db: Session, user: AppUser, config: dict) -> None:
+    """Upsert the user's use-case view pref blob."""
     row = (
         db.query(UseCaseViewPref)
         .filter(UseCaseViewPref.app_user_id == user.id)
@@ -1028,7 +1399,80 @@ async def save_use_case_view(
         db.add(row)
     row.config_json = json.dumps(config)
     db.commit()
-    flash(request, "Use-case view updated.", "success")
+
+
+@router.post("/tasks-collapsed")
+async def set_tasks_collapsed(
+    request: Request,
+    collapsed: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Persist whether the project-page Tasks section is collapsed (per user).
+
+    Toggled via a small ``fetch`` from the page, so it returns 204 with no
+    redirect. Stored alongside the other use-case view prefs.
+    """
+    view = _load_uc_view(db, user)
+    _save_uc_view(
+        db,
+        user,
+        {
+            "fields": list(view["fields"]),
+            "status_filter": str(view["status_filter"]),
+            "tasks_collapsed": collapsed == "1",
+        },
+    )
+    return Response(status_code=204)
+
+
+@router.post("/{project_id}/category-order")
+async def set_category_order(
+    project_id: int,
+    request: Request,
+    category: str = Form(...),
+    sort_order: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Set (or clear) the sort number for one use-case category in this project.
+
+    A blank number removes the override, returning the category to alphabetical
+    order. One row per (project, category).
+    """
+    project = _get_project(db, project_id)
+    cat = _clean(category)
+    if not cat:
+        flash(request, "Category is required.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+    row = (
+        db.query(ProjectCategoryOrder)
+        .filter(
+            ProjectCategoryOrder.project_id == project.id,
+            ProjectCategoryOrder.category == cat,
+        )
+        .one_or_none()
+    )
+    raw = _clean(sort_order)
+    if not raw:
+        # Clear the override.
+        if row is not None:
+            db.delete(row)
+            db.commit()
+        return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+    try:
+        value = int(raw)
+    except ValueError:
+        flash(request, "Order must be a whole number.", "error")
+        return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+
+    if row is None:
+        row = ProjectCategoryOrder(project_id=project.id, category=cat)
+        db.add(row)
+    row.sort_order = value
+    db.commit()
     return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 
@@ -1073,6 +1517,7 @@ async def add_project_note(
     request: Request,
     body: str = Form(...),
     note_date: str | None = Form(None),
+    is_internal_only: bool = Form(False),
     files: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
@@ -1089,6 +1534,7 @@ async def add_project_note(
         body=text,
         body_html=body_html,
         created_by=user.username,
+        is_internal_only=is_internal_only,
     )
     db.add(note)
     db.flush()  # assign note.id before attaching files
@@ -1182,6 +1628,7 @@ def edit_project_note(
     request: Request,
     body: str = Form(...),
     note_date: str | None = Form(None),
+    is_internal_only: bool = Form(False),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -1196,6 +1643,7 @@ def edit_project_note(
     note.body = text
     note.body_html = body_html
     note.note_date = _parse_date(note_date) or note.note_date
+    note.is_internal_only = is_internal_only
     db.commit()
     record_event(
         category="project", event_type="note.updated", actor_type="user",

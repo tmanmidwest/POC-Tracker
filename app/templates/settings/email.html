@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% set page_title = "Email" %}
+{% block breadcrumb %}<a href="/ui/settings">Settings</a> <span class="topbar__breadcrumb-sep">/</span> <span>Email</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Email (SMTP)</h1>
+    <p class="page-header__subtitle">Outbound email server used to send notifications, such as external-user invitations.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ui/settings/email" class="card" style="max-width: 720px; margin-bottom: var(--s-5);">
+  <div class="card__body">
+    <div style="display:grid; grid-template-columns: 2fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="host">SMTP host</label>
+        <input class="input" id="host" name="host" value="{{ form.host }}" placeholder="smtp.example.com" autocomplete="off" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="port">Port</label>
+        <input class="input" id="port" name="port" type="number" min="1" max="65535" value="{{ form.port }}" />
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="security">Connection security</label>
+      <select class="select" id="security" name="security">
+        <option value="starttls" {% if form.security == 'starttls' %}selected{% endif %}>STARTTLS (usually port 587)</option>
+        <option value="ssl" {% if form.security == 'ssl' %}selected{% endif %}>SSL/TLS (usually port 465)</option>
+        <option value="none" {% if form.security == 'none' %}selected{% endif %}>None (unencrypted — not recommended)</option>
+      </select>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="username">Username</label>
+        <input class="input" id="username" name="username" value="{{ form.username }}" placeholder="Optional — for authenticated relays" autocomplete="off" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="password">Password</label>
+        <input class="input" id="password" name="password" type="password"
+               placeholder="{{ '•••••••• (leave blank to keep current)' if form.has_password else 'Optional' }}"
+               autocomplete="new-password" />
+        <div class="form-hint">Stored encrypted.{% if form.has_password %} A password is already saved — leave blank to keep it.{% endif %}</div>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="from_email">From address</label>
+        <input class="input" id="from_email" name="from_email" type="email" value="{{ form.from_email }}" placeholder="noreply@example.com" autocomplete="off" />
+      </div>
+      <div class="form-row">
+        <label class="label" for="from_name">From name</label>
+        <input class="input" id="from_name" name="from_name" value="{{ form.from_name }}" placeholder="Questlog" autocomplete="off" />
+      </div>
+    </div>
+
+    <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+      <input type="checkbox" name="is_enabled" value="1" {% if form.is_enabled %}checked{% endif %} />
+      Enable outbound email
+    </label>
+    <div class="form-hint">When off, the app sends no mail (invitations can't be emailed).</div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings" class="btn btn--secondary">Cancel</a>
+    <button type="submit" class="btn btn--primary">Save settings</button>
+  </div>
+</form>
+
+<form method="post" action="/ui/settings/email/test" class="card" style="max-width: 720px;">
+  <div class="card__body">
+    <h3 class="card__title" style="margin-top:0;">Send a test email</h3>
+    <p class="text-muted text-xs" style="margin-top:0;">Uses the <strong>saved</strong> settings above — save first, then send a test to confirm delivery.</p>
+    <div class="form-row">
+      <label class="label" for="test_recipient">Send to</label>
+      <input class="input" id="test_recipient" name="test_recipient" type="email" placeholder="you@example.com" autocomplete="off" />
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--secondary">Send test email</button>
+  </div>
+</form>
+{% endblock %}

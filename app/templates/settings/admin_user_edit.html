@@ -22,12 +22,19 @@
   </div>
 </div>
 
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
 <form method="post" action="/ui/settings/admin-users/{{ target_user.id }}/edit" class="card" style="max-width: 480px;">
   <div class="card__body">
     <div class="form-row">
       <label class="label" for="display_name">Display name</label>
       <input class="input" id="display_name" name="display_name" value="{{ target_user.display_name or '' }}" maxlength="200" placeholder="e.g. Robby Smith" autofocus />
       <div class="form-hint">Shown in the UI (e.g. the Sales Engineer field). Leave blank to use the username ({{ target_user.username }}).</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="email">Email</label>
+      <input class="input" type="email" id="email" name="email" value="{{ target_user.email or '' }}" maxlength="320" placeholder="e.g. robby@example.com" autocomplete="email" />
+      <div class="form-hint">Optional. Used for notifications (e.g. external-user expiry warnings). Must be unique. Leave blank to clear it.</div>
     </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">

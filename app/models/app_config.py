@@ -36,6 +36,12 @@ class AppConfig(Base, TimestampMixin):
     tasks_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
+    # Default lifetime (days) granted to an external viewer account at invite
+    # acceptance. The daily sweep auto-deactivates the account once past expiry.
+    # 0 = external accounts never expire.
+    external_user_ttl_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=60
+    )
 
     def __repr__(self) -> str:
         return f"<AppConfig audit_retention_days={self.audit_retention_days}>"

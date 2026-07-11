@@ -236,6 +236,27 @@ def build_project_report_docx(project: Project, context: dict[str, Any]) -> byte
             role = c.role.name if c.role else "—"
             doc.add_paragraph(f"{c.name} ({role}) · {c.email or '—'} · {c.phone or '—'}")
 
+    tasks = context.get("tasks") or []
+    if tasks:
+        doc.add_heading("Tasks", level=1)
+        table = doc.add_table(rows=1, cols=4)
+        table.style = "Light Grid Accent 1"
+        hdr = table.rows[0].cells
+        for cell, label in zip(hdr, ("Task", "Status", "Owner", "Due")):
+            cell.text = label
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.bold = True
+        for task in tasks:
+            cells = table.add_row().cells
+            title = task.title
+            if task.is_internal_only:
+                title += "  [INTERNAL ONLY]"
+            cells[0].text = title
+            cells[1].text = task.status.name if task.status else "—"
+            cells[2].text = task.owner.display_label if task.owner else "—"
+            cells[3].text = task.due_date.strftime("%b %d, %Y") if task.due_date else "—"
+
     doc.add_heading("Use cases", level=1)
     groups = context["use_case_groups"]
     if not groups:

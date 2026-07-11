@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.db import get_session_factory
-from app.models import AppUser, Customer, Project, ProjectGrant, ProjectStatus
+from app.models import (
+    AppUser,
+    Customer,
+    Project,
+    ProjectGrant,
+    ProjectNote,
+    ProjectStatus,
+    Task,
+    TaskStatus,
+)
 from app.services.passwords import hash_password
 
 # ---------------------------------------------------------------------------
@@ -77,6 +88,44 @@ def _grant(project_id: int, user_id: int) -> None:
     try:
         db.add(ProjectGrant(project_id=project_id, user_id=user_id))
         db.commit()
+    finally:
+        db.close()
+
+
+def _add_task(
+    project_id: int, *, owner_id: int, title: str, is_internal_only: bool = False
+) -> int:
+    db = get_session_factory()()
+    try:
+        status_id = db.query(TaskStatus).order_by(TaskStatus.sort_order).first().id
+        task = Task(
+            owner_user_id=owner_id,
+            title=title,
+            status_id=status_id,
+            project_id=project_id,
+            is_internal_only=is_internal_only,
+        )
+        db.add(task)
+        db.commit()
+        return task.id
+    finally:
+        db.close()
+
+
+def _add_note(project_id: int, *, body: str, is_internal_only: bool = False) -> int:
+    db = get_session_factory()()
+    try:
+        note = ProjectNote(
+            project_id=project_id,
+            note_date=date.today(),
+            body=body,
+            body_html=None,
+            created_by="tester",
+            is_internal_only=is_internal_only,
+        )
+        db.add(note)
+        db.commit()
+        return note.id
     finally:
         db.close()
 
@@ -259,3 +308,222 @@ def test_jit_tier_from_provider(client: TestClient, tier: str, expect_external: 
         assert user.is_external is expect_external
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Internal-only notes: hidden from external viewers everywhere
+# ---------------------------------------------------------------------------
+
+
+def test_visible_project_notes_filters_for_external(client: TestClient) -> None:
+    """The helper returns every note to internal users, and drops internal-only
+    notes for external viewers."""
+    from app.services.access import visible_project_notes
+
+    pid = _make_project("Notes POC")
+    _add_note(pid, body="Shared update")
+    _add_note(pid, body="Internal secret", is_internal_only=True)
+    std_id = _make_user("std_notes")
+    ext_id = _make_user("ext_notes", is_external=True)
+
+    db = get_session_factory()()
+    try:
+        project = db.get(Project, pid)
+        internal_bodies = {n.body for n in visible_project_notes(project, db.get(AppUser, std_id))}
+        external_bodies = {n.body for n in visible_project_notes(project, db.get(AppUser, ext_id))}
+    finally:
+        db.close()
+
+    assert internal_bodies == {"Shared update", "Internal secret"}
+    assert external_bodies == {"Shared update"}
+
+
+def test_external_detail_page_hides_internal_only_note(client: TestClient) -> None:
+    """An external viewer's project page shows shared notes but not internal-only ones."""
+    pid = _make_project("Detail POC")
+    _add_note(pid, body="VISIBLE_SHARED_NOTE")
+    _add_note(pid, body="HIDDEN_INTERNAL_NOTE", is_internal_only=True)
+    ext_id = _make_user("ext_detail", is_external=True)
+    _grant(pid, ext_id)
+
+    _login(client, "ext_detail", "password123")
+    page = client.get(f"/ui/projects/{pid}")
+    assert page.status_code == 200
+    assert "VISIBLE_SHARED_NOTE" in page.text
+    assert "HIDDEN_INTERNAL_NOTE" not in page.text
+
+
+def test_external_report_and_pdf_exclude_internal_only_note(client: TestClient) -> None:
+    """The report page (shared by the PDF) never renders an internal-only note
+    for an external viewer."""
+    pid = _make_project("Report POC")
+    _add_note(pid, body="VISIBLE_SHARED_NOTE")
+    _add_note(pid, body="HIDDEN_INTERNAL_NOTE", is_internal_only=True)
+    ext_id = _make_user("ext_report", is_external=True)
+    _grant(pid, ext_id)
+
+    _login(client, "ext_report", "password123")
+    report = client.get(f"/ui/reports/projects/{pid}")
+    assert report.status_code == 200
+    assert "VISIBLE_SHARED_NOTE" in report.text
+    assert "HIDDEN_INTERNAL_NOTE" not in report.text
+
+
+def test_internal_user_sees_internal_only_note_and_badge(client: TestClient) -> None:
+    """Internal users see internal-only notes, flagged with the badge."""
+    pid = _make_project("Internal View POC")
+    _add_note(pid, body="HIDDEN_INTERNAL_NOTE", is_internal_only=True)
+
+    _make_user("std_view")
+    _login(client, "std_view", "password123")
+    page = client.get(f"/ui/projects/{pid}")
+    assert page.status_code == 200
+    assert "HIDDEN_INTERNAL_NOTE" in page.text
+    assert "Internal only" in page.text  # the badge
+
+
+# ---------------------------------------------------------------------------
+# External viewers see a project's non-internal-only tasks (read-only) — Phase 4
+# ---------------------------------------------------------------------------
+
+
+def test_external_viewer_sees_project_tasks_except_internal_only(client: TestClient) -> None:
+    pid = _make_project("Task Vis POC")
+    owner = _make_user("task_owner")  # an internal owner of the tasks
+    _add_task(pid, owner_id=owner, title="SHARED_TASK")
+    _add_task(pid, owner_id=owner, title="SECRET_TASK", is_internal_only=True)
+    ext = _make_user("task_viewer", is_external=True)
+    _grant(pid, ext)
+
+    _login(client, "task_viewer", "password123")
+    page = client.get(f"/ui/projects/{pid}")
+    assert page.status_code == 200
+    assert "SHARED_TASK" in page.text
+    assert "SECRET_TASK" not in page.text
+
+
+def test_external_task_view_is_read_only(client: TestClient) -> None:
+    pid = _make_project("RO Tasks POC")
+    owner = _make_user("ro_owner")
+    tid = _add_task(pid, owner_id=owner, title="RO_TASK")
+    ext = _make_user("ro_viewer", is_external=True)
+    _grant(pid, ext)
+
+    _login(client, "ro_viewer", "password123")
+    page = client.get(f"/ui/projects/{pid}").text
+    assert "RO_TASK" in page
+    # No mutating affordances for an external viewer.
+    assert f"/ui/tasks/new?project_id={pid}" not in page
+    assert f"/ui/tasks/{tid}/edit" not in page
+    assert f"/ui/tasks/{tid}/status" not in page
+
+
+def test_admin_sees_all_project_tasks_including_internal_only(admin_ui: TestClient) -> None:
+    pid = _make_project("Admin Tasks POC")
+    owner = _make_user("someone_else")
+    _add_task(pid, owner_id=owner, title="A_SHARED_TASK")
+    _add_task(pid, owner_id=owner, title="A_SECRET_TASK", is_internal_only=True)
+
+    page = admin_ui.get(f"/ui/projects/{pid}").text
+    # Admin sees everyone's tasks, including internal-only, with edit controls.
+    assert "A_SHARED_TASK" in page and "A_SECRET_TASK" in page
+    assert f"/ui/tasks/new?project_id={pid}" in page
+
+
+# ---------------------------------------------------------------------------
+# Report audience: client-facing vs internal (internal-only items in reports)
+# ---------------------------------------------------------------------------
+
+
+def test_report_default_is_client_facing_for_internal_user(client: TestClient) -> None:
+    """With no audience chosen, even an internal user gets the client-facing
+    report: internal-only notes and tasks are excluded by default."""
+    pid = _make_project("Audience Default POC")
+    owner = _make_user("aud_owner")
+    _add_note(pid, body="SHARED_NOTE")
+    _add_note(pid, body="INTERNAL_NOTE", is_internal_only=True)
+    _add_task(pid, owner_id=owner, title="SHARED_TASK")
+    _add_task(pid, owner_id=owner, title="INTERNAL_TASK", is_internal_only=True)
+
+    _make_user("aud_std")
+    _login(client, "aud_std", "password123")
+    page = client.get(f"/ui/reports/projects/{pid}")
+    assert page.status_code == 200
+    assert "SHARED_NOTE" in page.text and "SHARED_TASK" in page.text
+    assert "INTERNAL_NOTE" not in page.text
+    assert "INTERNAL_TASK" not in page.text
+
+
+def test_report_internal_audience_includes_internal_items(client: TestClient) -> None:
+    """An internal user can request the internal audience and get everything,
+    with internal-only items flagged."""
+    pid = _make_project("Audience Internal POC")
+    owner = _make_user("aud_owner2")
+    _add_note(pid, body="SHARED_NOTE")
+    _add_note(pid, body="INTERNAL_NOTE", is_internal_only=True)
+    _add_task(pid, owner_id=owner, title="SHARED_TASK")
+    _add_task(pid, owner_id=owner, title="INTERNAL_TASK", is_internal_only=True)
+
+    _make_user("aud_std2")
+    _login(client, "aud_std2", "password123")
+    page = client.get(f"/ui/reports/projects/{pid}?audience=internal")
+    assert page.status_code == 200
+    assert "INTERNAL_NOTE" in page.text and "INTERNAL_TASK" in page.text
+    assert "Internal only" in page.text  # the item badge
+
+
+def test_report_external_viewer_cannot_force_internal_audience(
+    client: TestClient,
+) -> None:
+    """An external viewer requesting audience=internal is still denied internal
+    items — the audience can only ever reduce what an external viewer sees."""
+    pid = _make_project("Audience Ext POC")
+    owner = _make_user("aud_owner3")
+    _add_note(pid, body="SHARED_NOTE")
+    _add_note(pid, body="INTERNAL_NOTE", is_internal_only=True)
+    _add_task(pid, owner_id=owner, title="SHARED_TASK")
+    _add_task(pid, owner_id=owner, title="INTERNAL_TASK", is_internal_only=True)
+    ext = _make_user("aud_ext", is_external=True)
+    _grant(pid, ext)
+
+    _login(client, "aud_ext", "password123")
+    page = client.get(f"/ui/reports/projects/{pid}?audience=internal")
+    assert page.status_code == 200
+    assert "SHARED_NOTE" in page.text and "SHARED_TASK" in page.text
+    assert "INTERNAL_NOTE" not in page.text
+    assert "INTERNAL_TASK" not in page.text
+
+
+def test_report_includes_all_owners_tasks(client: TestClient) -> None:
+    """A report covers the whole POC: a standard user's report includes tasks
+    owned by others (unlike the per-user Task Manager, which scopes to own)."""
+    pid = _make_project("Report Tasks POC")
+    other = _make_user("other_owner")
+    _add_task(pid, owner_id=other, title="OTHERS_TASK")
+
+    _make_user("report_std")
+    _login(client, "report_std", "password123")
+    page = client.get(f"/ui/reports/projects/{pid}")
+    assert page.status_code == 200
+    assert "OTHERS_TASK" in page.text
+
+
+# ---------------------------------------------------------------------------
+# Nav: API Docs link is internal-only
+# ---------------------------------------------------------------------------
+
+
+def test_api_docs_link_hidden_from_external_users(client: TestClient) -> None:
+    _make_user("nav_ext", is_external=True)
+    _login(client, "nav_ext", "password123")
+    page = client.get("/ui/dashboard")
+    assert page.status_code == 200
+    assert "API Docs" not in page.text
+
+
+def test_api_docs_link_shown_to_internal_users(client: TestClient) -> None:
+    _make_user("nav_std")
+    _login(client, "nav_std", "password123")
+    page = client.get("/ui/dashboard")
+    assert page.status_code == 200
+    assert "API Docs" in page.text

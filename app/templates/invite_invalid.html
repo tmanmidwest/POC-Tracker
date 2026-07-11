@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invitation · {{ branding.name }}</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-card__brand">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+             style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
+        <h1 class="auth-card__title"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</h1>
+        <p class="auth-card__subtitle">Invitation link</p>
+      </div>
+
+      <div class="inline-error">This invitation link is invalid, has expired, or was already used.</div>
+
+      <p class="text-muted text-xs" style="text-align:center; margin-top: var(--s-4);">
+        Ask whoever invited you to send a new link. If you already set a password,
+        you can <a href="/ui/login">sign in here</a>.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

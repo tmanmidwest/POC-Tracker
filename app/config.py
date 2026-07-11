@@ -13,6 +13,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import __version__
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -55,6 +57,14 @@ class Settings(BaseSettings):
         default="N0nPr0dF0r$@viynt8",
         description="Default password for the seeded admin account.",
     )
+    max_login_attempts: int = Field(
+        default=3,
+        description=(
+            "Consecutive failed local sign-ins before an account is locked. "
+            "A locked account must be unlocked by an admin or a password reset. "
+            "Set to 0 to disable lockout."
+        ),
+    )
 
     # --- OAuth / JWT ---
     oauth_default_token_lifetime_seconds: int = Field(
@@ -82,6 +92,17 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- External users ---
+    external_user_ttl_days: int = Field(
+        default=60,
+        description=(
+            "Default lifetime (days) for an external viewer account, applied at "
+            "invite acceptance. A daily sweep auto-deactivates the account once "
+            "past expiry and warns the project SE 7 days before. Set to 0 so "
+            "external accounts never expire."
+        ),
+    )
+
     # --- Backups ---
     backup_retention_count: int = Field(
         default=2,
@@ -91,9 +112,21 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Demo / testing ---
+    enable_demo_tools: bool = Field(
+        default=False,
+        description=(
+            "Expose the admin 'Demo data' page for loading/removing a sample "
+            "portfolio. Off by default so production never shows it; set "
+            "POCT_ENABLE_DEMO_TOOLS=1 on a local demo/testing instance."
+        ),
+    )
+
     # --- App metadata ---
-    app_name: str = Field(default="POC Tracker")
-    app_version: str = Field(default="0.1.0")
+    app_name: str = Field(default="Questlog")
+    # Defaults to the single source of truth in app/__init__.py; override with
+    # POCT_APP_VERSION only if you need the displayed version to differ.
+    app_version: str = Field(default=__version__)
 
     # --- Computed paths ---
 

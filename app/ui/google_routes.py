@@ -33,6 +33,27 @@ def callback_uri(request: Request) -> str:
     return f"{base}/ui/tasks/google/callback"
 
 
+def _record_connect_failure(
+    request: Request, user: AppUser, *, reason: str, detail: dict
+) -> None:
+    """Write a failed-connect event to the activity log with structured detail.
+
+    The connect flow used to swallow failures into an app-log ``log.warning`` only,
+    which left admins with a bare "it failed" flash and no trail. This records the
+    same detail into the activity log so a failure is diagnosable after the fact.
+    """
+    record_event(
+        category="task",
+        event_type="task.google_connect_failed",
+        outcome="failure",
+        actor_type="user", actor_label=user.username, actor_id=user.id,
+        target_type="google_credential",
+        message=f"Google Tasks connection failed: {reason}",
+        detail={"surface": "ui", "reason": reason, **detail},
+        request=request,
+    )
+
+
 def _guard(db: Session, request: Request) -> Response | None:
     """Return a redirect if the module/integration isn't available, else None."""
     if not system_config.tasks_enabled():
@@ -85,9 +106,22 @@ def callback(
     verifier = request.session.pop(_VERIFIER_KEY, None)
 
     if error:
+        _record_connect_failure(
+            request, user, reason=f"consent declined at Google ({error})",
+            detail={"google_error": error},
+        )
         flash(request, f"Google connection was cancelled ({error}).", "warning")
         return RedirectResponse(url="/ui/tasks", status_code=303)
     if not code or not state or state != expected_state or not verifier:
+        _record_connect_failure(
+            request, user, reason="invalid or expired authorization response",
+            detail={
+                "has_code": bool(code),
+                "has_state": bool(state),
+                "state_matched": bool(state and state == expected_state),
+                "has_verifier": bool(verifier),
+            },
+        )
         flash(request, "Google connection failed (invalid or expired request). Try again.", "error")
         return RedirectResponse(url="/ui/tasks", status_code=303)
 
@@ -99,27 +133,106 @@ def callback(
         cred = google_tasks_sync.connect_store(db, user, tokens)
     except Exception as exc:
         log.warning("google_connect_failed", extra={"user": user.username, "error": str(exc)})
-        flash(request, "Couldn't connect Google Tasks. Please try again.", "error")
+        _record_connect_failure(
+            request, user, reason="token exchange or credential store failed",
+            detail={"error": str(exc), "error_type": type(exc).__name__},
+        )
+        flash(request, f"Couldn't connect Google Tasks: {exc}", "error")
         return RedirectResponse(url="/ui/tasks", status_code=303)
 
-    # Push the user's existing tasks so "connected" means "all my tasks sync".
-    synced = google_tasks_sync.sync_all_for_user(db, user.id)
+    # Push the user's existing tasks so "connected" means "all my tasks sync". A
+    # backfill hiccup must not fail the connect — the account is already stored and
+    # the next scheduled sync will retry — so record it and warn instead of 500ing.
+    try:
+        synced: int | None = google_tasks_sync.sync_all_for_user(db, user.id)
+        backfill_error: str | None = None
+    except Exception as exc:
+        synced, backfill_error = None, str(exc)
+        log.warning(
+            "google_backfill_failed", extra={"user": user.username, "error": backfill_error}
+        )
 
+    detail: dict = {"surface": "ui", "backfilled": synced}
+    if backfill_error:
+        detail["backfill_error"] = backfill_error
     record_event(
         category="task",
         event_type="task.google_connected",
+        outcome="warning" if backfill_error else "success",
         actor_type="user", actor_label=user.username, actor_id=user.id,
         target_type="google_credential", target_id=cred.id, target_label=cred.google_email,
         message=f"Connected Google Tasks ({cred.google_email or 'account'})",
-        detail={"surface": "ui", "backfilled": synced},
+        detail=detail,
         request=request,
     )
-    flash(
-        request,
-        f"Google Tasks connected{f' as {cred.google_email}' if cred.google_email else ''}. "
-        f"Synced {synced} task(s) into your “POC Tracker” list.",
-        "success",
+    connected_as = f" as {cred.google_email}" if cred.google_email else ""
+    if backfill_error:
+        flash(
+            request,
+            f"Google Tasks connected{connected_as}, but the initial sync hit a problem "
+            f"({backfill_error}). Your tasks will sync on the next run.",
+            "warning",
+        )
+    else:
+        flash(
+            request,
+            f"Google Tasks connected{connected_as}. "
+            f"Synced {synced} task(s) into your “POC Tracker” list.",
+            "success",
+        )
+    return RedirectResponse(url="/ui/tasks", status_code=303)
+
+
+@router.post("/sync")
+def sync_now(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """On-demand two-way sync: push local changes, then pull Google-side changes."""
+    if not google_tasks_sync.active_credential(db, user.id):
+        flash(request, "Connect Google Tasks first.", "error")
+        return RedirectResponse(url="/ui/tasks", status_code=303)
+
+    try:
+        result = google_tasks_sync.sync_now(db, user.id)
+    except Exception as exc:  # never 500 the page — log it and tell the user
+        db.rollback()
+        log.exception("google_sync_now_failed", extra={"user": user.username})
+        record_event(
+            category="task", event_type="task.google_sync_failed", outcome="failure",
+            actor_type="user", actor_label=user.username, actor_id=user.id,
+            target_type="google_credential",
+            message="Manual Google Tasks sync failed",
+            detail={"surface": "ui", "error": str(exc), "error_type": type(exc).__name__},
+            request=request,
+        )
+        flash(request, f"Sync failed: {exc}", "error")
+        return RedirectResponse(url="/ui/tasks", status_code=303)
+
+    record_event(
+        category="task", event_type="task.google_synced",
+        actor_type="user", actor_label=user.username, actor_id=user.id,
+        target_type="google_credential",
+        message="Ran a manual Google Tasks sync",
+        detail={
+            "surface": "ui", "pulled_updated": result.updated,
+            "pulled_created": result.created, "archived": result.archived,
+            "completed": result.completed,
+        },
+        request=request,
     )
+    if result.total:
+        parts = []
+        if result.updated:
+            parts.append(f"{result.updated} updated")
+        if result.created:
+            parts.append(f"{result.created} added from Google")
+        if result.archived:
+            parts.append(f"{result.archived} archived")
+        flash(request, f"Sync complete: {', '.join(parts)}.", "success")
+    else:
+        flash(request, "Sync complete — everything was already up to date.", "success")
     return RedirectResponse(url="/ui/tasks", status_code=303)
 
 

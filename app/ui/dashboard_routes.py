@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.db import get_db
 from app.models import AppUser, DashboardPref, Project, ProjectStatus
+from app.services.insights import (
+    STALLED_DAYS,
+    idle_days,
+    is_at_risk,
+    is_stalled,
+)
 from app.services.scope import (
     get_scope,
     resolve_scope,
@@ -25,6 +33,12 @@ from app.ui.templating import render
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ui/dashboard", tags=["ui"], include_in_schema=False)
+
+# Insight thresholds — deliberately simple and tunable. STALLED_DAYS lives in
+# app.services.insights (shared with the project-list filter).
+EXPIRY_SOON_DAYS = 30  # external account expiring within this window → flagged
+SE_LOAD_TOP = 8  # cap the "portfolio by engineer" chart to the busiest N
+ATTENTION_LIMIT = 12  # most-urgent items surfaced in the attention panel
 
 
 # All optional columns the user can toggle on the dashboard cards.
@@ -84,6 +98,147 @@ def _progress(project: Project) -> dict[str, int]:
     return {"total": total, "done": done, "pct": pct}
 
 
+def _build_insights(
+    db: Session,
+    user: AppUser,
+    visible_ids: set[int] | None,
+    statuses: list[ProjectStatus],
+) -> dict[str, Any]:
+    """Portfolio-level aggregates for the dashboard insight strip.
+
+    Computed over the same scoped set of active projects the tables use, so the
+    KPIs and charts always agree with the "My / All / <engineer>" filter. Returns
+    plain dicts/lists ready to hand to the template (and to JSON for the charts).
+    """
+    q = (
+        db.query(Project)
+        .options(
+            joinedload(Project.customer),
+            joinedload(Project.sales_engineer),
+            selectinload(Project.use_cases),
+        )
+        .filter(Project.is_archived.is_(False))
+    )
+    if visible_ids is not None:
+        q = q.filter(Project.id.in_(visible_ids))
+    projects = q.all()
+
+    today = date.today()
+    now = datetime.now(timezone.utc)
+    status_name = {s.id: s.name for s in statuses}
+
+    pcts: list[int] = []
+    at_risk = 0
+    stalled = 0
+    status_counter: Counter[int] = Counter()
+    se_counter: Counter[str] = Counter()
+    uc_status_counter: Counter[str] = Counter()
+    feature_counter: Counter[str] = Counter()
+    attention: list[dict[str, Any]] = []
+
+    for p in projects:
+        prog = _progress(p)
+        if prog["total"]:
+            pcts.append(prog["pct"])
+        status_counter[p.status_id] += 1
+        eng = p.sales_engineer.display_label if p.sales_engineer else "Unassigned"
+        se_counter[eng] += 1
+        for uc in p.use_cases:
+            uc_status_counter[uc.status.name if uc.status else "—"] += 1
+            feature_counter[uc.feature_type.name if uc.feature_type else "Uncategorized"] += 1
+
+        reasons: list[dict[str, str]] = []
+        severity = 0  # higher = more urgent, drives sort order
+        days = 0
+        if is_at_risk(p, today):
+            at_risk += 1
+            overdue = (today - p.end_date).days
+            reasons.append({"kind": "overdue", "label": f"{overdue}d past end date"})
+            severity = max(severity, 2)
+            days = max(days, overdue)
+        if is_stalled(p, now):
+            stalled += 1
+            idle = idle_days(p.updated_at, now)
+            reasons.append({"kind": "stalled", "label": f"no update in {idle}d"})
+            severity = max(severity, 1)
+            days = max(days, idle)
+        if reasons:
+            attention.append(
+                {
+                    "project_id": p.id,
+                    "customer": p.customer.name,
+                    "name": p.name,
+                    "status": status_name.get(p.status_id, ""),
+                    "pct": prog["pct"],
+                    "reasons": reasons,
+                    "_severity": severity,
+                    "_days": days,
+                }
+            )
+
+    attention.sort(key=lambda a: (a["_severity"], a["_days"]), reverse=True)
+
+    # Expiring external viewer accounts — admin-only, and only meaningful once
+    # external invitations exist. Cheap to compute; template gates the display.
+    expiring: list[dict[str, Any]] = []
+    if user.is_admin:
+        rows = (
+            db.query(AppUser)
+            .filter(
+                AppUser.is_external.is_(True),
+                AppUser.is_active.is_(True),
+                AppUser.expires_at.isnot(None),
+            )
+            .all()
+        )
+        for u in rows:
+            left = (u.expires_at.date() - today).days
+            if left <= EXPIRY_SOON_DAYS:
+                expiring.append(
+                    {
+                        "name": u.display_label,
+                        "email": u.email,
+                        "days_left": left,
+                    }
+                )
+        expiring.sort(key=lambda e: e["days_left"])
+
+    # Chart-ready series: project counts by status keep the canonical order;
+    # the rest are ranked by size.
+    status_series = [
+        {"label": status_name[s.id], "count": status_counter[s.id]}
+        for s in statuses
+        if status_counter.get(s.id)
+    ]
+    se_series = [
+        {"label": name, "count": n} for name, n in se_counter.most_common(SE_LOAD_TOP)
+    ]
+    uc_status_series = [
+        {"label": name, "count": n} for name, n in uc_status_counter.most_common()
+    ]
+    feature_series = [
+        {"label": name, "count": n} for name, n in feature_counter.most_common()
+    ]
+
+    return {
+        "kpis": {
+            "active": len(projects),
+            "avg_completion": round(sum(pcts) / len(pcts)) if pcts else 0,
+            "at_risk": at_risk,
+            "stalled": stalled,
+        },
+        "status_series": status_series,
+        "se_series": se_series,
+        "uc_status_series": uc_status_series,
+        "feature_series": feature_series,
+        "attention": attention[:ATTENTION_LIMIT],
+        "attention_total": len(attention),
+        "expiring": expiring,
+        "stalled_days": STALLED_DAYS,
+        "has_data": bool(projects),
+    }
+
+
 @router.get("")
 @router.get("/")
 def dashboard(
@@ -136,6 +291,8 @@ def dashboard(
     if visible_ids is not None:
         total_q = total_q.filter(Project.id.in_(visible_ids))
     total_active = total_q.count()
+
+    insights = _build_insights(db, user, visible_ids, statuses)
     return render(
         request,
         "dashboard/index.html",
@@ -147,6 +304,7 @@ def dashboard(
         total_active=total_active,
         scope=scope,
         scope_engineers=selectable_engineers(db, user),
+        insights=insights,
     )
 
 

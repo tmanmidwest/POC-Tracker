@@ -53,6 +53,12 @@ def _make_backend() -> tuple[dict, httpx.MockTransport]:
                 state["lists"][lid] = body["title"]
                 return httpx.Response(200, json={"id": lid, "title": body["title"]})
 
+        # GET the tasks in a list (pull/reconcile). Query params (showDeleted etc.)
+        # are ignored — reconcile tests craft state["tasks"] directly to control the
+        # remote side. A specific-task GET (…/tasks/<id>) is not matched here.
+        if method == "GET" and re.search(r"/lists/[^/]+/tasks(\?|$)", url):
+            return httpx.Response(200, json={"items": list(state["tasks"].values())})
+
         m = re.match(r".*/lists/([^/]+)/tasks/?([^/?]*)$", url)
         if m:
             task_id = m.group(2)
@@ -101,6 +107,33 @@ def gbackend(_isolated_data_dir) -> Iterator[dict]:
 
     yield state
     google_http.set_client(None)
+
+
+def test_tasklist_403_surfaces_google_body() -> None:
+    # Regression: a 403 on the Tasks API (e.g. API not enabled, or missing scope)
+    # must carry Google's explanatory body, not a bare "403 Forbidden".
+    from app.services import google_http, google_tasks_sync
+
+    body = (
+        '{"error":{"code":403,"status":"PERMISSION_DENIED","message":'
+        '"Google Tasks API has not been used in project 123 before or it is '
+        'disabled. Enable it by visiting https://console.developers.google.com/'
+        'apis/api/tasks.googleapis.com/overview?project=123"}}'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text=body)
+
+    google_http.set_client(httpx.Client(transport=httpx.MockTransport(handler)))
+    try:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            google_tasks_sync.ensure_tasklist("acc-token")
+    finally:
+        google_http.set_client(None)
+
+    msg = str(exc_info.value)
+    assert "403" in msg
+    assert "has not been used in project" in msg  # the actionable reason is included
 
 
 def _admin(db):  # type: ignore[no-untyped-def]
@@ -238,6 +271,17 @@ def test_revoked_refresh_marks_needs_reauth(gbackend) -> None:  # type: ignore[n
     cred = google_tasks_sync.get_credential(db, admin.id)
     assert cred.status == "needs_reauth"
     assert task.external_id is None  # nothing synced
+
+    # The silent breakage is now surfaced in the activity log (once).
+    from app.models.audit_event import AuditEvent
+
+    events = (
+        db.query(AuditEvent)
+        .filter(AuditEvent.event_type == "task.google_sync_needs_reauth")
+        .all()
+    )
+    assert len(events) == 1
+    assert events[0].outcome == "failure"
     db.close()
 
 
@@ -267,3 +311,242 @@ def test_api_task_create_pushes_to_google(gbackend, api_client) -> None:  # type
     r = api_client.post("/api/v1/tasks/", json={"owner": owner, "title": "From API"})
     assert r.status_code == 201, r.text
     assert any(t["title"] == "From API" for t in gbackend["tasks"].values())
+
+
+# ---------------------------------------------------------------------------
+# Pull / reconcile (Google → POC Tracker) — increment 2
+# ---------------------------------------------------------------------------
+
+_FUTURE = "2099-01-01T00:00:00.000Z"  # forces "remote changed since last sync"
+_PAST = "2000-01-01T00:00:00.000Z"    # forces "remote is stale"
+
+
+def _pushed_task(db, title="Original"):  # type: ignore[no-untyped-def]
+    """Connect the admin and push one task, returning (admin, task)."""
+    from app.models import Task
+    from app.services import google_tasks_sync
+
+    _connect_admin(db)
+    admin = _admin(db)
+    task = Task(owner_user_id=admin.id, title=title, status_id=_status(db, "To Do").id)
+    db.add(task)
+    db.commit()
+    google_tasks_sync.push_task(db, task)  # creates the remote task + links external_id
+    return admin, task
+
+
+def test_pull_updates_local_from_remote(gbackend) -> None:  # type: ignore[no-untyped-def]
+    from datetime import date
+
+    from app.db import get_session_factory
+    from app.services import google_tasks_sync
+
+    db = get_session_factory()()
+    admin, task = _pushed_task(db)
+    gbackend["tasks"][task.external_id].update({
+        "title": "Edited in Google", "notes": "new notes from google",
+        "due": "2030-05-06T00:00:00.000Z", "updated": _FUTURE,
+    })
+
+    result = google_tasks_sync.reconcile_user(db, admin.id)
+
+    db.refresh(task)
+    assert task.title == "Edited in Google"
+    assert task.details == "new notes from google"
+    assert task.due_date == date(2030, 5, 6)
+    assert result.updated == 1
+    db.close()
+
+
+def test_pull_matched_task_from_fresh_session(gbackend) -> None:  # type: ignore[no-untyped-def]
+    """Regression: reconcile a matched task in a NEW session, so its timestamps are
+    reloaded from SQLite as *naive* (as the real route does). Comparing them to
+    Google's tz-aware timestamps used to raise TypeError → 500. Must now succeed."""
+    from app.db import get_session_factory
+    from app.models import Task
+    from app.services import google_tasks_sync
+
+    # Session A: connect + push, then close so the task is flushed to disk.
+    db_a = get_session_factory()()
+    admin, task = _pushed_task(db_a)
+    admin_id, ext_id = admin.id, task.external_id
+    db_a.close()
+
+    gbackend["tasks"][ext_id].update({"title": "Edited in Google", "updated": _FUTURE})
+
+    # Session B: fresh — task.last_synced_at/updated_at come back naive here.
+    db_b = get_session_factory()()
+    result = google_tasks_sync.reconcile_user(db_b, admin_id)
+
+    assert result.updated == 1  # no TypeError, remote change applied
+    refreshed = db_b.query(Task).filter(Task.external_id == ext_id).one()
+    assert refreshed.title == "Edited in Google"
+    db_b.close()
+
+
+def test_pushed_task_not_seen_as_locally_changed(gbackend) -> None:  # type: ignore[no-untyped-def]
+    """Root-cause invariant: after a push, updated_at must not sit ahead of
+    last_synced_at (reloaded fresh from SQLite), or _push_changed would re-push the
+    task every sync and clobber remote edits. Proves the lockstep beats onupdate."""
+    from app.db import get_session_factory
+    from app.models import Task
+
+    db_a = get_session_factory()()
+    admin, _ = _pushed_task(db_a)
+    admin_id = admin.id
+    db_a.close()
+
+    db_b = get_session_factory()()
+    changed = (
+        db_b.query(Task)
+        .filter(
+            Task.owner_user_id == admin_id,
+            Task.is_archived.is_(False),
+            (Task.last_synced_at.is_(None)) | (Task.updated_at > Task.last_synced_at),
+        )
+        .all()
+    )
+    db_b.close()
+    assert changed == [], "a freshly-pushed task must not look locally changed"
+
+
+def test_sync_now_pulls_completion_without_clobbering_google(gbackend) -> None:  # type: ignore[no-untyped-def]
+    """The reported bug: complete a task in Google, hit Sync now → the POC task must
+    become Done AND Google must stay completed (a push must not reset it to open)."""
+    from app.db import get_session_factory
+    from app.models import Task, TaskStatus
+    from app.services import google_tasks_sync
+
+    db_a = get_session_factory()()
+    admin, task = _pushed_task(db_a)
+    admin_id, ext_id = admin.id, task.external_id
+    db_a.close()
+
+    # User completes it in Google.
+    gbackend["tasks"][ext_id].update(
+        {"status": "completed", "completed": _FUTURE, "updated": _FUTURE}
+    )
+
+    # Fresh session, exactly like the Sync now route.
+    db_b = get_session_factory()()
+    google_tasks_sync.sync_now(db_b, admin_id)
+    db_b.close()
+
+    db_c = get_session_factory()()
+    refreshed = db_c.query(Task).filter(Task.external_id == ext_id).one()
+    is_done = db_c.get(TaskStatus, refreshed.status_id).is_terminal
+    db_c.close()
+
+    assert is_done, "POC task should be marked Done after Google completion"
+    assert gbackend["tasks"][ext_id]["status"] == "completed", (
+        "a push clobbered Google's completion back to open"
+    )
+
+
+def test_pull_completion_moves_to_terminal(gbackend) -> None:  # type: ignore[no-untyped-def]
+    from app.db import get_session_factory
+    from app.models import TaskStatus
+    from app.services import google_tasks_sync
+
+    db = get_session_factory()()
+    admin, task = _pushed_task(db)
+    assert not db.get(TaskStatus, task.status_id).is_terminal  # starts open
+
+    gbackend["tasks"][task.external_id].update({"status": "completed", "updated": _FUTURE})
+    result = google_tasks_sync.reconcile_user(db, admin.id)
+
+    db.refresh(task)
+    assert db.get(TaskStatus, task.status_id).is_terminal is True
+    assert result.completed == 1
+    db.close()
+
+
+def test_pull_deletion_archives_local(gbackend) -> None:  # type: ignore[no-untyped-def]
+    from app.db import get_session_factory
+    from app.services import google_tasks_sync
+
+    db = get_session_factory()()
+    admin, task = _pushed_task(db)
+
+    gbackend["tasks"][task.external_id].update({"deleted": True, "updated": _FUTURE})
+    result = google_tasks_sync.reconcile_user(db, admin.id)
+
+    db.refresh(task)
+    assert task.is_archived is True
+    assert task.external_id is None  # unlinked so a restore re-creates it
+    assert result.archived == 1
+    db.close()
+
+
+def test_pull_creates_google_origin_task(gbackend) -> None:  # type: ignore[no-untyped-def]
+    from app.db import get_session_factory
+    from app.models import Task
+    from app.services import google_tasks_sync
+
+    db = get_session_factory()()
+    _connect_admin(db)
+    admin = _admin(db)
+    # A task created directly in the user's Google list, with no local counterpart.
+    gbackend["tasks"]["ext-new"] = {
+        "id": "ext-new", "title": "Made in Google",
+        "status": "needsAction", "updated": _FUTURE,
+    }
+
+    result = google_tasks_sync.reconcile_user(db, admin.id)
+
+    created = db.query(Task).filter(Task.external_id == "ext-new").one()
+    assert created.title == "Made in Google"
+    assert created.owner_user_id == admin.id
+    assert result.created == 1
+    db.close()
+
+
+def test_sync_now_route_pulls_google_task(gbackend, client) -> None:  # type: ignore[no-untyped-def]
+    """The 'Sync now' button pulls a Google-origin task into POC Tracker."""
+    from app.config import get_settings
+    from app.db import get_session_factory
+    from app.models import Task
+
+    s = get_settings()
+    login = client.post(
+        "/ui/login",
+        data={"username": s.initial_admin_username, "password": s.initial_admin_password},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+
+    db = get_session_factory()()
+    _connect_admin(db)
+    db.close()
+    gbackend["tasks"]["ext-route"] = {
+        "id": "ext-route", "title": "Pulled via button",
+        "status": "needsAction", "updated": _FUTURE,
+    }
+
+    resp = client.post("/ui/tasks/google/sync", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/ui/tasks"
+
+    db = get_session_factory()()
+    assert db.query(Task).filter(Task.external_id == "ext-route").count() == 1
+    db.close()
+
+
+def test_pull_stale_remote_does_not_clobber_local_edit(gbackend) -> None:  # type: ignore[no-untyped-def]
+    from app.db import get_session_factory
+    from app.services import google_tasks_sync
+
+    db = get_session_factory()()
+    admin, task = _pushed_task(db)
+    # Local edit after the last sync → local is the newer writer.
+    task.title = "Local edited"
+    db.commit()
+    # A stale remote (older than our watermark) must not overwrite the local edit.
+    gbackend["tasks"][task.external_id].update({"title": "Stale remote", "updated": _PAST})
+
+    result = google_tasks_sync.reconcile_user(db, admin.id)
+
+    db.refresh(task)
+    assert task.title == "Local edited"
+    assert result.updated == 0
+    db.close()

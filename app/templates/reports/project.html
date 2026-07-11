@@ -3,9 +3,20 @@
 {% set page_title = project.display_name ~ " — Report" %}
 
 {% block content %}
+{% if customer_logo %}
+<div style="display:flex; align-items:center; gap:14px; margin-bottom:6px;">
+  <img src="{{ customer_logo }}" alt="{{ project.customer.name }} logo" style="max-height:46px; max-width:190px; object-fit:contain;" />
+  <div>
+    <h1 style="margin:0;">{{ project.display_name }}</h1>
+    <p class="subtitle" style="margin:2px 0 0;">{{ project.customer.name }} · {{ project.status.name }}
+      {% if project.is_archived %}· Archived{% endif %}</p>
+  </div>
+</div>
+{% else %}
 <h1>{{ project.display_name }}</h1>
 <p class="subtitle">{{ project.customer.name }} · {{ project.status.name }}
   {% if project.is_archived %}· Archived{% endif %}</p>
+{% endif %}
 
 {# ---- Executive summary ---- #}
 {% if project.exec_summary_html or project.exec_summary %}
@@ -69,12 +80,13 @@
 
 {# ---- Project notes / journal ---- #}
 <h2>Project notes &amp; journal</h2>
-{% if project.note_entries %}
-  {% for note in project.note_entries %}
+{% if notes %}
+  {% for note in notes %}
   <div class="note">
     <div class="note__head">
       <span class="note__date">{{ note.note_date.strftime('%b %-d, %Y') }}</span>
       {% if note.created_by %}<span class="muted xs">{{ note.created_by }}</span>{% endif %}
+      {% if note.is_internal_only %}<span class="badge badge--internal">Internal only</span>{% endif %}
     </div>
     {{ M.render_note(note.body_html, note.body) }}
     {% if note.attachments %}
@@ -86,6 +98,26 @@
   {% endfor %}
 {% else %}
   <p class="empty">No notes recorded.</p>
+{% endif %}
+
+{# ---- Tasks ---- #}
+<h2>Tasks</h2>
+{% if tasks %}
+<table>
+  <thead><tr><th>Task</th><th>Status</th><th>Owner</th><th>Due</th></tr></thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.title }}{% if task.is_internal_only %} <span class="badge badge--internal">Internal only</span>{% endif %}</td>
+      <td>{{ task.status.name if task.status else "—" }}</td>
+      <td>{{ task.owner.display_label if task.owner else "—" }}</td>
+      <td>{{ task.due_date.strftime('%b %-d, %Y') if task.due_date else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="empty">No tasks.</p>
 {% endif %}
 
 {# ---- Use cases ---- #}

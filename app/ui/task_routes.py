@@ -319,6 +319,7 @@ def _read_task_form(form: Any) -> dict[str, Any]:
         "start_date": _parse_date(form.get("start_date")),
         "due_date": _parse_date(form.get("due_date")),
         "details_html_raw": form.get("details"),
+        "is_internal_only": form.get("is_internal_only") is not None,
     }
 
 
@@ -360,6 +361,7 @@ async def create_task(
         due_date=data["due_date"],
         details=html_to_text(details_html),
         details_html=details_html,
+        is_internal_only=data["is_internal_only"],
     )
     db.add(task)
     db.commit()
@@ -390,6 +392,7 @@ def edit_form(
         "due_date": task.due_date.isoformat() if task.due_date else "",
         "details_html": task.details_html,
         "details": task.details,
+        "is_internal_only": task.is_internal_only,
     }
     return render(
         request,
@@ -433,6 +436,7 @@ async def update_task(
     task.due_date = data["due_date"]
     task.details = html_to_text(details_html)
     task.details_html = details_html
+    task.is_internal_only = data["is_internal_only"]
     db.commit()
     _task_event(request, user, task, "updated", "Updated")
     google_tasks_sync.sync_after_change(db, task)

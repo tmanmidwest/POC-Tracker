@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -42,6 +42,11 @@ class ProjectNote(Base, TimestampMixin):
     body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Username of whoever added the note, kept for display. Nullable for safety.
     created_by: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Internal-only: when true, hidden from external (viewer) users. Internal
+    # users always see it. Defaults to false — notes are shared unless marked.
+    is_internal_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="note_entries")
     attachments: Mapped[list[NoteAttachment]] = relationship(

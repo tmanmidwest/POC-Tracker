@@ -11,7 +11,38 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models import AppUser, Project, ProjectGrant
+from app.models import AppUser, Project, ProjectGrant, ProjectNote
+
+
+def visible_project_notes(project: Project, user: AppUser) -> list[ProjectNote]:
+    """Journal notes on ``project`` the user is allowed to see.
+
+    Internal users see every note; external (viewer) users don't see notes
+    marked ``is_internal_only``. Use this anywhere notes are rendered or
+    exported so internal-only content never reaches an external viewer —
+    on-screen, in the PDF/report, or in the artifacts zip.
+    """
+    if user.is_internal:
+        return list(project.note_entries)
+    return [n for n in project.note_entries if not n.is_internal_only]
+
+
+def notes_for_report(
+    project: Project, user: AppUser, *, include_internal: bool
+) -> list[ProjectNote]:
+    """Journal notes to render in a report, honoring the report's audience.
+
+    Unlike :func:`visible_project_notes` (which keys off the viewer's identity
+    for the on-screen page), a report has an explicit *audience*: a client-facing
+    report excludes internal-only notes even for an internal author, while an
+    internal report includes them. ``include_internal`` is honored only for
+    internal users — an external viewer never receives internal-only notes no
+    matter what audience is requested, so this stays a safe single choke point
+    for reports, PDFs, and the artifacts zip.
+    """
+    if include_internal and user.is_internal:
+        return list(project.note_entries)
+    return [n for n in project.note_entries if not n.is_internal_only]
 
 
 def accessible_project_ids(db: Session, user: AppUser) -> set[int] | None:

@@ -1,4 +1,4 @@
-# POC Tracker
+# Questlog
 
 A lightweight web app for sales/solutions engineers to track proof-of-concept (POC)
 engagements: customers and contacts, projects, use cases (from a reusable library or
@@ -39,7 +39,16 @@ an MCP server so other tools and AI assistants can read and report on the data.
   priorities, optional start/due dates and project assignment, rich-text details, a
   customizable dashboard, and an optional **two-way sync to each user's own Google Tasks**
   account. See [docs/TASKS.md](docs/TASKS.md).
-- **Reporting** — an all-POCs overview and a print-friendly single-POC report.
+- **Email (SMTP)** — configure an outbound SMTP server (**Settings → Email**) for
+  notifications such as external-user invitations. Password stored encrypted, with a test-send
+  to verify delivery. See [docs/INVITATIONS.md](docs/INVITATIONS.md).
+- **Reporting** — an all-POCs overview, a print-friendly single-POC report (PDF/Word),
+  and a one-click **executive readout deck (.pptx)** with a use-case scorecard, pass/fail
+  results, screenshots, and speaker notes. Every report has an **audience toggle** —
+  *client-facing* (the default, internal-only notes/tasks excluded) or *internal* (everything
+  included) — so one project produces both a clean customer deliverable and a full internal copy.
+  Optionally AI-written summary/next-steps bullets and an admin-uploaded branded template.
+  See [docs/READOUT.md](docs/READOUT.md).
 - **Global search** — one search box (in the top bar) over projects, use cases, the library,
   notes, customers, contacts, and files, with live as-you-type results and a full results page.
 - **Activity log** — persisted audit events with a viewer and JSON/CSV export.
@@ -89,6 +98,53 @@ endpoint returns `503`. Adding, revoking, or rotating tokens needs no restart.
 
 Don't need the MCP server? Comment out the `mcp` service in `docker-compose.yml`.
 
+### Running more than one instance on the same host
+
+Set `POCT_STACK_NAME` to give an instance its own compose project name, container names,
+network, and `poct-data` volume, and pick non-colliding host ports. Also set `POCT_IMAGE`
+to give each instance its own image tag — without it, every stack builds and shares the
+single `poc-tracker:local` tag, so rebuilding one instance silently overwrites the image
+the others run. A per-instance tag isolates builds and lets prod and demo run different
+versions. For example, a demo instance alongside the default one — put this in a `demo.env`:
+
+```bash
+POCT_STACK_NAME=poc-tracker-demo
+POCT_IMAGE=poc-tracker:demo
+POCT_HOST_PORT=9010
+POCT_MCP_HOST_PORT=9011
+POCT_ENABLE_DEMO_TOOLS=1   # optional: enable the Demo Data page on this instance
+```
+
+```bash
+docker compose --env-file demo.env up -d --build
+# demo app on :9010, demo MCP on :9011, containers poc-tracker-demo / poc-tracker-demo-mcp,
+# built as image poc-tracker:demo
+```
+
+Copy-ready templates live in [`prod.env.example`](prod.env.example) and
+[`demo.env.example`](demo.env.example).
+
+The two instances share nothing — separate volumes mean separate databases, tokens, and keys,
+and separate image tags mean rebuilding one never touches the other's image. Within each
+instance the app and MCP server still share that instance's volume, so MCP token setup works
+as usual.
+
+### Demo data
+
+On an instance started with `POCT_ENABLE_DEMO_TOOLS=1`, admins get a **Settings → Demo Data**
+page that loads a realistic sample portfolio (customers, projects, use cases, and a couple of
+extra sales engineers) so the dashboard insights have something to show — and removes it again
+just as easily. The same thing is available from the command line:
+
+```bash
+docker exec -it poc-tracker-demo poct-seed-demo --yes     # load  (dry-run without --yes)
+docker exec -it poc-tracker-demo poct-seed-demo --purge --yes   # remove
+```
+
+Both the page and the CLI are additive and idempotent, and only ever touch their own demo rows.
+The feature is off by default, so production (where `POCT_ENABLE_DEMO_TOOLS` is unset) never
+shows the page and the routes 404.
+
 ## Configuration
 
 All settings are environment variables prefixed `POCT_` (see `app/config.py`):
@@ -101,7 +157,11 @@ All settings are environment variables prefixed `POCT_` (see `app/config.py`):
 | `POCT_PUBLIC_BASE_URL` | — | External URL for OIDC redirect URIs behind a proxy |
 | `POCT_AUDIT_RETENTION_DAYS` | `30` | Activity-log retention (0 = keep forever) |
 | `POCT_BACKUP_RETENTION_COUNT` | `2` | How many generated backup archives to keep on disk |
-| `POCT_HOST_PORT` | `8010` | Host port mapping for docker-compose |
+| `POCT_HOST_PORT` | `8010` | Host port mapping for the **app** in docker-compose |
+| `POCT_MCP_HOST_PORT` | `8011` | Host port mapping for the **MCP server** in docker-compose |
+| `POCT_STACK_NAME` | `poc-tracker` | Names the compose project, containers, network, and data volume — set it to run more than one instance on the same host (see below) |
+| `POCT_IMAGE` | `poc-tracker:local` | Image tag built/run by docker-compose — give each instance its own tag so rebuilding one doesn't overwrite another's image |
+| `POCT_ENABLE_DEMO_TOOLS` | `false` | Show the admin **Settings → Demo Data** page for loading/removing a sample portfolio — keep unset on production |
 
 ## Backups & restore
 
@@ -154,11 +214,30 @@ There are **three roles**:
 |---|---|---|
 | **Admin** | Everything, including settings, lookups, the library, and user management. | Created in **Settings → Users**, or seeded. |
 | **Standard user** | Add/edit projects, use cases, notes, customers — but not admin surfaces. | Created in **Settings → Users**, or provisioned by an internal SSO provider. |
-| **External viewer** | **Read-only**, and sees **only the projects shared with them** (plus their reports). No customers list, no editing. | Created in **Settings → Users**, or auto-provisioned by an SSO provider configured for external users (e.g. Google). |
+| **External viewer** | **Read-only**, and sees **only the projects shared with them** — use cases, notes, and (non-internal-only) tasks, plus their reports. No customers list, no editing. | Invited by email from a project's **Shared access** panel, created in **Settings → Users**, or auto-provisioned by an SSO provider configured for external users (e.g. Google). |
 
 **Sharing a project.** On a project's page, an **admin** or that project's assigned **Sales
 Engineer** sees a **Shared access** panel to grant or revoke read access for external viewers.
-A viewer with no grants sees an empty "nothing shared yet" state.
+From that panel you can **invite someone by email** (name, company, email): they get a link to
+set a password and view the project — no pre-existing account needed. Manage all external users
+(status, projects, resend, remove) in the **External users** box under **Settings → Users**.
+Inviting requires an SMTP server configured under **Settings → Email**. Full detail in
+[docs/INVITATIONS.md](docs/INVITATIONS.md). A viewer with no grants sees an empty
+"nothing shared yet" state.
+
+**Internal-only notes & tasks.** When you add or edit a **journal note** (or a **task**), you can
+mark it **Internal only** to hide it from external viewers everywhere they'd otherwise see it —
+the project page, the on-screen report, the PDF/DOCX, and the artifacts zip. Everything is visible
+by default; you opt a single item out. Internal users always see internal-only items, flagged with
+a badge.
+
+**Report audience (client-facing vs internal).** A report's *audience* is decoupled from who
+generates it. On any report an internal user picks **Client-facing** (the default — internal-only
+notes and tasks are excluded, so it's safe to hand to a customer) or **Internal (all)** (everything
+included, internal items flagged and the download named `…-internal…`). The choice flows to every
+export — the on-screen report, PDF, Word, and the artifacts zip (including which note attachments
+are bundled). It's a one-way gate: an external viewer always gets the client-facing report and can
+never force the internal one.
 
 **Federated customer logins.** When you add an OIDC provider in **Settings → Identity
 Providers**, set **New-user access** to *External viewer* so customer/partner logins (e.g.
@@ -188,7 +267,7 @@ Two features use it:
   other formats are converted to text. The project's **existing use cases are passed along so the
   model avoids duplicates**. You review and edit the candidates, pick which to keep, and they're
   added as use cases. (Scanned/image-only PDFs may have no selectable text; legacy `.xls` should
-  be re-saved as `.xlsx`.) For the most thorough results, you can also connect POC Tracker as an
+  be re-saved as `.xlsx`.) For the most thorough results, you can also connect Questlog as an
   **MCP server** and ask Claude to add use cases directly — the import page links to setup.
 
 No API call is made until you configure a provider and trigger a feature; nothing is sent to a
@@ -215,7 +294,7 @@ account. Refresh tokens are stored **encrypted** (Fernet); the flow uses PKCE + 
 
 Because users bring **personal / external** Google accounts, the OAuth consent screen must be set
 to **External**, which brings Google's test-user limit and (until the app is published/verified)
-a weekly re-consent — POC Tracker handles that with a **Reconnect** prompt. The full Google Cloud
+a weekly re-consent — Questlog handles that with a **Reconnect** prompt. The full Google Cloud
 walkthrough, field mapping, sync semantics, and troubleshooting are in **[docs/TASKS.md](docs/TASKS.md)**.
 
 ## REST API
@@ -233,12 +312,14 @@ Full interactive docs at `/docs`. See [docs/API.md](docs/API.md).
 The MCP server lets an AI assistant both **read** and **write** POC data over the REST API:
 
 - **Query/report** — `list_projects`, `find_projects`, `get_project`, `list_customers`,
-  `list_use_case_library`, `list_lookups`, `all_pocs_summary`, `project_report`, `list_tasks`,
-  `get_task`.
+  `list_use_case_library`, `list_lookups`, `all_pocs_summary`, `project_report` (client-facing by
+  default; pass `include_internal=true` to include internal-only notes), `list_tasks`, `get_task`,
+  `list_notes`, `get_note`.
 - **Write** — `add_custom_use_cases` (bulk-add a list of use cases to a project — the main
   one for "here's a list, add them"), `add_custom_use_case`, `add_use_cases_from_library`,
   `update_use_case`, `set_use_case_status`, `delete_use_case`, `create_project`,
-  `create_customer`, `create_task`, `update_task`, `set_task_status`, `delete_task`.
+  `create_customer`, `add_note`, `update_note`, `delete_note`, `create_task`, `update_task`,
+  `set_task_status`, `delete_task`.
 
 Task tools are **admin-wide** and take an explicit `owner` (username or id), since the MCP
 server authenticates as a machine rather than a logged-in user. See [docs/TASKS.md](docs/TASKS.md).
@@ -331,7 +412,7 @@ the UI, then reads it live:
 export POCT_MCP_TRANSPORT=streamable-http
 export POCT_MCP_HOST=0.0.0.0          # 0.0.0.0 so a remote gateway can reach it
 export POCT_MCP_PORT=8011
-export POCT_MCP_BASE_URL=http://localhost:8010        # where the POC Tracker app runs
+export POCT_MCP_BASE_URL=http://localhost:8010        # where the Questlog app runs
 export POCT_DATA_DIR=/path/to/shared/data             # same data dir as the app (for both tokens)
 poct-mcp
 ```
@@ -349,8 +430,8 @@ live from the shared volume — no restart.
 
 | Layer | Address | Notes |
 |---|---|---|
-| POC Tracker **app** (REST API) | `http://<host>:8010` | `POCT_MCP_BASE_URL` points the MCP server here |
-| POC Tracker **MCP server** | `http://<host>:8011/mcp` | what the Saviynt gateway connects to |
+| Questlog **app** (REST API) | `http://<host>:8010` | `POCT_MCP_BASE_URL` points the MCP server here |
+| Questlog **MCP server** | `http://<host>:8011/mcp` | what the Saviynt gateway connects to |
 
 In the Saviynt gateway, enter:
 
@@ -411,3 +492,6 @@ ruff check app tests
 - [docs/SCHEMA.md](docs/SCHEMA.md) — the data model
 - [docs/API.md](docs/API.md) — REST API overview
 - [docs/TASKS.md](docs/TASKS.md) — the Task Manager and Google Tasks two-way sync (incl. Google Cloud setup)
+- [docs/READOUT.md](docs/READOUT.md) — the executive readout deck (.pptx): scorecard, AI narrative, and branded templates
+- [docs/RELEASING.md](docs/RELEASING.md) — versioning (SemVer) and the branch → commit → tag release workflow
+- [docs/POSTGRES.md](docs/POSTGRES.md) — planning notes for a future SQLite → Postgres migration (not built)

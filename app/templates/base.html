@@ -13,6 +13,7 @@
 
   <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}" />
   <link rel="icon" href="{{ branding.favicon }}" />
+  <link rel="apple-touch-icon" href="/static/questlog-icon-512.png" />
 
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   {% block head_extra %}{% endblock %}
@@ -35,10 +36,8 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar__brand">
         <div class="sidebar__brand-lockup">
-          <svg class="sidebar__brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-               style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
-          <div class="sidebar__brand-name"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</div>
+          <img class="brand-mark" src="/static/questlog-icon.svg?v={{ asset_v }}" width="32" height="32" alt="{{ branding.name }}" />
+          <div class="sidebar__brand-name">{{ branding.name }}</div>
         </div>
         {% if branding.tagline %}<div class="sidebar__brand-tagline">{{ branding.tagline }}</div>{% endif %}
       </div>
@@ -51,6 +50,15 @@
           </svg>
           Dashboard
         </a>
+
+        {% if current_user and current_user.is_internal %}
+        <a href="/ui/projects/wizard" class="sidebar__link {% if active_section == 'new_poc' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <path d="M8 3.5v9M3.5 8h9"/>
+          </svg>
+          New POC
+        </a>
+        {% endif %}
 
         <a href="/ui/projects" class="sidebar__link {% if active_section == 'projects' %}is-active{% endif %}">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -82,6 +90,13 @@
           </svg>
           Use Case Library
         </a>
+
+        <a href="/ui/templates" class="sidebar__link {% if active_section == 'templates' %}is-active{% endif %}">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2.5" y="2" width="8" height="11" rx="1"/><path d="M5 5h3M5 7.5h3M5 10h2"/><path d="M11 4.5v9.5H4.5"/>
+          </svg>
+          POC Templates
+        </a>
         {% endif %}
 
         <a href="/ui/reports" class="sidebar__link {% if active_section == 'reports' %}is-active{% endif %}">
@@ -111,8 +126,10 @@
         </a>
         {% endif %}
 
+        {% if current_user and current_user.is_internal %}
         <div class="sidebar__section-label">External</div>
         <a href="/docs" target="_blank" class="sidebar__link">API Docs ↗</a>
+        {% endif %}
       </nav>
 
       <div class="sidebar__footer">v{{ app_version }} · {{ current_user.display_label if current_user else "" }}</div>
@@ -143,7 +160,7 @@
           <span aria-hidden="true">{{ '☀' if theme == 'dark' else '☾' }}</span>
         </button>
         {% if current_user %}
-          <span class="topbar__user-name">{{ current_user.display_label }}</span>
+          <a class="topbar__user-name" href="/ui/profile" title="My profile">{{ current_user.display_label }}</a>
           <form action="/ui/logout" method="post" style="margin:0;">
             <button type="submit" class="btn btn--ghost btn--sm">Sign out</button>
           </form>
@@ -152,6 +169,27 @@
     </header>
 
     <main class="main">
+      {% if needs_email_setup %}
+      <div class="app-banner app-banner--danger" role="alert">
+        <span class="app-banner__text">
+          <strong>No email address on your account.</strong>
+          You won't be able to reset your password if you're ever locked out.
+          <a href="/ui/profile">Add your email now →</a>
+        </span>
+      </div>
+      {% endif %}
+      {% if smtp_setup_needed %}
+      <div class="app-banner app-banner--warning" role="alert" id="smtp-banner">
+        <span class="app-banner__text">
+          <strong>No outbound email server configured.</strong>
+          Password-reset emails can't be sent until SMTP is set up.
+          <a href="/ui/settings/email">Configure SMTP →</a>
+        </span>
+        <button type="button" class="app-banner__dismiss" aria-label="Dismiss"
+                title="Dismiss until next sign-in"
+                hx-post="/ui/dismiss-smtp-banner" hx-target="#smtp-banner" hx-swap="outerHTML">×</button>
+      </div>
+      {% endif %}
       {% block main %}{% endblock %}
     </main>
 

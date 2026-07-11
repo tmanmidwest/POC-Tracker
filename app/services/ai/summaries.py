@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session_factory
 from app.models import AIProvider, Project
 from app.services.ai.base import GenerationError
+from app.services.audit import record_event
 from app.services.ai.registry import get_provider_spec
 from app.services.rich_text import sanitize_note_html
 from app.services.secret_box import decrypt_secret
@@ -83,13 +84,18 @@ def generate_project_summary(db: Session, project: Project) -> SummaryResult:
     )
 
 
-def stream_project_summary(project_id: int) -> Iterator[str]:
+def stream_project_summary(
+    project_id: int, *, actor_label: str | None = None
+) -> Iterator[str]:
     """Stream an executive summary and persist it when the stream completes.
 
     Owns its own DB session so it stays valid for the life of the HTTP stream
     (the request's session is closed once the route returns the response). Yields
     text chunks; on completion, saves the accumulated summary to the project. A
     provider without streaming falls back to a single non-streamed chunk.
+
+    ``actor_label`` (the requesting user) is only used to attribute a mid-stream
+    failure event in the activity log.
     """
     db = get_session_factory()()
     try:
@@ -122,6 +128,15 @@ def stream_project_summary(project_id: int) -> Iterator[str]:
                 parts.append(text)
                 yield text
         except GenerationError as exc:
+            record_event(
+                category="project", event_type="exec_summary.failed", outcome="failure",
+                actor_type="user" if actor_label else "system",
+                actor_label=actor_label or "ai-stream",
+                target_type="project", target_id=project.id,
+                target_label=project.display_name,
+                message=f"Executive summary streaming failed for '{project.display_name}'",
+                detail={"surface": "ui-stream", "error": str(exc)},
+            )
             yield f"\n\n⚠️ {exc}"
             return
 

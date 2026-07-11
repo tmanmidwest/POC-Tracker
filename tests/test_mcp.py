@@ -116,11 +116,15 @@ def test_task_tools_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
     task = m.create_task(
         owner=owner, title="Prep demo env", status="To Do", priority="High",
         project_id=1, due_date="2026-07-15", details="<p>Spin up sandbox</p>",
+        is_internal_only=True,
     )
     assert task["owner"]["username"] == owner
     assert task["status"]["name"] == "To Do"
     assert task["priority"]["name"] == "High"
     assert task["project"]["id"] == 1
+    # The internal-only flag is set on create and can be toggled off on update.
+    assert task["is_internal_only"] is True
+    assert m.update_task(task["id"], is_internal_only=False)["is_internal_only"] is False
 
     # It shows up when listing by owner.
     listed = m.list_tasks(owner=owner)
@@ -136,6 +140,37 @@ def test_task_tools_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
     assert upd["title"] == "Prep demo environment"
     assert upd["priority"]["name"] == "Urgent"
     assert m.delete_task(task["id"])["deleted"] is True
+
+
+def test_note_tools_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
+    m = mcp_env
+
+    # Add a note to the seeded sample project (id 1); HTML is sanitized.
+    note = m.add_note(
+        project_id=1,
+        body="<p>Kickoff <strong>call</strong> done</p><script>bad()</script>",
+        is_internal_only=True,
+    )
+    assert note["project_id"] == 1
+    assert note["is_internal_only"] is True
+    assert "call" in note["body"] and "<script>" not in (note["body_html"] or "")
+    nid = note["id"]
+
+    # List + get.
+    assert any(n["id"] == nid for n in m.list_notes(1))
+    assert m.get_note(nid)["id"] == nid
+
+    # Update fields.
+    upd = m.update_note(nid, body="<p>Revised</p>", is_internal_only=False, note_date="2026-02-03")
+    assert "Revised" in upd["body"]
+    assert upd["is_internal_only"] is False
+    assert upd["note_date"] == "2026-02-03"
+
+    # The report now includes the journal note.
+    assert "Journal notes" in m.project_report(1)
+
+    # Delete.
+    assert m.delete_note(nid)["deleted"] is True
 
 
 def test_task_unknown_owner_is_clear_error(mcp_env) -> None:  # type: ignore[no-untyped-def]

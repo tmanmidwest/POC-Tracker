@@ -167,6 +167,43 @@ def test_generate_exec_summary(admin_ui: TestClient, monkeypatch: pytest.MonkeyP
     assert "going well" in admin_ui.get(f"/ui/reports/projects/{pid}").text
 
 
+def test_generate_failure_is_recorded(
+    admin_ui: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    pid = _make_project("Failing POC")
+    _add_provider()
+
+    def boom(*, api_key, model, system, prompt, max_tokens=1500, usage=None):
+        from app.services.ai.base import GenerationError
+
+        raise GenerationError("Anthropic API error: 429 rate limited")
+
+    from app.services.ai import registry
+
+    monkeypatch.setitem(
+        registry.PROVIDERS,
+        "anthropic",
+        registry.PROVIDERS["anthropic"].__class__(
+            key="anthropic", label="Anthropic (Claude)",
+            default_model="claude-opus-4-8", suggested_models=["claude-opus-4-8"],
+            implemented=True, generate=boom,
+        ),
+    )
+
+    resp = admin_ui.post(
+        f"/ui/projects/{pid}/exec-summary/generate", follow_redirects=False
+    )
+    assert resp.status_code == 303  # redirects back, no crash
+
+    events = json.loads(admin_ui.get("/ui/activity/export.json?category=project").text)
+    failures = [e for e in events if e["event_type"] == "exec_summary.failed"]
+    assert len(failures) == 1
+    assert failures[0]["outcome"] == "failure"
+    assert "429 rate limited" in failures[0]["detail"]["error"]
+
+
 def test_generate_without_provider_flashes_error(admin_ui: TestClient) -> None:
     pid = _make_project("No Provider POC")
     resp = admin_ui.post(

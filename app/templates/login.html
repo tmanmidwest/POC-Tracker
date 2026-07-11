@@ -7,7 +7,8 @@
   <link rel="preconnect" href="https://fonts.cdnfonts.com" />
   <link href="https://fonts.cdnfonts.com/css/geist" rel="stylesheet" />
   <link href="https://fonts.cdnfonts.com/css/geist-mono" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}" />
+  <link rel="icon" href="{{ branding.favicon }}" />
   <style>
     .local-login { margin-top: var(--s-5); border-top: 1px solid var(--line); }
     .local-login > summary {
@@ -33,10 +34,11 @@
   <div class="auth-shell">
     <div class="auth-card">
       <div class="auth-card__brand">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-             style="color: {{ branding.color or 'var(--primary)' }};">{{ branding.icon_svg | safe }}</svg>
-        <h1 class="auth-card__title"{% if branding.color %} style="color: {{ branding.color }};"{% endif %}>{{ branding.name }}</h1>
+        <div class="brand-lockup">
+          <img class="brand-mark" src="/static/questlog-icon.svg?v={{ asset_v }}" width="52" height="52" alt="{{ branding.name }}" />
+          <h1 class="auth-card__title">{{ branding.name }}</h1>
+        </div>
+        {% if branding.tagline %}<p class="auth-card__brand-tagline">{{ branding.tagline }}</p>{% endif %}
         <p class="auth-card__subtitle">Sign in to continue</p>
       </div>
 
@@ -69,6 +71,9 @@
             <input type="password" id="password" name="password" class="input" required autocomplete="current-password" />
           </div>
           <button type="submit" class="btn btn--secondary" style="width: 100%;">Sign in</button>
+          <p class="text-muted text-xs" style="text-align:center; margin-top: var(--s-3);">
+            <a href="/forgot-password">Forgot your password?</a>
+          </p>
         </form>
       </details>
       {% else %}
@@ -83,13 +88,10 @@
           <input type="password" id="password" name="password" class="input" required autocomplete="current-password" />
         </div>
         <button type="submit" class="btn btn--primary" style="width: 100%;">Sign in</button>
+        <p class="text-muted text-xs" style="text-align:center; margin-top: var(--s-3);">
+          <a href="/forgot-password">Forgot your password?</a>
+        </p>
       </form>
-      {% endif %}
-
-      {% if branding.tagline %}
-      <div style="margin-top: var(--s-8); text-align: center;">
-        <div class="auth-card__mark">{{ branding.tagline }}</div>
-      </div>
       {% endif %}
     </div>
   </div>

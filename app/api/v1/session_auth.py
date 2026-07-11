@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser
 from app.schemas.auth import LoginRequest, LoginResponse, SessionInfoResponse
+from app.services import login_security
 from app.services.audit import record_event
 from app.services.auth import (
     SESSION_USER_ID_KEY,
@@ -77,16 +78,32 @@ def login(
         _fail("inactive")
         raise auth_failed
 
+    if login_security.is_locked(user):
+        log.info(
+            "login_blocked_locked", extra={"username": body.username}
+        )
+        login_security.record_blocked_attempt(
+            db, user, request=request, surface="api"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=login_security.LOCKED_MESSAGE,
+        )
+
     if not verify_password(body.password, user.password_hash):
         log.info(
             "login_failed", extra={"reason": "bad_password", "username": body.username}
         )
         _fail("bad_password")
+        login_security.register_failure(db, user, request=request, surface="api")
         raise auth_failed
 
     # Successful login
+    login_security.clear_lockout(user)
     request.session[SESSION_USER_ID_KEY] = user.id
     request.session[SESSION_USERNAME_KEY] = user.username
+    # Re-show any dismissed setup banners on each fresh sign-in.
+    request.session.pop("smtp_banner_dismissed", None)
     user.last_login_at = datetime.now(UTC)
     db.commit()
 

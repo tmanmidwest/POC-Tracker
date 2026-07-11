@@ -1,4 +1,4 @@
-"""Seed data loader for POC Tracker.
+"""Seed data loader for Questlog.
 
 ``seed_database()`` is idempotent: it can be safely called on every startup. It
 only inserts rows that are missing, never updates or deletes existing data.
@@ -444,7 +444,7 @@ def write_initial_credentials_file(settings: Settings) -> None:
     """Write the INITIAL_CREDENTIALS.txt file for operator reference."""
     settings.ensure_data_dir()
     content = (
-        f"POC Tracker — Initial Credentials\n"
+        f"Questlog — Initial Credentials\n"
         f"{'=' * 50}\n"
         f"\n"
         f"Web UI: http://<your-host>:{settings.bind_port}\n"
@@ -630,6 +630,9 @@ def reset_admin_password(db: Session, settings: Settings | None = None) -> bool:
     user.password_hash = hash_password(settings.initial_admin_password)
     user.is_active = True
     user.is_admin = True
+    # Break-glass: also lift any failed-login lockout so the operator can sign in.
+    user.failed_login_count = 0
+    user.locked_at = None
     user.updated_at = datetime.now(UTC)
     db.commit()
     log.info("reset_admin_password", extra={"username": username})

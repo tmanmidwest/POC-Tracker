@@ -104,6 +104,40 @@ def test_list_filter_get_update_delete(api_client: TestClient) -> None:
     assert api_client.get(f"/api/v1/tasks/{tid}").status_code == 404
 
 
+def test_internal_only_flag_create_and_update(api_client: TestClient) -> None:
+    owner = _admin_username(api_client)
+
+    # Defaults to visible when omitted.
+    default = api_client.post(
+        "/api/v1/tasks/", json={"owner": owner, "title": "Default vis"}
+    ).json()
+    assert default["is_internal_only"] is False
+
+    # Settable at create time and round-trips on read.
+    made = api_client.post(
+        "/api/v1/tasks/",
+        json={"owner": owner, "title": "Hidden task", "is_internal_only": True},
+    )
+    assert made.status_code == 201, made.text
+    tid = made.json()["id"]
+    assert made.json()["is_internal_only"] is True
+    assert api_client.get(f"/api/v1/tasks/{tid}").json()["is_internal_only"] is True
+
+    # Toggleable via patch, both directions.
+    off = api_client.patch(
+        f"/api/v1/tasks/{tid}", json={"is_internal_only": False}
+    ).json()
+    assert off["is_internal_only"] is False
+    on = api_client.patch(
+        f"/api/v1/tasks/{tid}", json={"is_internal_only": True}
+    ).json()
+    assert on["is_internal_only"] is True
+
+    # A patch that omits the flag leaves it unchanged.
+    untouched = api_client.patch(f"/api/v1/tasks/{tid}", json={"title": "Renamed"}).json()
+    assert untouched["is_internal_only"] is True
+
+
 def test_unknown_owner_and_status_are_clear_errors(api_client: TestClient) -> None:
     r = api_client.post("/api/v1/tasks/", json={"owner": "nobody", "title": "x"})
     assert r.status_code == 422 and "owner" in r.json()["detail"].lower()

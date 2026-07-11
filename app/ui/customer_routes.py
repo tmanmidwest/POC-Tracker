@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, Contact, ContactRole, Customer, Project
+from app.services import customer_logo
 from app.services.audit import record_event
 from app.ui.dependencies import require_internal_ui
 from app.ui.flash import flash
@@ -26,6 +27,24 @@ def _clean(value: str | None) -> str | None:
         return None
     v = value.strip()
     return v or None
+
+
+def _apply_logo(
+    customer_id: int, logo: UploadFile | None, remove_logo: str | None
+) -> str | None:
+    """Save or remove a customer's logo from a form submission.
+
+    Returns a user-facing error message if the upload was rejected, else None.
+    """
+    if remove_logo:
+        customer_logo.delete(customer_id)
+        return None
+    if logo is not None and logo.filename:
+        try:
+            customer_logo.save(customer_id, logo.file.read())
+        except customer_logo.LogoError as exc:
+            return str(exc)
+    return None
 
 
 @router.get("/")
@@ -66,6 +85,7 @@ def create_customer(
     name: str = Form(...),
     website: str | None = Form(None),
     notes: str | None = Form(None),
+    logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -96,7 +116,10 @@ def create_customer(
         message=f"Created customer '{customer.name}'",
         detail={"surface": "ui"}, request=request,
     )
+    logo_err = _apply_logo(customer.id, logo, None)
     flash(request, f"Customer '{customer.name}' created.", "success")
+    if logo_err:
+        flash(request, f"Logo not saved: {logo_err}", "error")
     return RedirectResponse(url=f"/ui/customers/{customer.id}", status_code=303)
 
 
@@ -153,6 +176,8 @@ def update_customer(
     name: str = Form(...),
     website: str | None = Form(None),
     notes: str | None = Form(None),
+    logo: UploadFile | None = File(None),
+    remove_logo: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -167,6 +192,10 @@ def update_customer(
     except IntegrityError:
         db.rollback()
         flash(request, "A customer with that name already exists.", "error")
+        return RedirectResponse(url=f"/ui/customers/{customer_id}/edit", status_code=303)
+    logo_err = _apply_logo(customer_id, logo, remove_logo)
+    if logo_err:
+        flash(request, logo_err, "error")
         return RedirectResponse(url=f"/ui/customers/{customer_id}/edit", status_code=303)
     record_event(
         category="customer", event_type="customer.updated", actor_type="user",
@@ -202,6 +231,7 @@ def delete_customer(
     name = customer.name
     db.delete(customer)
     db.commit()
+    customer_logo.delete(customer_id)
     record_event(
         category="customer", event_type="customer.deleted", actor_type="user",
         actor_label=user.username, actor_id=user.id, target_type="customer",

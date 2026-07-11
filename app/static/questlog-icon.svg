@@ -1,0 +1,5 @@
+<svg width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Questlog">
+  <rect x="0" y="0" width="96" height="96" rx="22" fill="#1c1b18"/>
+  <path d="M40 22 L56 22 L53 54 L43 54 Z" fill="#EF9F27"/>
+  <polygon points="48,60 55,67 48,74 41,67" fill="#EF9F27"/>
+</svg>

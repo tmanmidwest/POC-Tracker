@@ -16,14 +16,27 @@ from __future__ import annotations
 from urllib.parse import quote
 
 # Theme accent (matches --primary in app.css); used when no color is set.
-DEFAULT_COLOR = "#1e293b"
-DEFAULT_NAME = "POC Tracker"
-DEFAULT_ICON = "suitcase"
+DEFAULT_COLOR = "#EF9F27"  # quest gold
+DEFAULT_NAME = "questlog"
+DEFAULT_ICON = "questlog"
 # Small sub-header under the brand name (sidebar + login). Empty hides it.
-DEFAULT_TAGLINE = "POC · non-production"
+DEFAULT_TAGLINE = "Every POC is a quest — track it, win it."
 
 # key -> {"label": human name, "svg": inner SVG markup for a 0 0 24 24 viewBox}
+# Most presets are stroke glyphs (stroke="currentColor"); the Questlog mark is a
+# fill glyph — its paths set fill="currentColor" so they show through the parent
+# <svg fill="none">. The <g transform> normalizes the mark's native 96-unit
+# geometry into the shared 24x24 viewBox.
 ICON_PRESETS: dict[str, dict[str, str]] = {
+    "questlog": {
+        "label": "Questlog mark",
+        "svg": (
+            '<g transform="translate(12 12) scale(0.385) translate(-48 -48)">'
+            '<path d="M40 22 L56 22 L53 54 L43 54 Z" fill="currentColor"/>'
+            '<polygon points="48,60 55,67 48,74 41,67" fill="currentColor"/>'
+            "</g>"
+        ),
+    },
     "suitcase": {
         "label": "Suitcase",
         "svg": (
@@ -91,8 +104,21 @@ def icon_svg(key: str | None) -> str:
     return ICON_PRESETS[resolve_icon_key(key)]["svg"]
 
 
+# The Questlog app icon: the gold mark on its fixed midnight tile. Used as the
+# favicon whenever the Questlog mark is selected — a recognizable brand tile that,
+# per the brand rules, is NOT recolored per theme.
+_QUESTLOG_FAVICON = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'>"
+    "<rect width='96' height='96' rx='22' fill='#1c1b18'/>"
+    "<path d='M40 22 L56 22 L53 54 L43 54 Z' fill='#EF9F27'/>"
+    "<polygon points='48,60 55,67 48,74 41,67' fill='#EF9F27'/></svg>"
+)
+
+
 def favicon_data_uri(key: str | None, color: str) -> str:
     """Build a data: URI for the chosen icon in the brand color."""
+    if resolve_icon_key(key) == "questlog":
+        return "data:image/svg+xml," + quote(_QUESTLOG_FAVICON)
     svg = (
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' "
         f"fill='none' stroke='{color}' stroke-width='1.5' stroke-linecap='round' "

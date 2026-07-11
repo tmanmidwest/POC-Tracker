@@ -272,7 +272,7 @@ def validate_archive(path: Path, passphrase: str | None) -> dict:
                 z.setpassword(passphrase.encode("utf-8"))
             names = set(z.namelist())
             if _MANIFEST not in names or _DB_MEMBER not in names:
-                raise BackupError("This file is not a POC Tracker backup archive.")
+                raise BackupError("This file is not a Questlog backup archive.")
             try:
                 manifest = json.loads(z.read(_MANIFEST))
                 db_bytes = z.read(_DB_MEMBER)
@@ -287,7 +287,7 @@ def validate_archive(path: Path, passphrase: str | None) -> dict:
 
     if manifest.get("format_version", 0) > FORMAT_VERSION:
         raise BackupError(
-            "This backup was created by a newer version of POC Tracker and "
+            "This backup was created by a newer version of Questlog and "
             "cannot be restored here."
         )
     if _sha256_bytes(db_bytes) != manifest.get("db_sha256"):

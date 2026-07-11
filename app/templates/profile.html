@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set page_title = "My Profile" %}
+{% block breadcrumb %}<span>My Profile</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">My Profile</h1>
+    <p class="page-header__subtitle">Manage your account details and password.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ui/profile" class="card" style="max-width: 480px; margin-bottom: var(--s-6);">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="username">Username</label>
+      <input class="input" id="username" value="{{ target_user.username }}" disabled />
+      <div class="form-hint">Your sign-in name can't be changed here.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="display_name">Display name</label>
+      <input class="input" id="display_name" name="display_name" value="{{ target_user.display_name or '' }}" maxlength="200" placeholder="e.g. Robby Smith" />
+      <div class="form-hint">Shown around the app. Defaults to your username.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="email">Email</label>
+      {% if target_user.is_external %}
+      <input class="input" id="email" value="{{ target_user.email or '' }}" disabled />
+      <div class="form-hint">This is your sign-in address and is managed by your host.</div>
+      {% else %}
+      <input class="input" type="email" id="email" name="email" value="{{ target_user.email or '' }}" maxlength="320" placeholder="e.g. you@example.com" autocomplete="email" />
+      <div class="form-hint">Used to email you a link if you ever need to reset your password. Must be unique.</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--primary">Save changes</button>
+  </div>
+</form>
+
+{% if target_user.password_hash %}
+<h3 class="card__title" style="margin-bottom: var(--s-3);">Change password</h3>
+{% if password_error %}<div class="inline-error">{{ password_error }}</div>{% endif %}
+<form method="post" action="/ui/profile/password" class="card" style="max-width: 480px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="current_password">Current password<span class="label__required">*</span></label>
+      <input class="input" type="password" id="current_password" name="current_password" required autocomplete="current-password" />
+    </div>
+    <div class="form-row">
+      <label class="label" for="new_password">New password<span class="label__required">*</span></label>
+      <input class="input" type="password" id="new_password" name="new_password" required minlength="8" autocomplete="new-password" />
+      <div class="form-hint">Minimum 8 characters.</div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="confirm_password">Confirm new password<span class="label__required">*</span></label>
+      <input class="input" type="password" id="confirm_password" name="confirm_password" required minlength="8" autocomplete="new-password" />
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--primary">Change password</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

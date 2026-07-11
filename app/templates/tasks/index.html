@@ -25,6 +25,9 @@
       <span class="text-muted text-xs">Syncing to your “POC Tracker” list{% if cred.google_email %} · {{ cred.google_email }}{% endif %}.</span>
       {% if cred.last_error %}<span class="badge badge--warning" title="{{ cred.last_error }}">last sync had an issue</span>{% endif %}
       <span style="flex:1;"></span>
+      <form method="post" action="/ui/tasks/google/sync" style="margin:0;">
+        <button class="btn btn--ghost btn--sm" title="Push your changes and pull any made in Google">Sync now</button>
+      </form>
       <form method="post" action="/ui/tasks/google/disconnect" style="margin:0;"
             onsubmit="return confirm('Disconnect Google Tasks? Your existing Google tasks stay, but new changes won’t sync.');">
         <button class="btn btn--ghost btn--sm">Disconnect</button>

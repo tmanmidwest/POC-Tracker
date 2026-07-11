@@ -39,7 +39,7 @@
     <div class="form-row">
       <label class="label" for="brand_name">Brand name<span class="label__required">*</span></label>
       <input class="input" id="brand_name" name="brand_name" required maxlength="100" autofocus
-             value="{{ form.brand_name or '' }}" placeholder="e.g. POC Tracker" />
+             value="{{ form.brand_name or '' }}" placeholder="e.g. Questlog" />
       <div class="form-hint">Shown in the sidebar, on the login page, and in the browser tab title.</div>
     </div>
 
@@ -82,6 +82,67 @@
     <button type="submit" class="btn btn--primary">Save branding</button>
   </div>
 </form>
+
+<div class="card" style="max-width: 640px; margin-top: var(--s-6);">
+  <div class="card__body">
+    <h2 style="margin:0 0 4px; font-size:16px;">Readout deck template</h2>
+    <p class="form-hint" style="margin-bottom: var(--s-4);">
+      Optional. Upload a branded PowerPoint template (<strong>.pptx</strong> or
+      <strong>.potx</strong>) — its slide master, theme, and fonts sit underneath the
+      generated executive readout deck (<strong>Reports → Download deck</strong>), and the
+      deck is laid out to match the template's slide size (16:9 or 4:3). Leave unset to use
+      the plain built-in layout.
+    </p>
+
+    {% if has_deck_template %}
+    <div class="form-row" style="display:flex; align-items:center; gap:var(--s-3);">
+      <span class="badge badge--success">Template uploaded</span>
+      <form method="post" action="/ui/settings/branding/deck-template/delete" style="margin:0;">
+        <button type="submit" class="btn btn--ghost btn--sm">Remove template</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="form-hint" style="margin-bottom: var(--s-4);">No template uploaded — using the built-in layout.</div>
+    {% endif %}
+
+    <form method="post" action="/ui/settings/branding/deck-template"
+          enctype="multipart/form-data" style="display:flex; align-items:center; gap:var(--s-3);">
+      <input class="input" type="file" name="template_file" accept=".pptx,.potx"
+             style="max-width:360px;" required />
+      <button type="submit" class="btn btn--primary">Upload</button>
+    </form>
+    <div class="form-hint" style="margin-top: var(--s-3);">Max 25 MB. Must be a valid .pptx or .potx.</div>
+
+    <hr style="border:none; border-top:1px solid var(--line); margin: var(--s-5) 0;" />
+
+    <h2 style="margin:0 0 4px; font-size:16px;">Readout deck logo</h2>
+    <p class="form-hint" style="margin-bottom: var(--s-4);">
+      Optional. An image stamped in the top-right corner of every deck slide. Works with or
+      without a template. PNG with transparency looks best.
+    </p>
+
+    {% if has_deck_logo %}
+    <div class="form-row" style="display:flex; align-items:center; gap:var(--s-3);">
+      <img src="/ui/settings/branding/deck-logo/preview" alt="Deck logo"
+           style="height:32px; max-width:160px; object-fit:contain; background:var(--primary-soft); border:1px solid var(--line); border-radius:4px; padding:2px;" />
+      <span class="badge badge--success">Logo uploaded</span>
+      <form method="post" action="/ui/settings/branding/deck-logo/delete" style="margin:0;">
+        <button type="submit" class="btn btn--ghost btn--sm">Remove logo</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="form-hint" style="margin-bottom: var(--s-4);">No logo uploaded.</div>
+    {% endif %}
+
+    <form method="post" action="/ui/settings/branding/deck-logo"
+          enctype="multipart/form-data" style="display:flex; align-items:center; gap:var(--s-3);">
+      <input class="input" type="file" name="logo_file" accept="image/*"
+             style="max-width:360px;" required />
+      <button type="submit" class="btn btn--primary">Upload</button>
+    </form>
+    <div class="form-hint" style="margin-top: var(--s-3);">Max 5 MB. PNG, JPG, or GIF.</div>
+  </div>
+</div>
 
 <style>
   .icon-grid {

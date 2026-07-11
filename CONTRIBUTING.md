@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to the POC Tracker.
+Thanks for considering a contribution to the Questlog.
 
 This is a POC tool with a deliberately narrow scope. Contributions that fit the scope and keep the app simple are welcome.
 
@@ -105,4 +105,8 @@ When filing an issue, include:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License (see [LICENSE](LICENSE)).
+This is proprietary software owned by the licensor and made available under the
+**PolyForm Strict License 1.0.0** (see [LICENSE](LICENSE)) — it is not open source.
+By submitting a contribution, you assign all right, title, and interest in that
+contribution to the licensor (Trevor Combs), so the project's ownership and license
+remain unambiguous.

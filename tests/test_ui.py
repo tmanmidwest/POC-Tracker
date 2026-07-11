@@ -399,6 +399,348 @@ def test_project_report_pdf(ui: TestClient) -> None:
     assert r.content[:5] == b"%PDF-"
 
 
+def test_project_readout_pptx(ui: TestClient) -> None:
+    import io
+    import zipfile
+
+    from app.db import get_session_factory
+    from app.models import ProjectUseCase
+
+    cid = _create_customer(ui, "Deck Co")
+    pid = _create_project(ui, cid, "Deck POC")
+    ui.post(f"/ui/projects/{pid}/use-cases/from-library",
+            data={"library_ids": ["1"]}, follow_redirects=False)
+    db = get_session_factory()()
+    uc = db.query(ProjectUseCase).filter(ProjectUseCase.project_id == pid).first()
+    ui.post(f"/ui/projects/use-cases/{uc.id}/screenshots",
+            files={"file": ("shot.png", _png(), "image/png")}, follow_redirects=False)
+
+    # The report page offers the deck download.
+    page = ui.get(f"/ui/reports/projects/{pid}")
+    assert "readout.pptx?v=" in page.text
+
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    assert "no-store" in r.headers.get("cache-control", "")  # never browser-cached
+    # A .pptx is a zip (PK magic) containing the presentation part.
+    assert r.content[:2] == b"PK"
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "ppt/presentation.xml" in names, names
+    assert any(n.startswith("ppt/slides/slide") for n in names), names
+    # Speaker notes are written for the presenter.
+    assert any(n.startswith("ppt/notesSlides/notesSlide") for n in names), names
+
+    # Every slide has a filled speaker-notes pane.
+    from pptx import Presentation
+    prs = Presentation(io.BytesIO(r.content))
+    assert prs.slides, "deck should have slides"
+    for slide in prs.slides:
+        assert slide.has_notes_slide
+        assert slide.notes_slide.notes_text_frame.text.strip()
+
+    # ?ai=1 with no provider configured still returns a valid deck (graceful fallback).
+    r_ai = ui.get(f"/ui/reports/projects/{pid}/readout.pptx?ai=1")
+    assert r_ai.status_code == 200
+    assert r_ai.content[:2] == b"PK"
+
+
+def _minimal_pptx_bytes() -> bytes:
+    import io as _io
+
+    from pptx import Presentation
+
+    buf = _io.BytesIO()
+    Presentation().save(buf)
+    return buf.getvalue()
+
+
+def test_readout_deck_template_upload_and_use(ui: TestClient) -> None:
+    import io
+    import zipfile
+
+    cid = _create_customer(ui, "Template Co")
+    pid = _create_project(ui, cid, "Template POC")
+
+    # No template yet.
+    page = ui.get("/ui/settings/branding")
+    assert "No template uploaded" in page.text
+
+    # Upload a valid .pptx as the deck template.
+    up = ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("brand.pptx", _minimal_pptx_bytes(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        follow_redirects=True,
+    )
+    assert up.status_code == 200
+    assert "Template uploaded" in ui.get("/ui/settings/branding").text
+
+    # A garbage upload is rejected.
+    bad = ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("bad.pptx", b"not a real pptx", "application/octet-stream")},
+        follow_redirects=True,
+    )
+    assert "valid PowerPoint" in bad.text
+
+    # The deck still builds while a template is active.
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert any(n.startswith("ppt/slides/slide") for n in names), names
+
+    # The deck follows the template's slide size (the minimal template is 4:3, 10").
+    from pptx import Presentation
+    from pptx.util import Inches
+    prs = Presentation(io.BytesIO(r.content))
+    assert prs.slide_width == Inches(10)  # 4:3, not forced to 16:9
+
+    # Remove it.
+    ui.post("/ui/settings/branding/deck-template/delete", follow_redirects=True)
+    assert "No template uploaded" in ui.get("/ui/settings/branding").text
+
+
+def _potx_bytes() -> bytes:
+    """A minimal .potx — a .pptx whose main part carries the template content-type."""
+    import io
+    import zipfile
+
+    pres_ct = "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
+    tmpl_ct = "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml"
+    src = zipfile.ZipFile(io.BytesIO(_minimal_pptx_bytes()))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for item in src.infolist():
+            body = src.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                body = body.replace(pres_ct.encode(), tmpl_ct.encode())
+            z.writestr(item, body)
+    return out.getvalue()
+
+
+def test_readout_deck_template_accepts_potx(ui: TestClient) -> None:
+    import io
+    import zipfile
+
+    cid = _create_customer(ui, "Potx Co")
+    pid = _create_project(ui, cid, "Potx POC")
+
+    # A .potx is rejected by python-pptx as-is; upload should normalize + accept it.
+    up = ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("brand.potx", _potx_bytes(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.template")},
+        follow_redirects=True,
+    )
+    assert up.status_code == 200
+    assert "Template uploaded" in ui.get("/ui/settings/branding").text
+
+    # It's stored as a valid .pptx, so a deck builds from it.
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert r.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert any(n.startswith("ppt/slides/slide") for n in names), names
+
+
+def test_readout_deck_template_drops_prebuilt_slides(ui: TestClient) -> None:
+    import io
+
+    from pptx import Presentation
+
+    # A template that already ships with example slides — they must not survive.
+    tmpl = Presentation()
+    tmpl.slides.add_slide(tmpl.slide_layouts[6])
+    tmpl.slides.add_slide(tmpl.slide_layouts[6])
+    buf = io.BytesIO()
+    tmpl.save(buf)
+
+    ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("brand.pptx", buf.getvalue(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        follow_redirects=True,
+    )
+    cid = _create_customer(ui, "Clear Co")
+    pid = _create_project(ui, cid, "Clear POC")
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    prs = Presentation(io.BytesIO(r.content))
+    # Project has no use cases → title + scorecard + next-steps = 3 generated slides,
+    # and neither of the template's 2 pre-built slides.
+    assert len(list(prs.slides)) == 3
+
+
+def test_deck_accent_follows_template_not_app(ui: TestClient) -> None:
+    import io
+
+    from pptx import Presentation
+
+    from app.db import get_session_factory
+    from app.models import AppBranding
+    from app.models.app_branding import BRANDING_ID
+    from app.services import branding as branding_service
+    from app.services import report_pptx
+
+    # Set a deliberately loud app accent so we can spot it leaking into a deck.
+    db = get_session_factory()()
+    row = db.get(AppBranding, BRANDING_ID)
+    if row is None:
+        row = AppBranding(id=BRANDING_ID, brand_name="POC Tracker", brand_color="#FF00FF")
+        db.add(row)
+    else:
+        row.brand_color = "#FF00FF"
+    db.commit()
+    db.close()
+    branding_service.invalidate()
+
+    cid = _create_customer(ui, "Accent Co")
+    pid = _create_project(ui, cid, "Accent POC")
+
+    def _accent_bar_rgb(content: bytes) -> str | None:
+        prs = Presentation(io.BytesIO(content))
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if shape.shape_type == 1:  # AUTO_SHAPE — the accent bar rectangle
+                    try:
+                        return str(shape.fill.fore_color.rgb).upper()
+                    except Exception:
+                        continue
+        return None
+
+    # No template → the built-in deck uses the app accent (magenta).
+    r1 = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert _accent_bar_rgb(r1.content) == "FF00FF"
+
+    # Upload a template; its theme accent should drive the deck instead.
+    tmpl = Presentation()
+    buf = io.BytesIO()
+    tmpl.save(buf)
+    theme_accent = report_pptx._template_accent(Presentation(io.BytesIO(buf.getvalue())))
+    assert theme_accent and theme_accent.upper() != "FF00FF"
+    ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("t.pptx", buf.getvalue(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        follow_redirects=True,
+    )
+
+    r2 = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    got = _accent_bar_rgb(r2.content)
+    assert got != "FF00FF"                    # the app accent did NOT leak in
+    assert got == theme_accent.upper()        # it followed the template's theme
+
+
+def test_templated_deck_omits_app_brand_name(ui: TestClient) -> None:
+    import io
+
+    from pptx import Presentation
+
+    from app.db import get_session_factory
+    from app.models import AppBranding
+    from app.models.app_branding import BRANDING_ID
+    from app.services import branding as branding_service
+
+    brand_name = "ACME-SE-INTERNAL-TOOL"
+    db = get_session_factory()()
+    row = db.get(AppBranding, BRANDING_ID)
+    if row is None:
+        row = AppBranding(id=BRANDING_ID, brand_name=brand_name, brand_color="")
+        db.add(row)
+    else:
+        row.brand_name = brand_name
+    db.commit()
+    db.close()
+    branding_service.invalidate()
+
+    cid = _create_customer(ui, "Brandline Co")
+    pid = _create_project(ui, cid, "Brandline POC")
+
+    def _all_text(content: bytes) -> str:
+        prs = Presentation(io.BytesIO(content))
+        return "\n".join(
+            sh.text_frame.text
+            for slide in prs.slides
+            for sh in slide.shapes
+            if sh.has_text_frame
+        )
+
+    # Built-in deck: the app brand name appears on the title slide.
+    r1 = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert brand_name in _all_text(r1.content)
+
+    # With a template: the app brand name is omitted — follow the template only.
+    tmpl = Presentation()
+    buf = io.BytesIO()
+    tmpl.save(buf)
+    ui.post(
+        "/ui/settings/branding/deck-template",
+        files={"template_file": ("t.pptx", buf.getvalue(),
+                                 "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+        follow_redirects=True,
+    )
+    r2 = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    assert brand_name not in _all_text(r2.content)
+    # The actual report content (project name) is still there.
+    assert "Brandline POC" in _all_text(r2.content)
+
+
+def test_readout_deck_default_is_16x9(ui: TestClient) -> None:
+    import io
+
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    cid = _create_customer(ui, "Aspect Co")
+    pid = _create_project(ui, cid, "Aspect POC")
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    prs = Presentation(io.BytesIO(r.content))
+    # No template → widescreen 16:9 (~13.333").
+    assert Inches(13) < prs.slide_width < Inches(14)
+
+
+def test_readout_deck_logo_stamped_on_every_slide(ui: TestClient) -> None:
+    import io
+
+    from pptx import Presentation
+
+    cid = _create_customer(ui, "Logo Co")
+    pid = _create_project(ui, cid, "Logo POC")
+
+    assert "No logo uploaded" in ui.get("/ui/settings/branding").text
+    up = ui.post(
+        "/ui/settings/branding/deck-logo",
+        files={"logo_file": ("logo.png", _png(), "image/png")},
+        follow_redirects=True,
+    )
+    assert up.status_code == 200
+    assert "Logo uploaded" in ui.get("/ui/settings/branding").text
+
+    # The preview endpoint serves the stored image.
+    pv = ui.get("/ui/settings/branding/deck-logo/preview")
+    assert pv.status_code == 200
+    assert pv.headers["content-type"].startswith("image/")
+
+    # A non-image upload is rejected.
+    bad = ui.post(
+        "/ui/settings/branding/deck-logo",
+        files={"logo_file": ("x.png", b"not an image", "image/png")},
+        follow_redirects=True,
+    )
+    assert "valid image" in bad.text
+
+    # Every generated slide carries the logo picture (PICTURE == shape_type 13).
+    r = ui.get(f"/ui/reports/projects/{pid}/readout.pptx")
+    prs = Presentation(io.BytesIO(r.content))
+    assert list(prs.slides)
+    for slide in prs.slides:
+        assert any(shape.shape_type == 13 for shape in slide.shapes)
+
+    ui.post("/ui/settings/branding/deck-logo/delete", follow_redirects=True)
+    assert "No logo uploaded" in ui.get("/ui/settings/branding").text
+
+
 def test_use_case_view_prefs(ui: TestClient) -> None:
     import json
 
@@ -537,6 +879,90 @@ def test_user_display_name(ui: TestClient) -> None:
     db.expire_all()
     assert db.get(AppUser, se.id).display_name is None
     assert "rsmith" in ui.get(f"/ui/projects/{pid}").text  # falls back to username
+
+
+def test_local_user_email_set_and_edit(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import AppUser
+
+    # Create a local user with an email; it is normalized (trimmed + lowercased).
+    ui.post("/ui/settings/admin-users/new",
+            data={"username": "emailer", "password": "password123",
+                  "role": "standard", "email": "  Robby@Example.COM "},
+            follow_redirects=False)
+    db = get_session_factory()()
+    u = db.query(AppUser).filter(AppUser.username == "emailer").one()
+    assert u.email == "robby@example.com"
+    uid = u.id
+
+    # The internal users table shows the email.
+    assert "robby@example.com" in ui.get("/ui/settings/admin-users").text
+
+    # Editing changes the email.
+    ui.post(f"/ui/settings/admin-users/{uid}/edit",
+            data={"display_name": "", "email": "new@example.com"},
+            follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, uid).email == "new@example.com"
+
+    # Blank email clears it back to NULL (not an empty string).
+    ui.post(f"/ui/settings/admin-users/{uid}/edit",
+            data={"display_name": "", "email": "  "},
+            follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, uid).email is None
+
+
+def test_local_user_email_optional_and_unique(ui: TestClient) -> None:
+    from app.db import get_session_factory
+    from app.models import AppUser
+
+    # Email is optional: a user can be created without one.
+    ui.post("/ui/settings/admin-users/new",
+            data={"username": "noemail", "password": "password123", "role": "standard"},
+            follow_redirects=False)
+    db = get_session_factory()()
+    assert db.query(AppUser).filter(AppUser.username == "noemail").one().email is None
+
+    # First user claims an address.
+    ui.post("/ui/settings/admin-users/new",
+            data={"username": "owner", "password": "password123",
+                  "role": "standard", "email": "dup@example.com"},
+            follow_redirects=False)
+
+    # A second create with the same email is rejected (shared unique namespace).
+    r = ui.post("/ui/settings/admin-users/new",
+                data={"username": "other", "password": "password123",
+                      "role": "standard", "email": "DUP@example.com"},
+                follow_redirects=False)
+    assert "already in use" in r.text
+    assert db.query(AppUser).filter(AppUser.username == "other").one_or_none() is None
+
+    # An invalid address is rejected too.
+    r = ui.post("/ui/settings/admin-users/new",
+                data={"username": "bad", "password": "password123",
+                      "role": "standard", "email": "not-an-email"},
+                follow_redirects=False)
+    assert "valid email" in r.text
+
+
+def test_seeded_admin_can_set_email(ui: TestClient) -> None:
+    from app.config import get_settings
+    from app.db import get_session_factory
+    from app.models import AppUser
+
+    # The seeded admin starts with no email and can set one after deployment.
+    db = get_session_factory()()
+    admin = db.query(AppUser).filter(
+        AppUser.username == get_settings().initial_admin_username
+    ).one()
+    assert admin.email is None
+
+    ui.post(f"/ui/settings/admin-users/{admin.id}/edit",
+            data={"display_name": admin.display_name or "", "email": "admin@example.com"},
+            follow_redirects=False)
+    db.expire_all()
+    assert db.get(AppUser, admin.id).email == "admin@example.com"
 
 
 def test_delete_admin_user_detaches_references(ui: TestClient) -> None:

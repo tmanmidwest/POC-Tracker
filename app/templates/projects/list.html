@@ -37,17 +37,28 @@
       {% if current_user and current_user.is_internal %}
       {{ M.scope_filter(scope, scope_engineers) }}
       {% endif %}
+      {% if signal_filter %}<input type="hidden" name="filter" value="{{ signal_filter }}" />{% endif %}
     </form>
+    {% if signal_label %}
+    <div style="display:flex; align-items:center; gap: var(--s-2); margin-left:auto;">
+      <span class="badge badge--warning">Filtered · {{ signal_label }}</span>
+      <a href="/ui/projects?scope={{ scope }}" class="btn btn--ghost btn--sm">Clear</a>
+    </div>
+    {% endif %}
   </div>
 </div>
 
 <div class="card card--flush">
 {% if not projects %}
   <div class="empty-state">
-    {% if current_user and current_user.is_internal %}
-    <h3 class="empty-state__title">No projects</h3>
-    <p class="empty-state__body">Create a project to start tracking use cases.</p>
-    <a href="/ui/projects/new" class="btn btn--primary">+ New Project</a>
+    {% if signal_label %}
+    <h3 class="empty-state__title">No {{ signal_label | lower }} projects</h3>
+    <p class="empty-state__body">Nothing in this view matches the “{{ signal_label }}” filter right now.</p>
+    <a href="/ui/projects?scope={{ scope }}" class="btn btn--secondary">Clear filter</a>
+    {% elif current_user and current_user.is_internal %}
+    <h3 class="empty-state__title">No active quests</h3>
+    <p class="empty-state__body">Start a new POC to line up your first quest and its objectives.</p>
+    <a href="/ui/projects/wizard" class="btn btn--primary">+ New POC</a>
     {% else %}
     <h3 class="empty-state__title">Nothing shared yet</h3>
     <p class="empty-state__body">No projects have been shared with you yet.</p>

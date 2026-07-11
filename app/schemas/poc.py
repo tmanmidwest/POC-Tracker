@@ -278,6 +278,55 @@ class ProjectDetailOut(ProjectOut):
     use_cases: list[ProjectUseCaseOut] = []
 
 
+# --- Project notes (dated journal entries) ---
+
+
+class NoteAttachmentOut(BaseModel):
+    """Read-only attachment metadata on a project note (upload/delete is UI-only)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    original_filename: str | None
+    content_type: str | None
+    size_bytes: int | None
+
+
+class ProjectNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    note_date: date
+    body: str
+    body_html: str | None
+    created_by: str | None
+    is_internal_only: bool
+    attachments: list[NoteAttachmentOut] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectNoteCreate(BaseModel):
+    """Create a project note. ``body`` may contain limited HTML; it is sanitized and
+    a plain-text rendering is stored alongside it. ``note_date`` defaults to today.
+    ``created_by`` is a display label — defaults to the calling principal.
+    """
+
+    body: str = Field(min_length=1)
+    note_date: date | None = None
+    is_internal_only: bool = False
+    created_by: str | None = Field(default=None, max_length=150)
+
+
+class ProjectNoteUpdate(BaseModel):
+    """Update a project note. Only provided fields change."""
+
+    body: str | None = Field(default=None, min_length=1)
+    note_date: date | None = None
+    is_internal_only: bool | None = None
+
+
 class ProjectCreate(BaseModel):
     customer_id: int
     name: str | None = Field(default=None, max_length=200)

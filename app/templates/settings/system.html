@@ -27,6 +27,20 @@
     </div>
 
     <div class="form-row">
+      <label class="label" for="external_user_ttl_days">External user lifetime (days)<span class="label__required">*</span></label>
+      <input class="input" type="number" id="external_user_ttl_days" name="external_user_ttl_days"
+             min="0" max="3650" step="1" required
+             value="{{ form.external_user_ttl_days }}" />
+      <div class="form-hint">
+        External viewer accounts expire this many days after they accept their invite; a daily
+        sweep then deactivates them and the project SE is warned 7 days ahead. Extend an account
+        anytime from <a href="/ui/settings/admin-users">Users</a> or a project's Shared access panel.
+        Set to <strong>0</strong> so external accounts never expire. Changing this affects
+        <em>newly-accepted</em> users; it doesn't shift existing expiry dates.
+      </div>
+    </div>
+
+    <div class="form-row">
       <label class="label">Task Manager</label>
       <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
         <input type="checkbox" name="tasks_enabled" value="1" {% if form.tasks_enabled %}checked{% endif %} />

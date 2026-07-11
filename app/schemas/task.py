@@ -44,6 +44,7 @@ class TaskOut(BaseModel):
     details: str | None
     details_html: str | None
     is_archived: bool
+    is_internal_only: bool
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -54,7 +55,8 @@ class TaskCreate(BaseModel):
 
     ``status`` / ``priority`` accept a name or id (status defaults to the first
     active status). ``details`` may contain limited HTML; it is sanitized and a
-    plain-text rendering is stored alongside it.
+    plain-text rendering is stored alongside it. ``is_internal_only`` hides the
+    task from external viewers (default false).
     """
 
     owner: str | int
@@ -65,6 +67,7 @@ class TaskCreate(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     details: str | None = None
+    is_internal_only: bool = False
 
 
 class TaskUpdate(BaseModel):
@@ -79,3 +82,4 @@ class TaskUpdate(BaseModel):
     due_date: date | None = None
     details: str | None = None
     is_archived: bool | None = None
+    is_internal_only: bool | None = None

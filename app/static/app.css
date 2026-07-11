@@ -1,5 +1,5 @@
 /* =================================================================
- * POC Tracker — Design System
+ * Questlog — Design System
  *
  * Refined minimal admin aesthetic. Quiet competence over loud chrome.
  * ================================================================= */
@@ -21,10 +21,21 @@
   --line: #e7e5e4;
   --line-strong: #d6d3d1;
 
-  /* Accent — slate primary */
-  --primary: #1e293b;
-  --primary-hover: #0f172a;
-  --primary-soft: #f1f5f9;
+  /* Accent — quest gold (Questlog brand). Gold is a FILL color: pair it with
+     --primary-ink (dark) for text on gold. For gold-as-text on light surfaces
+     (links, soft pills) use --accent-text, a darkened gold that keeps contrast. */
+  --primary: #EF9F27;
+  --primary-hover: #d98c17;
+  --primary-soft: #fdf4e3;
+  --primary-ink: #412402;
+  --accent-text: #a9670c;
+
+  /* Questlog fixed brand palette (mode-stable — never inverted in dark mode) */
+  --ql-ink: #1c1b18;
+  --ql-accent: #EF9F27;
+  --ql-accent-ink: #412402;
+  --ql-teal: #0F6E56;
+  --ql-teal-ink: #E1F5EE;
 
   /* Semantic */
   --success: #047857;
@@ -91,8 +102,8 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-a { color: var(--primary); text-decoration: none; }
-a:hover { color: var(--primary-hover); text-decoration: underline; }
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { color: var(--accent-text); text-decoration: underline; }
 
 code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
@@ -138,18 +149,47 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   flex-shrink: 0;
 }
 
+/* Questlog wordmark: always lowercase, mono, weight 500, tight tracking —
+   keeps it in dev-tool territory rather than corporate SaaS. */
 .sidebar__brand-name {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
   color: var(--text);
 }
 
 .sidebar__brand-tagline {
   font-size: 11px;
   color: var(--text-faint);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+/* Questlog brand mark — the self-contained "gold mark on midnight tile" app icon
+   (static/questlog-icon.svg). Rendered as an <img> so it always shows exactly,
+   with no dependency on currentColor, icon presets, or theme. The hairline ring
+   keeps the tile's edge visible on dark surfaces (where tile ≈ background). */
+.brand-mark {
+  display: block;
+  border-radius: 22%;
+  box-shadow: 0 0 0 1px rgba(120, 120, 120, 0.22);
+  flex-shrink: 0;
+}
+
+/* Login: horizontal lockup (mark + wordmark), centered, tagline underneath. */
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+}
+.brand-lockup .auth-card__title { font-size: 30px; margin: 0; }
+.auth-card__brand-tagline {
+  margin: var(--s-3) 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .sidebar__nav {
@@ -189,7 +229,7 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
 .sidebar__link.is-active {
   background: var(--primary-soft);
-  color: var(--primary);
+  color: var(--accent-text);
   font-weight: 500;
 }
 
@@ -240,7 +280,9 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 .topbar__user-name {
   color: var(--text);
   font-weight: 500;
+  text-decoration: none;
 }
+a.topbar__user-name:hover { text-decoration: underline; }
 
 /* Hamburger toggle — hidden on desktop, shown when the drawer kicks in */
 .topbar__menu-toggle {
@@ -391,13 +433,13 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
 .btn--primary {
   background: var(--primary);
-  color: white;
+  color: var(--primary-ink);
   border-color: var(--primary);
 }
 .btn--primary:hover:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
-  color: white;
+  color: var(--primary-ink);
   text-decoration: none;
 }
 
@@ -496,7 +538,7 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 .input:focus, .select:focus, .textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(30, 41, 59, 0.08);
+  box-shadow: 0 0 0 3px rgba(239, 159, 39, 0.20);
 }
 
 .input:disabled, .select:disabled {
@@ -603,7 +645,7 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 }
 
 .table__sort.is-active .table__sort-arrow {
-  color: var(--primary);
+  color: var(--accent-text);
 }
 
 /* Keep the cell a real table-cell so its bottom border lines up with the other
@@ -797,10 +839,12 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 }
 
 .auth-card__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 500;
   margin: var(--s-3) 0 var(--s-1);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  text-transform: lowercase;
 }
 
 .auth-card__subtitle {
@@ -901,6 +945,43 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
   font-size: 13px;
   margin-bottom: var(--s-4);
 }
+
+/* Full-width setup banners at the top of the content area (e.g. "no email set",
+   "no SMTP configured"). Rendered by base.html on every in-app page. */
+.app-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  margin-bottom: var(--s-4);
+}
+.app-banner__text { flex: 1; }
+.app-banner a { font-weight: 600; text-decoration: underline; color: inherit; }
+.app-banner--danger {
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+  color: var(--danger);
+}
+.app-banner--warning {
+  background: var(--warning-soft);
+  border-color: var(--warning-line);
+  color: var(--warning);
+}
+.app-banner__dismiss {
+  flex: none;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 var(--s-1);
+  opacity: 0.7;
+}
+.app-banner__dismiss:hover { opacity: 1; }
 
 .inline-info {
   background: var(--info-soft);
@@ -1222,7 +1303,7 @@ body.poc-modal-open { overflow: hidden; }
   gap: var(--s-2);
   font-weight: 600;
   font-size: 14px;
-  color: var(--primary);
+  color: var(--accent-text);
 }
 .settings-tile__title svg { width: 16px; height: 16px; flex: none; }
 .settings-tile__desc { margin-top: var(--s-2); font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
@@ -1250,10 +1331,13 @@ html[data-theme="dark"] {
   --line: #2a2f39;
   --line-strong: #3a4150;
 
-  /* Saturated enough for white button text; readable as links on dark. */
-  --primary: #2563eb;
-  --primary-hover: #3b82f6;
-  --primary-soft: #1b2333;
+  /* Quest gold reads well as a fill and as a link on dark surfaces. Buttons keep
+     dark ink on gold (brand rule), so no light-text variant is needed. */
+  --primary: #EF9F27;
+  --primary-hover: #f3b04f;
+  --primary-soft: #2a2113;
+  --primary-ink: #412402;
+  --accent-text: #f0a63a;
 
   --success: #34d399;
   --success-soft: #0e261d;
@@ -1336,7 +1420,7 @@ html[data-theme="dark"] { color-scheme: dark; }
   border-top: 1px solid var(--line);
   font-size: 12px;
   font-weight: 500;
-  color: var(--primary);
+  color: var(--accent-text);
   text-decoration: none;
 }
 .search-suggest__all:hover { background: var(--surface-2); }
@@ -1400,4 +1484,191 @@ html[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-stroke {
 html[data-theme="dark"] .ql-snow.ql-toolbar button:hover .ql-fill,
 html[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-fill {
   fill: var(--primary-hover);
+}
+
+/* =====================================================
+ * Dashboard insights — KPI cards, charts, attention
+ * ===================================================== */
+
+.insights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  margin-bottom: var(--s-6);
+}
+
+/* KPI stat cards */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s-4);
+}
+
+.kpi-card {
+  position: relative;
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--s-5);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+a.kpi-card:hover {
+  text-decoration: none;
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+a.kpi-card:hover .kpi-card__hint { color: var(--text-muted); }
+
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--primary);
+  opacity: 0.85;
+}
+.kpi-card--danger::before { background: var(--danger); }
+.kpi-card--warning::before { background: var(--warning); }
+
+.kpi-card__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kpi-card__value {
+  margin-top: var(--s-2);
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.kpi-card__unit { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-left: 2px; }
+
+.kpi-card__hint {
+  margin-top: var(--s-2);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.kpi-card--danger .kpi-card__value { color: var(--danger); }
+.kpi-card--warning .kpi-card__value { color: var(--warning); }
+
+.kpi-card__meter {
+  margin-top: var(--s-3);
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.kpi-card__meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+  transition: width 0.4s ease;
+}
+
+/* Chart panels — fit as many across as will fit, so 3 charts share one row
+   instead of wrapping 2 + 1. Collapses to fewer per row as the viewport narrows. */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--s-4);
+}
+
+.chart-panel { padding: var(--s-5); }
+
+.chart-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: var(--s-3);
+}
+
+.chart-panel__body { min-height: 200px; }
+
+/* Attention lists */
+.attention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--s-4);
+}
+
+.attention-panel { padding: var(--s-5); }
+
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.attention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-1);
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+.attention-item:first-child { border-top: none; }
+.attention-item:hover { background: var(--surface-2); }
+.attention-item--static { cursor: default; }
+.attention-item--static:hover { background: transparent; }
+
+.attention-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.attention-item__name {
+  font-weight: 550;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attention-item__meta { font-size: 12px; color: var(--text-subtle); }
+
+.attention-item__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1);
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.pill--overdue { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line); }
+.pill--stalled { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-line); }
+
+@media (max-width: 1100px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .kpi-grid { grid-template-columns: 1fr; }
 }

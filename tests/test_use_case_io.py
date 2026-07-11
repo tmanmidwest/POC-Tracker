@@ -227,6 +227,100 @@ def test_apply_with_resolved_status_and_feature(admin_ui: TestClient) -> None:
         db.close()
 
 
+# ---------------------------------------------------------------------------
+# Project "tracker" export (report page) — two-tab, formatted, filterable
+# ---------------------------------------------------------------------------
+
+TRACKER_HEADERS = [
+    "Ref #", "Category", "Name", "Description", "Success validation",
+    "Feature", "Status", "Comments", "Completed on",
+]
+
+
+def _project_for_tracker() -> int:
+    """A project spanning two categories with one completed use case (dated)."""
+    from datetime import date
+
+    global _seq
+    _seq += 1
+    db = get_session_factory()()
+    try:
+        cust = Customer(name=f"Trk Cust {_seq}")
+        db.add(cust)
+        db.flush()
+        ps = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).first()
+        done = db.query(UseCaseStatus).filter(
+            UseCaseStatus.is_complete_status.is_(True)
+        ).first()
+        open_ = db.query(UseCaseStatus).filter(
+            UseCaseStatus.is_complete_status.is_(False)
+        ).first()
+        project = Project(customer_id=cust.id, name="Tracker POC", status_id=ps.id)
+        db.add(project)
+        db.flush()
+        db.add_all([
+            ProjectUseCase(
+                project_id=project.id, source="custom", category="Access",
+                reference_number="1.1", name="SSO login", status_id=done.id,
+                completed_on=date(2026, 6, 14), comments="Verified",
+            ),
+            ProjectUseCase(
+                project_id=project.id, source="custom", category="Reporting",
+                reference_number="2.1", name="Export report", status_id=open_.id,
+            ),
+        ])
+        db.commit()
+        return project.id
+    finally:
+        db.close()
+
+
+def test_tracker_export_has_summary_and_tracker_sheets(admin_ui: TestClient) -> None:
+    pid = _project_for_tracker()
+    resp = admin_ui.get(f"/ui/reports/projects/{pid}/tracker.xlsx?mode=working")
+    assert resp.status_code == 200
+    assert "spreadsheetml" in resp.headers["content-type"]
+
+    wb = load_workbook(io.BytesIO(resp.content))
+    assert wb.sheetnames == ["Summary", "Use case tracker"]
+
+    ws = wb["Use case tracker"]
+    assert [c.value for c in ws[1]] == TRACKER_HEADERS
+    # Every category appears as a banner row (category text in column A).
+    col_a = [row[0].value for row in ws.iter_rows(min_row=2)]
+    assert "Access" in col_a and "Reporting" in col_a
+    # The completed use case keeps a real date in the "Completed on" column.
+    from datetime import date, datetime
+
+    dates = [
+        c.value for row in ws.iter_rows(min_row=2) for c in (row[8],)
+        if isinstance(c.value, (date, datetime))
+    ]
+    assert date(2026, 6, 14) in [d.date() if isinstance(d, datetime) else d for d in dates]
+
+    ws.auto_filter.ref  # autofilter is set over the grid
+    assert ws.auto_filter.ref is not None
+    assert ws.freeze_panes == "A2"
+
+
+def test_tracker_working_is_editable_readonly_is_protected(admin_ui: TestClient) -> None:
+    pid = _project_for_tracker()
+
+    working = load_workbook(io.BytesIO(
+        admin_ui.get(f"/ui/reports/projects/{pid}/tracker.xlsx?mode=working").content
+    ))["Use case tracker"]
+    # Working copy: live status dropdown, sheet not protected.
+    assert len(working.data_validations.dataValidation) >= 1
+    assert working.protection.sheet is False
+
+    readonly = load_workbook(io.BytesIO(
+        admin_ui.get(f"/ui/reports/projects/{pid}/tracker.xlsx?mode=readonly").content
+    ))["Use case tracker"]
+    # Read-only snapshot: protected, no dropdowns.
+    assert readonly.protection.sheet is True
+    assert len(readonly.data_validations.dataValidation) == 0
+
+
 def test_csv_import_preview(admin_ui: TestClient) -> None:
     pid, _ = _project_with_use_cases([])
     csv = (

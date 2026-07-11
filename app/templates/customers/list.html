@@ -24,11 +24,18 @@
 <div class="table-wrap">
 <table class="table">
   <thead>
-    <tr><th>Name</th><th>Website</th><th>Contacts</th><th>Projects</th></tr>
+    <tr><th style="width:52px;"></th><th>Name</th><th>Website</th><th>Contacts</th><th>Projects</th></tr>
   </thead>
   <tbody>
     {% for c in customers %}
+    {% set logo_uri = customer_logo_uri(c) %}
     <tr onclick="window.location='/ui/customers/{{ c.id }}'" style="cursor:pointer;">
+      <td>
+        <span style="width:36px; height:36px; border-radius:7px; border:1px solid var(--border); background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+          {% if logo_uri %}<img src="{{ logo_uri }}" alt="" style="max-width:30px; max-height:30px; object-fit:contain;" />
+          {% else %}<span class="text-muted" style="font-size:13px; font-weight:600;">{{ c.name[:1] | upper }}</span>{% endif %}
+        </span>
+      </td>
       <td><strong>{{ c.name }}</strong></td>
       <td class="text-muted">{{ c.website or "—" }}</td>
       <td>{{ c.contacts | length }}</td>

@@ -8,6 +8,7 @@
 <style>
   details.card > summary { list-style: none; }
   details.card > summary::-webkit-details-marker { display: none; }
+  details#tasks[open] .tasks-caret { transform: rotate(90deg); }
 </style>
 {% endblock %}
 {% block body_scripts %}{% include "_rte_scripts.html" %}
@@ -44,6 +45,54 @@
       window.location.reload();
     } catch (err) {
       form.submit();  // network/other error → non-streaming path
+    }
+  });
+})();
+</script>
+<script>
+// Salesforce Update: ask for a date range, stream a short status update into the
+// modal, and expose a Copy button. Ephemeral — nothing is persisted, so on any
+// non-200 we just show the returned message inline (no page reload).
+(function () {
+  var form = document.getElementById('sf-update-form');
+  if (!form || !window.fetch || !window.ReadableStream) return;
+  var btn = document.getElementById('sf-gen-btn');
+  var wrap = document.getElementById('sf-result-wrap');
+  var out = document.getElementById('sf-result');
+  var copyBtn = document.getElementById('sf-copy-btn');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var pid = form.getAttribute('data-project');
+    var start = document.getElementById('sf-start').value;
+    var end = document.getElementById('sf-end').value;
+    if (start && end && start > end) { alert('The "From" date must be on or before the "To" date.'); return; }
+    btn.disabled = true; btn.textContent = 'Generating…';
+    wrap.hidden = false;
+    out.textContent = '';
+    copyBtn.textContent = 'Copy';
+    try {
+      var resp = await fetch('/ui/projects/' + pid + '/salesforce-update/stream', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'fetch'},
+        body: 'start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end),
+      });
+      if (!resp.ok || !resp.body) {
+        out.textContent = '⚠️ ' + ((await resp.text()) || 'Could not generate the update.');
+        return;
+      }
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder();
+      while (true) {
+        var r = await reader.read();
+        if (r.done) break;
+        out.textContent += dec.decode(r.value, {stream: true});
+        out.scrollTop = out.scrollHeight;
+      }
+    } catch (err) {
+      out.textContent = '⚠️ Something went wrong generating the update.';
+    } finally {
+      btn.disabled = false; btn.textContent = '✨ Generate';
     }
   });
 })();
@@ -126,11 +175,23 @@
 {% endblock %}
 
 {% block main %}
+{% set customer_logo = customer_logo_uri(project.customer) %}
 <div class="page-header">
+  {% if customer_logo %}
+  <div class="page-header__text" style="display:flex; align-items:center; gap: var(--s-4);">
+    <span style="flex:none; width:48px; height:48px; border-radius:10px; border:1px solid var(--border); background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+      <img src="{{ customer_logo }}" alt="{{ project.customer.name }} logo" style="max-width:40px; max-height:40px; object-fit:contain;" />
+    </span>
+    <div style="min-width:0;">
+      <h1 class="page-header__title">{{ project.display_name }}
+        {% if project.is_archived %}<span class="badge badge--neutral">Archived</span>{% endif %}
+      </h1>
+  {% else %}
   <div class="page-header__text">
     <h1 class="page-header__title">{{ project.display_name }}
       {% if project.is_archived %}<span class="badge badge--neutral">Archived</span>{% endif %}
     </h1>
+  {% endif %}
     <p class="page-header__subtitle">
       <a href="/ui/customers/{{ project.customer_id }}">{{ project.customer.name }}</a>
       · <span class="badge badge--neutral">{{ project.status.name }}</span>
@@ -144,19 +205,59 @@
       · <a href="{{ project.poc_instance_url }}" target="_blank" rel="noopener noreferrer">POC Instance ↗</a>
       {% endif %}
     </p>
+    {% if customer_logo %}</div>{% endif %}
   </div>
   <div class="page-header__actions">
     <a href="/ui/reports/projects/{{ project.id }}" target="_blank" rel="noopener" class="btn btn--secondary">Report</a>
     {% if can_edit %}
+    <button type="button" class="btn btn--secondary" onclick="pocOpen('m-sf-update')" title="Draft a Salesforce status update from recent notes and completed use cases">☁ Salesforce Update</button>
     <a href="/ui/projects/{{ project.id }}/edit" class="btn btn--secondary">Edit</a>
     {% if project.is_archived %}
       <form action="/ui/projects/{{ project.id }}/restore" method="post" style="margin:0;"><button class="btn btn--primary">Restore</button></form>
     {% else %}
       <form action="/ui/projects/{{ project.id }}/archive" method="post" style="margin:0;"><button class="btn btn--secondary">Archive</button></form>
     {% endif %}
+    <form action="/ui/projects/{{ project.id }}/save-as-template" method="post" style="display:inline; margin:0;">
+      <input type="hidden" name="name" />
+      <button type="button" class="btn btn--secondary"
+        onclick="var n=prompt('Name for the new POC template:'); if(n && n.trim()){this.form.querySelector('input[name=name]').value=n.trim(); this.form.submit();}">Save as template</button>
+    </form>
     {% endif %}
   </div>
 </div>
+
+{# ---- Salesforce Update (AI-generated, ephemeral) ---- #}
+{% if can_edit %}
+<div class="ucmodal" id="m-sf-update" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Generate Salesforce Update</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <p class="text-muted text-xs" style="margin-top:0;">
+      Drafts a short status update (1–2 paragraphs) from the notes logged and use cases completed
+      in the date range below — ready to copy into the Salesforce opportunity. Nothing is saved.
+    </p>
+    <form id="sf-update-form" data-project="{{ project.id }}">
+      <div style="display:grid; grid-template-columns: 1fr 1fr auto; gap: var(--s-3); align-items:end;">
+        <div class="form-row" style="margin:0;"><label class="label" for="sf-start">From</label>
+          <input class="input" type="date" id="sf-start" name="start" value="{{ sf_default_start }}" /></div>
+        <div class="form-row" style="margin:0;"><label class="label" for="sf-end">To</label>
+          <input class="input" type="date" id="sf-end" name="end" value="{{ today }}" /></div>
+        <button type="submit" class="btn btn--primary" id="sf-gen-btn">✨ Generate</button>
+      </div>
+    </form>
+    <div id="sf-result-wrap" hidden style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-3);">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: var(--s-2);">
+        <span class="label" style="margin:0;">Update</span>
+        <button type="button" class="btn btn--secondary btn--sm" id="sf-copy-btn"
+          onclick="navigator.clipboard.writeText(document.getElementById('sf-result').textContent).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy',1400);})">Copy</button>
+      </div>
+      <pre id="sf-result" style="white-space:pre-wrap; font-family:inherit; margin:0; background:var(--surface-2); padding: var(--s-3); border-radius:8px; max-height:340px; overflow:auto;"></pre>
+    </div>
+  </div>
+ </div>
+</div>
+{% endif %}
 
 {# ---- Overview ---- #}
 <div class="card" style="margin-bottom: var(--s-5);">
@@ -250,11 +351,36 @@
         <span>
           <strong>{{ g.user.display_label if g.user else g.user_id }}</strong>
           <span class="badge badge--neutral">viewer</span>
+          {% if g.user and g.user.is_external and not g.user.password_hash %}<span class="badge badge--warning" title="Invited — hasn't set a password yet">Pending</span>
+          {% elif g.user and g.user.is_external and g.user.is_expired %}<span class="badge badge--warning" title="Account expired — extend to restore access">Expired</span>
+          {% elif g.user and g.user.is_external and g.user.days_until_expiry is not none %}
+            <span class="text-muted text-xs" {% if g.user.days_until_expiry <= 7 %}style="color: var(--warning);"{% endif %}
+                  title="Account expires {{ g.user.expires_at_aware.strftime('%Y-%m-%d') }}">· expires in {{ g.user.days_until_expiry }}d</span>
+          {% endif %}
+          {% if g.user and g.user.company %}<span class="text-muted text-xs">· {{ g.user.company }}</span>{% endif %}
         </span>
-        <form method="post" action="/ui/projects/{{ project.id }}/grants/{{ g.id }}/delete" style="margin:0;"
-              onsubmit="return confirm('Remove access for {{ g.user.display_label if g.user else g.user_id }}?');">
-          <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Revoke access">Remove</button>
-        </form>
+        <span style="display:flex; gap: var(--s-2); align-items:center;">
+          {% if g.user and g.user.is_external and g.user.password_hash %}
+          <details style="margin:0;">
+            <summary class="btn btn--ghost btn--sm" style="list-style:none;">Extend ▾</summary>
+            <form method="post" action="/ui/projects/{{ project.id }}/external/{{ g.user.id }}/extend"
+                  style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+              <select class="select" name="preset" style="max-width:110px;">
+                <option value="30">+30 days</option>
+                <option value="60" selected>+60 days</option>
+                <option value="90">+90 days</option>
+              </select>
+              <span class="text-muted text-xs">or</span>
+              <input class="input" type="date" name="until" title="Extend until a specific date" style="max-width:150px;" />
+              <button class="btn btn--primary btn--sm" type="submit">Extend</button>
+            </form>
+          </details>
+          {% endif %}
+          <form method="post" action="/ui/projects/{{ project.id }}/grants/{{ g.id }}/delete" style="margin:0;"
+                onsubmit="return confirm('Remove access for {{ g.user.display_label if g.user else g.user_id }}?');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Revoke access">Remove</button>
+          </form>
+        </span>
       </div>
       {% endfor %}
     </div>
@@ -265,7 +391,7 @@
     {% if grantable_users %}
     <form method="post" action="/ui/projects/{{ project.id }}/grants" style="display:flex; gap: var(--s-2); align-items:flex-end;">
       <div class="form-row" style="flex:1; margin:0;">
-        <label class="label" for="grant_user">Add an external viewer</label>
+        <label class="label" for="grant_user">Add an existing external viewer</label>
         <select class="select" id="grant_user" name="user_id" required>
           <option value="">Select a user…</option>
           {% for u in grantable_users %}<option value="{{ u.id }}">{{ u.display_label }} ({{ u.username }})</option>{% endfor %}
@@ -273,9 +399,65 @@
       </div>
       <button class="btn btn--primary">Share</button>
     </form>
-    {% else %}
-    <p class="text-muted text-xs">No external-viewer accounts are available to add. New external users appear here after they first sign in via an external identity provider.</p>
     {% endif %}
+
+    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
+      <form method="post" action="/ui/projects/{{ project.id }}/invite">
+        <label class="label">Invite someone by email</label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-2);">
+          <input class="input" type="text" name="name" placeholder="Name (optional)" autocomplete="off" />
+          <input class="input" type="text" name="company" placeholder="Company (optional)" autocomplete="off" />
+        </div>
+        <div style="display:flex; gap: var(--s-2); align-items:flex-end; margin-top: var(--s-2);">
+          <div class="form-row" style="flex:1; margin:0;">
+            <input class="input" type="email" name="email" placeholder="name@company.com" required autocomplete="off" />
+          </div>
+          <button class="btn btn--primary">Send invite</button>
+        </div>
+        <div class="form-hint">They'll get an email with a link to set a password and view this project. (Requires <a href="/ui/settings/email">email settings</a>.)</div>
+      </form>
+    </div>
+
+    {# ---- Public customer status link (no login) ---- #}
+    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
+      <div style="display:flex; align-items:center; gap: var(--s-2);">
+        <label class="label" style="margin:0;">Public status link</label>
+        {% if share_link and share_link.is_enabled %}<span class="badge badge--success">Live</span>
+        {% elif share_link %}<span class="badge badge--neutral">Disabled</span>{% endif %}
+      </div>
+      <p class="text-muted text-xs" style="margin:2px 0 var(--s-2);">
+        A polished, read-only status page a customer can open with no login — progress, use cases, and non-internal updates only.
+      </p>
+
+      {% if share_link and share_link.is_enabled %}
+        {% set portal_url = portal_base_url ~ '/portal/' ~ share_link.token %}
+        <div style="display:flex; gap: var(--s-2); align-items:center;">
+          <input class="input" type="text" readonly value="{{ portal_url }}" id="portalUrl"
+                 onclick="this.select()" style="flex:1; font-size:12px;" />
+          <button type="button" class="btn btn--primary btn--sm"
+                  onclick="navigator.clipboard.writeText(document.getElementById('portalUrl').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy link',1400);})">Copy link</button>
+          <a class="btn btn--ghost btn--sm" href="{{ portal_url }}" target="_blank" rel="noopener">Preview ↗</a>
+        </div>
+        <div style="display:flex; gap: var(--s-2); align-items:center; margin-top: var(--s-2); flex-wrap:wrap;">
+          <span class="text-muted text-xs">
+            {% if share_link.view_count %}Viewed {{ share_link.view_count }} time{{ 's' if share_link.view_count != 1 }}{% if share_link.last_viewed_at %}, last {{ share_link.last_viewed_at.strftime('%b %-d') }}{% endif %}{% else %}Not viewed yet{% endif %}
+          </span>
+          <span class="spacer" style="flex:1;"></span>
+          <form method="post" action="/ui/projects/{{ project.id }}/share-link/rotate" style="margin:0;"
+                onsubmit="return confirm('Generate a new link? The current URL will stop working immediately.');">
+            <button class="btn btn--ghost btn--sm">Regenerate</button>
+          </form>
+          <form method="post" action="/ui/projects/{{ project.id }}/share-link/disable" style="margin:0;"
+                onsubmit="return confirm('Disable the public status link? The URL will stop working (you can re-enable it later).');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Disable</button>
+          </form>
+        </div>
+      {% else %}
+        <form method="post" action="/ui/projects/{{ project.id }}/share-link/enable" style="margin:0;">
+          <button class="btn btn--primary btn--sm">{% if share_link %}Re-enable link{% else %}Create public link{% endif %}</button>
+        </form>
+      {% endif %}
+    </div>
   </div>
 </details>
 {% endif %}
@@ -286,6 +468,7 @@
   <div style="flex:none; width:120px;">
     <div class="text-xs"><strong>{{ note.note_date.strftime('%b %-d, %Y') }}</strong></div>
     {% if note.created_by %}<div class="text-muted text-xs">{{ note.created_by }}</div>{% endif %}
+    {% if note.is_internal_only %}<div style="margin-top: var(--s-1);"><span class="badge badge--warning" title="Hidden from external viewers">Internal only</span></div>{% endif %}
   </div>
   <div style="flex:1;">
     {{ M.render_note(note.body_html, note.body) }}
@@ -318,6 +501,12 @@
       <div class="form-row"><label class="label">Note</label>
         <div class="rte" data-rte-target="#note-body-{{ note.id }}">{{ M.rte_seed(note.body_html, note.body) }}</div>
         <input type="hidden" name="body" id="note-body-{{ note.id }}" /></div>
+      <div class="form-row">
+        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+          <input type="checkbox" name="is_internal_only" value="1" {% if note.is_internal_only %}checked{% endif %} />
+          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
+        </label>
+      </div>
       <div class="form-actions">
         <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
         <button class="btn btn--primary">Save</button>
@@ -354,8 +543,7 @@
     {% if can_edit %}<button type="button" class="btn btn--primary btn--sm" onclick="pocOpen('m-add-note')">+ Add note</button>{% endif %}
   </div>
   <div class="card__body">
-    {% if project.note_entries %}
-    {% set notes = project.note_entries %}
+    {% if notes %}
     {% set visible_limit = 1 %}
     {% set hidden_count = notes|length - visible_limit %}
     <div>
@@ -384,6 +572,12 @@
       <div class="form-row"><label class="label">Note</label>
         <div class="rte" data-rte-target="#add-note-body" data-placeholder="Add an update…"></div>
         <input type="hidden" name="body" id="add-note-body" /></div>
+      <div class="form-row">
+        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+          <input type="checkbox" name="is_internal_only" value="1" />
+          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
+        </label>
+      </div>
       <div class="form-row"><label class="label">Attachments <span class="text-muted text-xs">(optional — PDF, Word, Excel, images)</span></label>
         <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" /></div>
       <div class="form-actions">
@@ -397,14 +591,19 @@
 
 {# ---- Tasks assigned to this project ---- #}
 {% if tasks_on %}
-<div id="tasks" class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
-    <h3 class="card__title">Tasks
+<details id="tasks" class="card" style="margin-bottom: var(--s-5);" {% if not tasks_collapsed %}open{% endif %}>
+  <summary class="card__header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; list-style:none;">
+    <h3 class="card__title" style="display:flex; align-items:center; gap: var(--s-2);">
+      <span class="tasks-caret" aria-hidden="true" style="display:inline-block; transition:transform .15s; font-size:0.8em; color:var(--text-muted);">▸</span>
+      Tasks
       {% if project_tasks %}<span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}
     </h3>
-    <a href="/ui/tasks/new?project_id={{ project.id }}" class="btn btn--primary btn--sm">+ Add task</a>
-  </div>
+    {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}" class="btn btn--primary btn--sm" onclick="event.stopPropagation();">+ Add task</a>{% endif %}
+  </summary>
   <div class="card__body">
+    {% if current_user.is_internal %}
+    <p class="text-muted text-xs" style="margin-top:0;">Tasks assigned to this project are visible to its external viewers unless marked <strong>Internal only</strong>.</p>
+    {% endif %}
     {% if not project_tasks %}
     <p class="text-muted text-xs">No tasks assigned to this project yet.</p>
     {% else %}
@@ -431,15 +630,19 @@
           </td>
           <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
           <td>
+            {% if current_user.is_internal %}
             <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;">
               <select class="select" name="status_id" onchange="this.form.submit()">
                 {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
               </select>
             </form>
+            {% else %}
+            <span class="badge badge--neutral">{{ task.status.name if task.status else "—" }}</span>
+            {% endif %}
           </td>
           {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
           <td class="table__actions">
-            <a href="/ui/tasks/{{ task.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -448,7 +651,23 @@
     </div>
     {% endif %}
   </div>
-</div>
+</details>
+<script>
+// Persist the Tasks section collapsed/expanded state per user. The <details>
+// starts in the server-rendered state; on toggle we save the new state so it
+// sticks across visits.
+(function () {
+  var d = document.getElementById('tasks');
+  if (!d) return;
+  d.addEventListener('toggle', function () {
+    fetch('/ui/projects/tasks-collapsed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'collapsed=' + (d.open ? '0' : '1'),
+    }).catch(function () {});
+  });
+})();
+</script>
 {% endif %}
 
 {# ---- Add use cases ---- #}
@@ -645,7 +864,16 @@
 {% for group in use_case_groups %}
 {% set gidx = loop.index %}
 <div class="card card--flush" style="margin-bottom: var(--s-4);">
-  <div class="card__header"><h3 class="card__title">{{ group.category }}</h3></div>
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-3);">
+    <h3 class="card__title">{{ group.category }}</h3>
+    {% if can_edit %}
+    <form method="post" action="/ui/projects/{{ project.id }}/category-order" style="margin:0; display:flex; align-items:center; gap: var(--s-2);" title="Set a number to order this category section. Blank = alphabetical.">
+      <input type="hidden" name="category" value="{{ group.category }}" />
+      <label class="text-muted text-xs" for="cat-order-{{ gidx }}" style="white-space:nowrap;">Order #</label>
+      <input class="input" id="cat-order-{{ gidx }}" name="sort_order" type="number" step="1" inputmode="numeric" value="{{ group.order if group.order is not none else '' }}" placeholder="—" style="width:64px; padding: var(--s-1) var(--s-2);" onchange="this.form.submit()" />
+    </form>
+    {% endif %}
+  </div>
   <div class="table-wrap">
   <table class="table">
     <thead><tr>

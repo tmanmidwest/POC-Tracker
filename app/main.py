@@ -28,8 +28,10 @@ from app.logging_config import configure_logging
 
 log = logging.getLogger(__name__)
 
-# How often the background task re-checks the audit retention window.
+# How often the background tasks re-check their windows.
 _AUDIT_PRUNE_INTERVAL_SECONDS = 24 * 60 * 60
+_EXTERNAL_EXPIRY_INTERVAL_SECONDS = 24 * 60 * 60
+_GOOGLE_SYNC_INTERVAL_SECONDS = 5 * 60
 
 
 async def _audit_retention_loop() -> None:
@@ -45,6 +47,30 @@ async def _audit_retention_loop() -> None:
         # prune_old_events does its own DB work and never raises; run it in a
         # worker thread so the event loop isn't blocked.
         await asyncio.to_thread(prune_old_events)
+
+
+async def _external_expiry_loop() -> None:
+    """Expire lapsed external users and warn SEs once a day while running."""
+    from app.services.external_expiry import run_sweep
+
+    while True:
+        await asyncio.sleep(_EXTERNAL_EXPIRY_INTERVAL_SECONDS)
+        # run_sweep owns its session and never raises; keep it off the event loop.
+        await asyncio.to_thread(run_sweep)
+
+
+async def _google_sync_loop() -> None:
+    """Pull Google Tasks changes back into Questlog for connected users.
+
+    Push happens inline on save; this loop is the pull half (plus retrying failed
+    pushes). Sleeps first so we don't hit Google during startup.
+    """
+    from app.services.google_tasks_sync import run_pull_sweep
+
+    while True:
+        await asyncio.sleep(_GOOGLE_SYNC_INTERVAL_SECONDS)
+        # run_pull_sweep owns its session and never raises; keep it off the loop.
+        await asyncio.to_thread(run_pull_sweep)
 
 
 @asynccontextmanager
@@ -85,6 +111,16 @@ async def lifespan(_app: FastAPI) -> Any:
     prune_old_events()
     retention_task = asyncio.create_task(_audit_retention_loop())
 
+    # Expire lapsed external users (and warn SEs) once at startup, then daily.
+    from app.services.external_expiry import run_sweep
+
+    run_sweep()
+    expiry_task = asyncio.create_task(_external_expiry_loop())
+
+    # Pull Google Tasks changes back for connected users on an interval (push is
+    # inline). The loop sleeps before its first run, so no network at startup.
+    google_sync_task = asyncio.create_task(_google_sync_loop())
+
     # Trigger engine creation early so we fail fast on bad config
     engine = get_engine()
     log.info(
@@ -101,10 +137,13 @@ async def lifespan(_app: FastAPI) -> Any:
     yield
 
     retention_task.cancel()
-    try:
-        await retention_task
-    except asyncio.CancelledError:
-        pass
+    expiry_task.cancel()
+    google_sync_task.cancel()
+    for task in (retention_task, expiry_task, google_sync_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     engine.dispose()
     log.info("app_shutdown")
 
@@ -118,7 +157,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description=(
-            "POC Tracker — manage proof-of-concept engagements: customers, "
+            "Questlog — manage proof-of-concept engagements: customers, "
             "projects, use cases, and reporting, with a REST API and MCP access."
         ),
         docs_url="/docs",
@@ -197,19 +236,29 @@ def create_app() -> FastAPI:
     )
     from app.ui.google_routes import router as ui_google_router
     from app.ui.grant_routes import router as ui_grant_router
+    from app.ui.invite_routes import router as ui_invite_router
     from app.ui.library_routes import router as ui_library_router
     from app.ui.lookup_routes import router as ui_lookup_router
     from app.ui.oidc_routes import router as ui_oidc_router
+    from app.ui.password_reset_routes import router as ui_password_reset_router
+    from app.ui.portal_routes import manage_router as ui_portal_manage_router
+    from app.ui.profile_routes import router as ui_profile_router
+    from app.ui.portal_routes import public_router as ui_portal_public_router
     from app.ui.project_routes import router as ui_project_router
     from app.ui.report_routes import router as ui_report_router
     from app.ui.search_routes import router as ui_search_router
     from app.ui.settings_routes import router as ui_settings_router
     from app.ui.task_routes import router as ui_task_router
+    from app.ui.template_routes import router as ui_template_router
 
     # Open to any logged-in user (standard, admin, or external viewer). The
     # routes themselves scope what an external viewer can see.
     app.include_router(ui_auth_router)
     app.include_router(ui_oidc_router)
+    app.include_router(ui_invite_router)  # public: invited users are logged out
+    app.include_router(ui_password_reset_router)  # public: reset while logged out
+    app.include_router(ui_portal_public_router)  # public: no login — customer status pages
+    app.include_router(ui_profile_router)  # self-service account page (any user)
     app.include_router(ui_dashboard_router)
     app.include_router(ui_project_router)
     app.include_router(ui_report_router)
@@ -219,9 +268,11 @@ def create_app() -> FastAPI:
     internal_only = [Depends(require_internal_ui)]
     app.include_router(ui_customer_router, dependencies=internal_only)
     app.include_router(ui_task_router, dependencies=internal_only)
+    app.include_router(ui_template_router, dependencies=internal_only)
     app.include_router(ui_google_router, dependencies=internal_only)
     app.include_router(ui_audit_router, dependencies=internal_only)
     app.include_router(ui_grant_router)  # routes self-check can_grant_project
+    app.include_router(ui_portal_manage_router)  # routes self-check can_grant_project
 
     # Admin-only surfaces — gated at the router level.
     admin_only = [Depends(require_admin_ui)]

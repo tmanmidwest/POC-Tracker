@@ -66,6 +66,13 @@
       <div class="rte" data-rte-target="#details" data-placeholder="Task details…">{{ M.rte_seed(form.details_html, form.details) }}</div>
       <input type="hidden" id="details" name="details" />
     </div>
+
+    <div class="form-row">
+      <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+        <input type="checkbox" name="is_internal_only" value="1" {% if form.is_internal_only %}checked{% endif %} />
+        Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
+      </label>
+    </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
     <a href="/ui/tasks" class="btn btn--secondary">Cancel</a>

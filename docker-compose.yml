@@ -1,8 +1,20 @@
+# Set POCT_STACK_NAME to run more than one instance on the same docker host. It
+# names the compose project (so the network and the poct-data volume are namespaced
+# per instance) AND the containers. Pair it with POCT_HOST_PORT / POCT_MCP_HOST_PORT
+# to avoid host-port collisions. Defaults keep the original single-instance names.
+#
+# Set POCT_IMAGE to give each instance its own image tag (e.g. poc-tracker:prod vs
+# poc-tracker:demo). Without it, every stack builds and shares the single
+# poc-tracker:local tag, so rebuilding one instance silently overwrites the image
+# the others run. A per-instance tag isolates builds and lets prod/demo run
+# different versions. See prod.env.example / demo.env.example.
+name: ${POCT_STACK_NAME:-poc-tracker}
+
 services:
   app:
     build: .
-    image: poc-tracker:local
-    container_name: poc-tracker
+    image: ${POCT_IMAGE:-poc-tracker:local}
+    container_name: ${POCT_STACK_NAME:-poc-tracker}
     ports:
       - "${POCT_HOST_PORT:-8010}:8010"
     volumes:
@@ -13,6 +25,10 @@ services:
       - poct-data:/data
     environment:
       POCT_LOG_LEVEL: INFO
+      # Off by default. Set POCT_ENABLE_DEMO_TOOLS=1 (e.g. in a demo env-file) to
+      # expose the admin Settings → Demo Data page for loading/removing a sample
+      # portfolio. Leave unset on production instances.
+      POCT_ENABLE_DEMO_TOOLS: ${POCT_ENABLE_DEMO_TOOLS:-0}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
@@ -27,8 +43,8 @@ services:
   # Starts alongside the app by default. Don't want it? Comment out this service.
   mcp:
     build: .
-    image: poc-tracker:local
-    container_name: poc-tracker-mcp
+    image: ${POCT_IMAGE:-poc-tracker:local}
+    container_name: ${POCT_STACK_NAME:-poc-tracker}-mcp
     command: ["poct-mcp"]
     depends_on:
       - app

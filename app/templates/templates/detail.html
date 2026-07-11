@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set page_title = template.name %}
+{% block breadcrumb %}<a href="/ui/templates">POC Templates</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ template.name }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ template.name }}</h1>
+    {% if template.description %}<p class="page-header__subtitle">{{ template.description }}</p>{% endif %}
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/wizard?template_id={{ template.id }}" class="btn btn--primary">Use this template</a>
+    <form method="post" action="/ui/templates/{{ template.id }}/delete" style="display:inline;"
+          onsubmit="return confirm('Delete template “{{ template.name }}”? This cannot be undone.');">
+      <button type="submit" class="btn btn--danger">Delete</button>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__body">
+    <h2 class="card__title">Use cases <span class="text-muted">({{ template.use_cases | length }})</span></h2>
+    {% if template.use_cases %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Category</th><th>Name</th><th>Source</th><th>Description</th></tr></thead>
+      <tbody>
+        {% for uc in template.use_cases %}
+        <tr>
+          <td>{{ uc.category }}</td>
+          <td><strong>{{ uc.name }}</strong></td>
+          <td class="text-muted">{{ uc.source }}</td>
+          <td class="text-muted">{{ uc.description or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No use cases in this template.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__body">
+    <h2 class="card__title">Tasks <span class="text-muted">({{ template.tasks | length }})</span></h2>
+    {% if template.tasks %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Task</th><th>Start (offset)</th><th>Due (offset)</th></tr></thead>
+      <tbody>
+        {% for t in template.tasks %}
+        <tr>
+          <td><strong>{{ t.title }}</strong></td>
+          <td class="text-muted">{% if t.start_offset_days is not none %}day {{ t.start_offset_days }}{% else %}—{% endif %}</td>
+          <td class="text-muted">{% if t.due_offset_days is not none %}day {{ t.due_offset_days }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No tasks in this template.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

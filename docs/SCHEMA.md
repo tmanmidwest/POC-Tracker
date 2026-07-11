@@ -11,10 +11,11 @@ customers ──< contacts ───────> contact_roles
    └──< projects ──> project_statuses (status_id)
           │     └──> app_users        (sales_engineer_id)
           │
-          └──< project_use_cases ──> use_case_statuses (status_id)
-                   │            └───> feature_types     (feature_type_id)
-                   │            └┄┄┄> use_case_library  (library_id, provenance; SET NULL on delete)
-                   └──< screenshots
+          ├──< project_use_cases ──> use_case_statuses (status_id)
+          │        │            └───> feature_types     (feature_type_id)
+          │        │            └┄┄┄> use_case_library  (library_id, provenance; SET NULL on delete)
+          │        └──< screenshots
+          └──< project_notes ──< note_attachments
 
 use_case_library ──> feature_types
 dashboard_prefs ──> app_users (one row per user)
@@ -48,6 +49,12 @@ google_tasks_config (singleton, id=1)
   `name`, `description`, `success_validation`, `feature_type_id`, `is_active`.
 - **screenshots** — `project_use_case_id`, `stored_filename` (on `<data_dir>/screenshots`),
   `original_filename`, `content_type`, `size_bytes`, `caption`.
+- **project_notes** — a dated journal entry on a project: `project_id` (`ON DELETE CASCADE`),
+  `note_date` (user-facing, editable), `body` (plain text for search/export) / `body_html`
+  (sanitized rich text), `created_by`, `is_internal_only` (when true, hidden from external
+  viewers; default false). Cascades to note_attachments.
+- **note_attachments** — files attached to a note: `note_id` (`ON DELETE CASCADE`),
+  `stored_filename` (on the data volume), `original_filename`, `content_type`, `size_bytes`.
 - **dashboard_prefs** — `app_user_id` (unique), `config_json` (columns, statuses, sort).
 
 ### Tasks (per-user)
@@ -56,8 +63,10 @@ google_tasks_config (singleton, id=1)
   `title`, `status_id` → task_statuses, `priority_id` → task_priorities (nullable),
   `project_id` → projects (nullable, `ON DELETE SET NULL`), `start_date`, `due_date`
   (both nullable), `details` / `details_html` (rich text, same dual-storage as notes),
-  `is_archived` / `archived_at`. Google-sync columns (reserved in 0021, used by the
-  sync): `sync_enabled`, `external_id` (Google task id), `external_etag`, `last_synced_at`.
+  `is_archived` / `archived_at`, `is_internal_only` (default false; when true, hidden from external
+  viewers on a shared project's Tasks card — see `services/tasks.visible_project_tasks`). Google-sync columns
+  (reserved in 0021, used by the sync): `sync_enabled`, `external_id` (Google task id),
+  `external_etag`, `last_synced_at`.
 - **task_dashboard_prefs** — `app_user_id` (unique), `config_json` (columns, statuses,
   priorities, sort, owner scope, show-archived). Separate from `dashboard_prefs` so task
   and project views don't clobber each other.
@@ -70,6 +79,14 @@ google_tasks_config (singleton, id=1)
   `ON DELETE CASCADE`), `refresh_token_encrypted` (Fernet), `scopes`, `google_email`,
   `tasklist_id` (their dedicated "POC Tracker" list), `status` (`connected` /
   `needs_reauth`), `connected_at`, `last_sync_at` (pull high-water mark), `last_error`.
+
+### Email (SMTP)
+
+- **smtp_config** — singleton (`id=1`): outbound mail server settings —
+  `host`, `port` (default 587), `security` (`none` / `starttls` / `ssl`),
+  `username`, `password_encrypted` (Fernet, recoverable), `from_email`, `from_name`,
+  `is_enabled`. Admin-managed under **Settings → Email**; used to send external-user
+  invitations (see [INVITATIONS.md](INVITATIONS.md)).
 
 ### Lookups (admin-managed, `is_active` + `is_system`)
 
@@ -90,6 +107,18 @@ live data cannot be deleted either (deactivate it instead).
   `tier` (default `"viewer"`), `granted_by_user_id`. Unique on `(project_id, user_id)`.
   Internal users (admins and standard users) see all projects and ignore grants; external
   viewers see only the projects they're granted. Enforced in the web UI.
+- **user_invites** — one external-user invitation: `user_id` → app_users (`ON DELETE CASCADE`),
+  `project_id` → projects (`ON DELETE SET NULL`, the project it was about), `email` / `company` /
+  `invited_name` (snapshots), `token_hash` (SHA-256 of the emailed single-use token — plaintext
+  never stored), `status` (`pending` / `accepted` / `revoked`), `expires_at`, `accepted_at`,
+  `invited_by_user_id`. Accepting sets the user's password and activates the account. See
+  [INVITATIONS.md](INVITATIONS.md).
+- **Note & task visibility.** Within a shared project, an individual journal note or task can be
+  flagged `is_internal_only`. Two server-side choke points filter those out for external viewers:
+  `services/access.visible_project_notes()` (project page, on-screen report, PDF/DOCX, artifacts
+  zip) and `services/tasks.visible_project_tasks()` (the project page's Tasks card, read-only for
+  viewers). Internal users always see everything. Filtering happens before render, so internal-only
+  content never reaches an external client.
 
 ## AI
 
@@ -100,6 +129,7 @@ live data cannot be deleted either (deactivate it instead).
 
 ## Platform tables (shared scaffold)
 
-`app_users` (with `is_admin` and `is_external`), `api_keys`, `oauth_clients`,
+`app_users` (with `is_admin`, `is_external`, and — for invited external users — a unique
+`email` used as their login id plus `company`), `api_keys`, `oauth_clients`,
 `auth_providers` (with `default_user_tier` — the tier given to users it provisions),
 `user_identities`, `app_branding`, `app_config`, `audit_events`.

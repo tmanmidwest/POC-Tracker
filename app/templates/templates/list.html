@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set page_title = "POC Templates" %}
+{% block breadcrumb %}<span>POC Templates</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">POC Templates</h1>
+    <p class="page-header__subtitle">Reusable blueprints of use cases and tasks. Start a new POC from one in the wizard.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/wizard" class="btn btn--primary">+ New POC</a>
+  </div>
+</div>
+
+<div class="card card--flush">
+{% if not templates %}
+  <div class="empty-state">
+    <h3 class="empty-state__title">No templates yet</h3>
+    <p class="empty-state__body">Open any project and choose <strong>Save as template</strong> to create one from an existing POC.</p>
+  </div>
+{% else %}
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th>Description</th><th>Use cases</th><th>Tasks</th><th>Author</th></tr>
+  </thead>
+  <tbody>
+    {% for t in templates %}
+    <tr onclick="window.location='/ui/templates/{{ t.id }}'" style="cursor:pointer;">
+      <td><strong>{{ t.name }}</strong>{% if not t.is_active %} <span class="badge">inactive</span>{% endif %}</td>
+      <td class="text-muted">{{ t.description or "—" }}</td>
+      <td>{{ t.use_cases | length }}</td>
+      <td>{{ t.tasks | length }}</td>
+      <td class="text-muted">{{ t.created_by or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+</div>
+{% endblock %}

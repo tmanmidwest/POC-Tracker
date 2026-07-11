@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+{% set page_title = "New POC" %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>New POC</span>{% endblock %}
+
+{% block head_extra %}
+<style>
+  .wiz { max-width: 820px; }
+  .wiz-steps { display: flex; gap: var(--s-2); list-style: none; margin: 0 0 var(--s-6); padding: 0; flex-wrap: wrap; }
+  .wiz-steps__item { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3);
+    border-radius: var(--radius-2, 8px); font-size: 0.85rem; color: var(--color-text-muted, #667);
+    background: var(--color-surface-2, #f4f5f7); cursor: pointer; border: 1px solid transparent; }
+  .wiz-steps__item.is-active { background: var(--color-accent-soft, #eef2ff); color: var(--color-accent, #4f46e5);
+    border-color: var(--color-accent, #4f46e5); font-weight: 600; }
+  .wiz-steps__item.is-done { color: var(--color-text, #222); }
+  .wiz-steps__num { display: inline-flex; width: 1.4rem; height: 1.4rem; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--color-surface, #fff); border: 1px solid currentColor; font-size: 0.75rem; }
+  .wiz-explain { color: var(--color-text-muted, #667); font-size: 0.9rem; margin: 0 0 var(--s-4); }
+  .wiz-step[hidden] { display: none; }
+  .wiz-lib-set { margin-bottom: var(--s-5); }
+  .wiz-lib-set__name { font-weight: 600; margin: 0 0 var(--s-2); }
+  .wiz-lib-cat { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted, #667);
+    margin: var(--s-3) 0 var(--s-1); }
+  .wiz-check { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-1) 0; }
+  .wiz-check input { margin-top: 0.2rem; }
+  .wiz-rows { display: flex; flex-direction: column; gap: var(--s-3); }
+  .wiz-row { display: grid; gap: var(--s-2); padding: var(--s-3); border: 1px solid var(--color-border, #e3e5e8);
+    border-radius: var(--radius-2, 8px); }
+  .wiz-row__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+  .wiz-row__remove { justify-self: end; }
+  .wiz-review dl { margin: 0; }
+  .wiz-review__group { padding: var(--s-3) 0; border-bottom: 1px solid var(--color-border, #e3e5e8); }
+  .wiz-review__label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted, #667); }
+  .wiz-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--s-3);
+    padding-top: var(--s-5); margin-top: var(--s-5); border-top: 1px solid var(--color-border, #e3e5e8); }
+  .wiz-actions__right { display: flex; gap: var(--s-2); }
+  .link-btn { background: none; border: none; color: var(--color-accent, #4f46e5); cursor: pointer; padding: 0; font: inherit; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">New POC</h1>
+    <p class="page-header__subtitle">Set up a customer, project, use cases, and tasks in one guided flow.</p>
+  </div>
+</div>
+
+{% if error %}<div class="inline-error">{{ error }}</div>{% endif %}
+
+<div class="wiz">
+  {% if templates %}
+  <div class="card" style="margin-bottom: var(--s-5);">
+    <div class="card__body" style="display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap;">
+      <label class="label" for="wiz-template" style="margin:0;">Start from a template</label>
+      <select class="select" id="wiz-template" style="max-width:320px;"
+              onchange="if(this.value){window.location='/ui/projects/wizard?template_id='+this.value}else{window.location='/ui/projects/wizard'}">
+        <option value="">Blank POC</option>
+        {% for t in templates %}
+        <option value="{{ t.id }}" {% if active_template and active_template.id == t.id %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+      {% if active_template %}
+      <span class="text-muted" style="font-size:0.85rem;">Pre-filled from <strong>{{ active_template.name }}</strong> — edit anything before creating.</span>
+      {% endif %}
+      <a href="/ui/templates" class="link-btn" style="margin-left:auto;">Manage templates</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <ol class="wiz-steps" id="wiz-steps">
+    <li class="wiz-steps__item is-active" data-goto="1"><span class="wiz-steps__num">1</span> Customer</li>
+    <li class="wiz-steps__item" data-goto="2"><span class="wiz-steps__num">2</span> Project</li>
+    <li class="wiz-steps__item" data-goto="3"><span class="wiz-steps__num">3</span> Use cases</li>
+    <li class="wiz-steps__item" data-goto="4"><span class="wiz-steps__num">4</span> Tasks</li>
+    <li class="wiz-steps__item" data-goto="5"><span class="wiz-steps__num">5</span> Review</li>
+  </ol>
+
+  <form method="post" action="/ui/projects/wizard" id="wiz-form" class="card" novalidate>
+    <div class="card__body">
+
+      {# ---- Step 1: Customer ---- #}
+      <section class="wiz-step" data-step="1">
+        <p class="wiz-explain">Who is this POC for? Most POCs start with a new customer.</p>
+        <div class="form-row" role="radiogroup" aria-label="Customer">
+          <label class="wiz-check"><input type="radio" name="customer_mode" value="new" id="cm-new"
+            {% if form.customer_mode != 'existing' %}checked{% endif %}> Create a new customer</label>
+          <label class="wiz-check"><input type="radio" name="customer_mode" value="existing" id="cm-existing"
+            {% if form.customer_mode == 'existing' %}checked{% endif %}> Use an existing customer</label>
+        </div>
+
+        <div id="cust-new" class="cust-panel">
+          <div class="form-row">
+            <label class="label" for="new_customer_name">Customer name<span class="label__required">*</span></label>
+            <input class="input" id="new_customer_name" name="new_customer_name" maxlength="200"
+              value="{{ form.new_customer_name or '' }}" placeholder="e.g. Acme Corp" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="new_customer_website">Website</label>
+            <input class="input" id="new_customer_website" name="new_customer_website" maxlength="500"
+              value="{{ form.new_customer_website or '' }}" placeholder="acme.com" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="new_customer_notes">Notes</label>
+            <textarea class="input" id="new_customer_notes" name="new_customer_notes" rows="2">{{ form.new_customer_notes or '' }}</textarea>
+          </div>
+        </div>
+
+        <div id="cust-existing" class="cust-panel" hidden>
+          <div class="form-row">
+            <label class="label" for="existing_customer_id">Existing customer<span class="label__required">*</span></label>
+            <select class="select" id="existing_customer_id" name="existing_customer_id">
+              <option value="">Select a customer…</option>
+              {% for c in customers %}
+              <option value="{{ c.id }}" {% if form.existing_customer_id and form.existing_customer_id|string == c.id|string %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {# ---- Step 2: Project ---- #}
+      <section class="wiz-step" data-step="2" hidden>
+        <p class="wiz-explain">The basics of the engagement. You can refine dates and links anytime later.</p>
+        <div class="form-row">
+          <label class="label" for="name">Project name</label>
+          <input class="input" id="name" name="name" maxlength="200" value="{{ form.name or '' }}"
+            placeholder="e.g. Q3 ISPM Proof of Concept" />
+          <div class="form-hint">Optional — defaults to the customer name if left blank.</div>
+        </div>
+        <div class="form-row">
+          <label class="label" for="status_id">Status</label>
+          <select class="select" id="status_id" name="status_id">
+            {% for s in project_statuses %}
+            <option value="{{ s.id }}" {% if form.status_id and form.status_id|string == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+          <div class="form-row">
+            <label class="label" for="start_date">Start date</label>
+            <input class="input" type="date" id="start_date" name="start_date" value="{{ form.start_date or '' }}" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="end_date">End date</label>
+            <input class="input" type="date" id="end_date" name="end_date" value="{{ form.end_date or '' }}" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="label" for="sales_engineer_id">Sales Engineer</label>
+          <select class="select" id="sales_engineer_id" name="sales_engineer_id">
+            <option value="">Unassigned</option>
+            {% for u in users %}
+            <option value="{{ u.id }}" {% if form.sales_engineer_id and form.sales_engineer_id|string == u.id|string %}selected{% endif %}>{{ u.display_label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+          <div class="form-row">
+            <label class="label" for="account_executive">Account Executive</label>
+            <input class="input" id="account_executive" name="account_executive" maxlength="200" value="{{ form.account_executive or '' }}" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="account_executive_email">AE email</label>
+            <input class="input" type="email" id="account_executive_email" name="account_executive_email" maxlength="255" value="{{ form.account_executive_email or '' }}" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="label" for="salesforce_opp_url">Salesforce Opportunity URL</label>
+          <input class="input" type="url" id="salesforce_opp_url" name="salesforce_opp_url" maxlength="1000" value="{{ form.salesforce_opp_url or '' }}" placeholder="https://…" />
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+          <div class="form-row">
+            <label class="label" for="notebook_url">Notebook URL</label>
+            <input class="input" type="url" id="notebook_url" name="notebook_url" maxlength="1000" value="{{ form.notebook_url or '' }}" placeholder="https://…" />
+          </div>
+          <div class="form-row">
+            <label class="label" for="poc_instance_url">POC Instance URL</label>
+            <input class="input" type="url" id="poc_instance_url" name="poc_instance_url" maxlength="1000" value="{{ form.poc_instance_url or '' }}" placeholder="https://…" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="label" for="notes">Notes</label>
+          <textarea class="input" id="notes" name="notes" rows="3" placeholder="Notes about this project…">{{ form.notes or '' }}</textarea>
+        </div>
+      </section>
+
+      {# ---- Step 3: Use cases ---- #}
+      <section class="wiz-step" data-step="3" hidden>
+        <p class="wiz-explain">Pick the use cases — your quest objectives — you'll validate. Start from the library or add your own.</p>
+        {% if library %}
+        {% for block in library %}
+        <div class="wiz-lib-set">
+          <p class="wiz-lib-set__name">{{ block.set.name }}</p>
+          {% for grp in block.groups %}
+          <p class="wiz-lib-cat">{{ grp.category }}</p>
+          {% for e in grp.entries %}
+          <label class="wiz-check">
+            <input type="checkbox" name="library_ids" value="{{ e.id }}" {% if e.id in selected_library_ids %}checked{% endif %}>
+            <span><strong>{{ e.name }}</strong>{% if e.description %} — <span style="color:var(--color-text-muted,#667)">{{ e.description }}</span>{% endif %}</span>
+          </label>
+          {% endfor %}
+          {% endfor %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="wiz-explain">No active use cases in the library yet — add custom ones below or manage the library later.</p>
+        {% endif %}
+
+        <h3 style="margin-top: var(--s-5);">Custom use cases</h3>
+        <div class="wiz-rows" id="custom-rows">
+          {% for r in custom_rows %}
+          <div class="wiz-row">
+            <div class="wiz-row__grid">
+              <div class="form-row"><label class="label">Category</label>
+                <input class="input" name="custom_category" value="{{ r.category or '' }}" placeholder="e.g. Security" /></div>
+              <div class="form-row"><label class="label">Name</label>
+                <input class="input" name="custom_name" value="{{ r.name or '' }}" placeholder="Use case name" /></div>
+            </div>
+            <div class="form-row"><label class="label">Description</label>
+              <input class="input" name="custom_description" value="{{ r.description or '' }}" /></div>
+            <div class="form-row"><label class="label">Success validation</label>
+              <input class="input" name="custom_success" value="{{ r.success_validation or '' }}" /></div>
+            <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+          </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn btn--secondary btn--sm" id="add-custom" style="margin-top: var(--s-3);">+ Add custom use case</button>
+      </section>
+
+      {# ---- Step 4: Tasks ---- #}
+      <section class="wiz-step" data-step="4" hidden>
+        <p class="wiz-explain">Optional: kickoff tasks to track. They're assigned to you and can be edited anytime.</p>
+        <div class="wiz-rows" id="task-rows">
+          {% for r in task_rows %}
+          <div class="wiz-row">
+            <div class="form-row"><label class="label">Task</label>
+              <input class="input" name="task_title" value="{{ r.title or '' }}" placeholder="e.g. Schedule kickoff call" /></div>
+            <div class="wiz-row__grid">
+              <div class="form-row"><label class="label">Start date</label>
+                <input class="input" type="date" name="task_start" value="{{ r.start_date or '' }}" /></div>
+              <div class="form-row"><label class="label">Due date</label>
+                <input class="input" type="date" name="task_due" value="{{ r.due_date or '' }}" /></div>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+          </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn btn--secondary btn--sm" id="add-task" style="margin-top: var(--s-3);">+ Add task</button>
+      </section>
+
+      {# ---- Step 5: Review ---- #}
+      <section class="wiz-step" data-step="5" hidden>
+        <p class="wiz-explain">Review and create. Nothing is saved until you click Create POC.</p>
+        <div class="wiz-review" id="wiz-review"></div>
+      </section>
+
+    </div>
+
+    <div class="wiz-actions" style="padding: var(--s-5) var(--s-6);">
+      <div>
+        <a href="/ui/projects" class="btn btn--ghost">Cancel</a>
+      </div>
+      <div class="wiz-actions__right">
+        <button type="button" class="link-btn" id="wiz-create-now" title="Skip the rest and create with what you have">Create now</button>
+        <button type="button" class="btn btn--secondary" id="wiz-back" hidden>Back</button>
+        <button type="button" class="btn btn--primary" id="wiz-next">Next</button>
+        <button type="submit" class="btn btn--primary" id="wiz-submit" hidden>Create POC</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+{# Templates for repeater rows #}
+<template id="tpl-custom-row">
+  <div class="wiz-row">
+    <div class="wiz-row__grid">
+      <div class="form-row"><label class="label">Category</label>
+        <input class="input" name="custom_category" placeholder="e.g. Security" /></div>
+      <div class="form-row"><label class="label">Name</label>
+        <input class="input" name="custom_name" placeholder="Use case name" /></div>
+    </div>
+    <div class="form-row"><label class="label">Description</label>
+      <input class="input" name="custom_description" /></div>
+    <div class="form-row"><label class="label">Success validation</label>
+      <input class="input" name="custom_success" /></div>
+    <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+  </div>
+</template>
+<template id="tpl-task-row">
+  <div class="wiz-row">
+    <div class="form-row"><label class="label">Task</label>
+      <input class="input" name="task_title" placeholder="e.g. Schedule kickoff call" /></div>
+    <div class="wiz-row__grid">
+      <div class="form-row"><label class="label">Start date</label>
+        <input class="input" type="date" name="task_start" /></div>
+      <div class="form-row"><label class="label">Due date</label>
+        <input class="input" type="date" name="task_due" /></div>
+    </div>
+    <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+  </div>
+</template>
+{% endblock %}
+
+{% block body_scripts %}
+<script>
+(function () {
+  var TOTAL = 5;
+  var current = 1;
+  var form = document.getElementById('wiz-form');
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.wiz-step'));
+  var indicators = Array.prototype.slice.call(document.querySelectorAll('#wiz-steps .wiz-steps__item'));
+  var backBtn = document.getElementById('wiz-back');
+  var nextBtn = document.getElementById('wiz-next');
+  var submitBtn = document.getElementById('wiz-submit');
+
+  function show(step) {
+    current = Math.max(1, Math.min(TOTAL, step));
+    steps.forEach(function (s) { s.hidden = parseInt(s.dataset.step, 10) !== current; });
+    indicators.forEach(function (el) {
+      var n = parseInt(el.dataset.goto, 10);
+      el.classList.toggle('is-active', n === current);
+      el.classList.toggle('is-done', n < current);
+    });
+    backBtn.hidden = current === 1;
+    nextBtn.hidden = current === TOTAL;
+    submitBtn.hidden = current !== TOTAL;
+    if (current === TOTAL) buildReview();
+    window.scrollTo(0, 0);
+  }
+
+  // ---- Customer mode toggle ----
+  var newPanel = document.getElementById('cust-new');
+  var existPanel = document.getElementById('cust-existing');
+  function syncCustomerMode() {
+    var isExisting = document.getElementById('cm-existing').checked;
+    newPanel.hidden = isExisting;
+    existPanel.hidden = !isExisting;
+  }
+  document.getElementById('cm-new').addEventListener('change', syncCustomerMode);
+  document.getElementById('cm-existing').addEventListener('change', syncCustomerMode);
+  syncCustomerMode();
+
+  // ---- Customer validation (the only hard requirement) ----
+  function validateCustomer() {
+    var isExisting = document.getElementById('cm-existing').checked;
+    if (isExisting) {
+      var sel = document.getElementById('existing_customer_id');
+      if (!sel.value) { show(1); sel.focus(); alert('Pick an existing customer, or switch to creating a new one.'); return false; }
+    } else {
+      var name = document.getElementById('new_customer_name');
+      if (!name.value.trim()) { show(1); name.focus(); alert('Enter a customer name, or switch to an existing customer.'); return false; }
+    }
+    return true;
+  }
+
+  nextBtn.addEventListener('click', function () {
+    if (current === 1 && !validateCustomer()) return;
+    show(current + 1);
+  });
+  backBtn.addEventListener('click', function () { show(current - 1); });
+  indicators.forEach(function (el) {
+    el.addEventListener('click', function () {
+      var target = parseInt(el.dataset.goto, 10);
+      // Moving past the customer step always requires a valid customer.
+      if (target > 1 && !validateCustomer()) return;
+      show(target);
+    });
+  });
+
+  document.getElementById('wiz-create-now').addEventListener('click', function () {
+    if (validateCustomer()) form.submit();
+  });
+  form.addEventListener('submit', function (e) {
+    if (!validateCustomer()) e.preventDefault();
+  });
+
+  // ---- Repeaters ----
+  function addRow(containerId, templateId) {
+    var tpl = document.getElementById(templateId);
+    document.getElementById(containerId).appendChild(tpl.content.cloneNode(true));
+  }
+  document.getElementById('add-custom').addEventListener('click', function () { addRow('custom-rows', 'tpl-custom-row'); });
+  document.getElementById('add-task').addEventListener('click', function () { addRow('task-rows', 'tpl-task-row'); });
+  form.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-remove-row]');
+    if (btn) btn.closest('.wiz-row').remove();
+  });
+
+  // ---- Review summary ----
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+  function group(label, html) {
+    return '<div class="wiz-review__group"><div class="wiz-review__label">' + esc(label) + '</div><div>' + html + '</div></div>';
+  }
+  function buildReview() {
+    var out = '';
+    var isExisting = document.getElementById('cm-existing').checked;
+    var customer;
+    if (isExisting) {
+      var sel = document.getElementById('existing_customer_id');
+      customer = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '—';
+    } else {
+      customer = document.getElementById('new_customer_name').value.trim() + ' (new)';
+    }
+    out += group('Customer', esc(customer));
+
+    var projName = document.getElementById('name').value.trim();
+    var statusSel = document.getElementById('status_id');
+    var statusTxt = statusSel.options[statusSel.selectedIndex] ? statusSel.options[statusSel.selectedIndex].text : '';
+    out += group('Project', esc(projName || '(named after customer)') + ' · ' + esc(statusTxt));
+
+    var libCount = form.querySelectorAll('input[name="library_ids"]:checked').length;
+    var customCount = 0;
+    form.querySelectorAll('#custom-rows input[name="custom_name"]').forEach(function (i) { if (i.value.trim()) customCount++; });
+    out += group('Use cases', esc((libCount + customCount) + ' selected') +
+      ' <span style="color:var(--color-text-muted,#667)">(' + libCount + ' from library, ' + customCount + ' custom)</span>');
+
+    var taskCount = 0;
+    form.querySelectorAll('#task-rows input[name="task_title"]').forEach(function (i) { if (i.value.trim()) taskCount++; });
+    out += group('Tasks', esc(taskCount + ' task' + (taskCount === 1 ? '' : 's')));
+
+    document.getElementById('wiz-review').innerHTML = out;
+  }
+
+  show(1);
+})();
+</script>
+{% endblock %}

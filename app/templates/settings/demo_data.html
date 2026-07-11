@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set page_title = "Demo Data" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Demo Data</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Demo Data</h1>
+    <p class="page-header__subtitle">Load a realistic sample portfolio so the dashboard insights have something to show. For demo and testing instances only.</p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 720px; margin-bottom: var(--s-5);">
+  <div class="card__header">
+    <h2 class="card__title">Load sample portfolio</h2>
+  </div>
+  <form method="post" action="/ui/settings/demo-data" class="card__body">
+    <input type="hidden" name="action" value="load" />
+
+    <p class="text-muted mb-6">
+      Adds {{ total_customers }} sample customers &amp; projects (~38 use cases across feature areas) and two extra sales engineers, shaped to exercise every dashboard insight — status mix, engineer load, at-risk, stalled, and feature areas.
+      This is <strong>additive and idempotent</strong>: it never touches your real customers, and re-running skips anything already loaded.
+    </p>
+
+    <div class="inline-note" style="margin-bottom: var(--s-5); padding: var(--s-3) var(--s-4); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2);">
+      {% if present_count %}
+        <strong>{{ present_count }} of {{ total_customers }}</strong> demo customers are currently loaded.
+      {% else %}
+        No demo data is currently loaded.
+      {% endif %}
+      <div class="text-xs text-muted" style="margin-top: var(--s-1);">
+        Demo engineers <span class="mono">amaya</span> and <span class="mono">devlin</span> sign in with password <span class="mono">{{ demo_user_password }}</span>.
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <a href="/ui/settings" class="btn btn--secondary">Back</a>
+      <button type="submit" class="btn btn--primary">
+        {% if present_count and present_count < total_customers %}Load missing demo data{% else %}Load demo data{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="card" style="max-width: 720px; border-color: var(--danger-line);">
+  <div class="card__header" style="background: var(--danger-soft); border-bottom-color: var(--danger-line);">
+    <h2 class="card__title" style="color: var(--danger);">⚠ Remove demo data</h2>
+  </div>
+  <form method="post" action="/ui/settings/demo-data" class="card__body">
+    <input type="hidden" name="action" value="remove" />
+
+    <p class="text-muted mb-6">
+      Deletes exactly the demo customers, their projects and use cases, and the two demo engineer accounts (if they own nothing else). Your real data is left untouched.
+    </p>
+
+    <div data-reset-phrase="{{ remove_phrase }}">
+      <label class="label" for="reset-confirm-input">
+        To confirm, type <span class="kbd">{{ remove_phrase }}</span> below:<span class="label__required">*</span>
+      </label>
+      <input class="input mono" id="reset-confirm-input" name="confirm" autocomplete="off" placeholder="Type {{ remove_phrase }} to enable the button" />
+    </div>
+
+    <div class="form-actions">
+      <a href="/ui/settings" class="btn btn--secondary">Cancel</a>
+      <button type="submit" id="reset-submit" class="btn btn--danger" disabled>Remove demo data</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

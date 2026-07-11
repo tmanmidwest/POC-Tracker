@@ -39,6 +39,10 @@
     <div class="settings-tile__title">Google Tasks</div>
     <div class="settings-tile__desc">OAuth client for per-user Google Tasks sync.</div>
   </a>
+  <a href="/ui/settings/email" class="settings-tile">
+    <div class="settings-tile__title">Email</div>
+    <div class="settings-tile__desc">Outbound SMTP server for notifications and invitations.</div>
+  </a>
   <a href="/ui/settings/branding" class="settings-tile">
     <div class="settings-tile__title">Branding</div>
     <div class="settings-tile__desc">App name, accent color, and icon.</div>
@@ -59,5 +63,11 @@
     <div class="settings-tile__title">Reset Data</div>
     <div class="settings-tile__desc">Restore lookups and sample data, or clear records.</div>
   </a>
+  {% if demo_tools_enabled %}
+  <a href="/ui/settings/demo-data" class="settings-tile">
+    <div class="settings-tile__title">Demo Data</div>
+    <div class="settings-tile__desc">Load or remove a sample portfolio for demos and testing.</div>
+  </a>
+  {% endif %}
 </div>
 {% endblock %}
