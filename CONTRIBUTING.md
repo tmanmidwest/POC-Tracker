@@ -2,33 +2,32 @@
 
 Thanks for considering a contribution to the Questlog.
 
-This is a POC tool with a deliberately narrow scope. Contributions that fit the scope and keep the app simple are welcome.
+This is a deliberately narrow-scope tool. Contributions that fit the scope and keep the app simple are welcome.
 
 ## Scope reminder
 
-This app is for **non-production POC use**, primarily for testing Saviynt Identity Cloud and similar IGA/IAM REST integrations. Contributions should not:
+Questlog is a **non-production tool** for tracking proof-of-concept (POC) engagements — customers and contacts, projects, use cases, and reporting — exposed through a web UI, a REST API, and an MCP server. Contributions should not:
 
-- Add features that require additional containers (databases, caches, queues)
-- Add features that turn this into a production HR system (payroll, time tracking, performance reviews)
+- Add features that require additional containers (caches, queues, etc.) — keep the "one container, one command, it runs" deployment story
+- Turn this into a full CRM or project-management suite (billing, resourcing, time tracking, forecasting)
 - Add multi-tenancy
-- Compromise the "one container, one command, it runs" deployment story
 
 Contributions that **are** in scope:
 
-- New lookup fields or employee attributes that match real HR systems
-- Additional auth methods commonly required by IGA platforms
-- Better seed data
+- New use-case library sets or lookup fields (statuses, priorities, feature types) that match real POC workflows
+- Additional auth methods (OIDC providers) commonly required by customers
+- Better seed/demo data
 - Bug fixes
 - Documentation improvements
-- Examples of connector configurations for other IGA products (SailPoint, Okta, Microsoft Entra, etc.)
+- Improvements to the REST API or MCP server surface
 
 ## Local development setup
 
 Requirements: Python 3.12+, Docker.
 
 ```bash
-git clone https://github.com/tmanmidwest/hrDemoWebApp.git
-cd hrDemoWebApp
+git clone https://github.com/tmanmidwest/POC-Tracker.git
+cd POC-Tracker
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
@@ -78,26 +77,24 @@ ruff format --check .
 2. Add the Pydantic schemas in `app/schemas/`
 3. Add Alembic migration: `alembic revision --autogenerate -m "add foo table"`
 4. Add REST endpoints under `app/api/v1/`
-5. Add UI page under `app/ui/`
-6. Add seed data in `app/seed_data.py` if applicable
+5. Add UI routes under `app/ui/` and templates under `app/templates/`
+6. Add seed data in `app/services/seed_data.py` if applicable
 7. Update `docs/SCHEMA.md` and `docs/API.md`
 8. Add tests in `tests/`
 
-## Adding a new employee field
+## Adding a field to a project or use case
 
-1. Update the `Employee` model and add Alembic migration
-2. Update Pydantic schemas
-3. Update the employee form template
-4. Update the employee list column options
-5. Update `docs/SCHEMA.md`
-6. Add to the suggested field mapping in `docs/SAVIYNT_INTEGRATION.md`
-7. Add tests
+1. Update the SQLAlchemy model in `app/models/` (e.g. `project.py`, `project_use_case.py`) and add an Alembic migration
+2. Update the Pydantic schemas in `app/schemas/`
+3. Update the relevant form and list templates in `app/templates/`
+4. Update `docs/SCHEMA.md` (and `docs/API.md` if the field is exposed on the API)
+5. Add tests
 
 ## Reporting issues
 
 When filing an issue, include:
 
-- App version (`docker image inspect ghcr.io/tmanmidwest/hrdemowebapp | grep -i version`)
+- App version (shown in the app sidebar and at `GET /health`; or `docker image inspect ghcr.io/tmanmidwest/poc-tracker | grep -i version`)
 - Deployment environment (local Docker, ECS, AKS, etc.)
 - Steps to reproduce
 - Expected vs actual behavior

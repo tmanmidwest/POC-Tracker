@@ -80,6 +80,22 @@ docker compose up --build
 
 The SQLite database, screenshots, and signing keys persist in the `poct-data` named volume.
 
+### Run a published image (no build)
+
+`docker compose up --build` compiles the image from source. To instead run a
+**pre-built, versioned image** from the GitHub Container Registry — the easiest
+way to share it with others — point `POCT_IMAGE` at a published tag and skip the
+build:
+
+```bash
+POCT_IMAGE=ghcr.io/tmanmidwest/poc-tracker:latest docker compose up -d   # or pin :1.0.0
+```
+
+Available tags: `:1.0.0` (exact, immutable), `:1.0` (newest 1.0.x patch), `:1`
+(newest 1.x), `:latest` (newest stable). See
+[docs/RELEASING.md](docs/RELEASING.md#publishing-the-docker-image) for how images
+are built and versioned.
+
 ### The two containers
 
 The compose stack defines two services that **both start by default** — the **app** (`8010`)
