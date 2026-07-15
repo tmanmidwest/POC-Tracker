@@ -253,6 +253,7 @@ def list_lookups() -> dict[str, list[dict]]:
     the write tools."""
     return {
         "project_statuses": _get("/project-statuses/"),
+        "project_types": _get("/project-types/"),
         "feature_types": _get("/feature-types/"),
         "use_case_statuses": _get("/use-case-statuses/"),
         "contact_roles": _get("/contact-roles/"),
@@ -280,6 +281,7 @@ def create_project(
     customer_id: int,
     name: str | None = None,
     status: Any = None,
+    type: Any = None,
     start_date: str | None = None,
     end_date: str | None = None,
     sales_engineer_id: int | None = None,
@@ -288,12 +290,17 @@ def create_project(
     notes: str | None = None,
 ) -> dict:
     """Create a POC project for a customer. `status` may be a project-status name
-    or id (defaults to the first status if omitted). Dates are ISO (YYYY-MM-DD)."""
+    or id (defaults to the first status if omitted). `type` may be a project-type
+    name or id (Workshop, POC Playbook, …) or omitted. Dates are ISO
+    (YYYY-MM-DD)."""
     body: dict[str, Any] = {
         "customer_id": customer_id,
         "name": name,
         "status_id": _resolve(status, _name_map("/project-statuses/"), "project status")
         if status is not None
+        else None,
+        "type_id": _resolve(type, _name_map("/project-types/"), "project type")
+        if type is not None
         else None,
         "start_date": start_date,
         "end_date": end_date,

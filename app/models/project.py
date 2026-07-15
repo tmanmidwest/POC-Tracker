@@ -13,6 +13,7 @@ from app.models._mixins import TimestampMixin
 from app.models.app_user import AppUser
 from app.models.customer import Customer
 from app.models.project_status import ProjectStatus
+from app.models.project_type import ProjectType
 
 if TYPE_CHECKING:
     from app.models.project_category_order import ProjectCategoryOrder
@@ -41,6 +42,12 @@ class Project(Base, TimestampMixin):
 
     status_id: Mapped[int] = mapped_column(
         ForeignKey("project_statuses.id"), nullable=False, index=True
+    )
+
+    # Kind of engagement (Workshop, POC Playbook, POC Full Stack, …). Optional —
+    # the dashboard groups by it and buckets untyped projects separately.
+    type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project_types.id"), nullable=True, index=True
     )
 
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -93,6 +100,7 @@ class Project(Base, TimestampMixin):
         "Customer", back_populates="projects", lazy="joined"
     )
     status: Mapped[ProjectStatus] = relationship("ProjectStatus", lazy="joined")
+    type: Mapped[ProjectType | None] = relationship("ProjectType", lazy="joined")
     sales_engineer: Mapped[AppUser | None] = relationship("AppUser", lazy="joined")
     use_cases: Mapped[list[ProjectUseCase]] = relationship(
         "ProjectUseCase",

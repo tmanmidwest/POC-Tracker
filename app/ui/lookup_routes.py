@@ -21,6 +21,7 @@ from app.models import (
     ContactRole,
     FeatureType,
     ProjectStatus,
+    ProjectType,
     TaskPriority,
     TaskStatus,
     UseCaseStatus,
@@ -59,6 +60,18 @@ LOOKUPS: dict[str, dict[str, Any]] = {
             {"name": "name", "label": "Name", "type": "text", "required": True},
             {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
             {"name": "is_terminal", "label": "Terminal (e.g. Won/Lost)", "type": "checkbox"},
+        ],
+    },
+    "project-types": {
+        "model": ProjectType,
+        "title": "Project Types",
+        "subtitle": "Kind of engagement a POC is (Workshop, POC Playbook, …). The dashboard groups by these.",
+        "subsection": "project_types",
+        "event_noun": "project_type",
+        "order_by": ProjectType.name,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {"name": "description", "label": "Description", "type": "text", "required": False},
         ],
     },
     "feature-types": {

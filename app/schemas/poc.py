@@ -259,6 +259,8 @@ class ProjectOut(BaseModel):
     name: str | None
     status_id: int
     status: NamedRef
+    type_id: int | None
+    type: NamedRef | None
     start_date: date | None
     end_date: date | None
     sales_engineer_id: int | None
@@ -331,6 +333,7 @@ class ProjectCreate(BaseModel):
     customer_id: int
     name: str | None = Field(default=None, max_length=200)
     status_id: int | None = None
+    type_id: int | None = None
     start_date: date | None = None
     end_date: date | None = None
     sales_engineer_id: int | None = None
@@ -346,6 +349,7 @@ class ProjectUpdate(BaseModel):
     customer_id: int | None = None
     name: str | None = Field(default=None, max_length=200)
     status_id: int | None = None
+    type_id: int | None = None
     start_date: date | None = None
     end_date: date | None = None
     sales_engineer_id: int | None = None

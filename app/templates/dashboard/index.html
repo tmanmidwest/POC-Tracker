@@ -57,6 +57,12 @@
       <div class="chart-panel__title">Projects by status</div>
       <div id="chart-status" class="chart-panel__body"></div>
     </div>
+    {% if insights.type_series %}
+    <div class="card chart-panel">
+      <div class="chart-panel__title">Projects by type</div>
+      <div id="chart-type" class="chart-panel__body"></div>
+    </div>
+    {% endif %}
     {% if insights.se_series | length > 1 %}
     <div class="card chart-panel">
       <div class="chart-panel__title">Portfolio by engineer</div>
@@ -126,6 +132,7 @@
   <script type="application/json" id="insights-data">
     {{ {
       "status_series": insights.status_series,
+      "type_series": insights.type_series,
       "se_series": insights.se_series,
       "uc_status_series": insights.uc_status_series,
       "feature_series": insights.feature_series
@@ -283,6 +290,7 @@
     }
 
     donut('chart-status', data.status_series);
+    donut('chart-type', data.type_series);
     hbar('chart-se', data.se_series);
     donut('chart-ucstatus', data.uc_status_series);
     hbar('chart-feature', data.feature_series);

@@ -28,6 +28,7 @@ from app.models import (
     FeatureType,
     Project,
     ProjectStatus,
+    ProjectType,
     ProjectUseCase,
     UseCaseStatus,
 )
@@ -105,6 +106,7 @@ def seed_demo_data(db: Session, *, force: bool = False) -> dict[str, int]:
         db.scalars(select(UseCaseStatus).order_by(UseCaseStatus.sort_order))
     )
     features = list(db.scalars(select(FeatureType)))
+    types = list(db.scalars(select(ProjectType).order_by(ProjectType.name)))
     if not statuses or not uc_statuses:
         raise RuntimeError(
             "Lookup tables are empty — start the app once so the database is "
@@ -143,6 +145,7 @@ def seed_demo_data(db: Session, *, force: bool = False) -> dict[str, int]:
             customer_id=customer.id,
             name=f"{name} POC",
             status_id=status.id,
+            type_id=(rng.choice(types).id if types else None),
             sales_engineer_id=engineer.id,
             start_date=date.today() - timedelta(days=40),
             end_date=end_date,

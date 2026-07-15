@@ -41,6 +41,7 @@ from app.models import (
     ProjectGrant,
     ProjectNote,
     ProjectStatus,
+    ProjectType,
     ProjectUseCase,
     Screenshot,
     Task,
@@ -326,6 +327,10 @@ def _form_dropdowns(db: Session) -> dict:
         .filter(ProjectStatus.is_active.is_(True))
         .order_by(ProjectStatus.sort_order)
         .all(),
+        "project_types": db.query(ProjectType)
+        .filter(ProjectType.is_active.is_(True))
+        .order_by(ProjectType.name)
+        .all(),
         "users": db.query(AppUser)
         .filter(AppUser.is_active.is_(True))
         .order_by(AppUser.username)
@@ -420,6 +425,7 @@ async def _read_project_form(request: Request) -> dict:
         "customer_id": form.get("customer_id"),
         "name": _clean(form.get("name")),  # type: ignore[arg-type]
         "status_id": form.get("status_id"),
+        "type_id": form.get("type_id"),
         "start_date": _parse_date(form.get("start_date")),  # type: ignore[arg-type]
         "end_date": _parse_date(form.get("end_date")),  # type: ignore[arg-type]
         "sales_engineer_id": form.get("sales_engineer_id"),
@@ -453,6 +459,7 @@ async def create_project(
         customer_id=int(data["customer_id"]),
         name=data["name"],
         status_id=status_id,
+        type_id=int(data["type_id"]) if data["type_id"] else None,
         start_date=data["start_date"],
         end_date=data["end_date"],
         sales_engineer_id=int(data["sales_engineer_id"]) if data["sales_engineer_id"] else None,
@@ -566,6 +573,7 @@ async def wizard_create(
     project = {
         "name": _clean(g("name")),
         "status_id": int(g("status_id")) if g("status_id") and g("status_id").isdigit() else None,
+        "type_id": int(g("type_id")) if g("type_id") and g("type_id").isdigit() else None,
         "start_date": _parse_date(g("start_date")),
         "end_date": _parse_date(g("end_date")),
         "sales_engineer_id": int(g("sales_engineer_id")) if g("sales_engineer_id") and g("sales_engineer_id").isdigit() else None,
@@ -702,6 +710,7 @@ def edit_form(
         "customer_id": project.customer_id,
         "name": project.name,
         "status_id": project.status_id,
+        "type_id": project.type_id,
         "start_date": project.start_date.isoformat() if project.start_date else None,
         "end_date": project.end_date.isoformat() if project.end_date else None,
         "sales_engineer_id": project.sales_engineer_id,
@@ -736,6 +745,7 @@ async def update_project(
     project.name = data["name"]
     if data["status_id"]:
         project.status_id = int(data["status_id"])
+    project.type_id = int(data["type_id"]) if data["type_id"] else None
     project.start_date = data["start_date"]
     project.end_date = data["end_date"]
     project.sales_engineer_id = (

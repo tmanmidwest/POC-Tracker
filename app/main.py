@@ -185,6 +185,7 @@ def create_app() -> FastAPI:
         contact_roles_router,
         feature_types_router,
         project_statuses_router,
+        project_types_router,
         task_priorities_router,
         task_statuses_router,
         use_case_statuses_router,
@@ -204,6 +205,7 @@ def create_app() -> FastAPI:
     # /api/v1/* (lookups)
     app.include_router(contact_roles_router, prefix="/api/v1")
     app.include_router(project_statuses_router, prefix="/api/v1")
+    app.include_router(project_types_router, prefix="/api/v1")
     app.include_router(feature_types_router, prefix="/api/v1")
     app.include_router(use_case_statuses_router, prefix="/api/v1")
     app.include_router(task_statuses_router, prefix="/api/v1")

@@ -127,13 +127,24 @@
             placeholder="e.g. Q3 ISPM Proof of Concept" />
           <div class="form-hint">Optional — defaults to the customer name if left blank.</div>
         </div>
-        <div class="form-row">
-          <label class="label" for="status_id">Status</label>
-          <select class="select" id="status_id" name="status_id">
-            {% for s in project_statuses %}
-            <option value="{{ s.id }}" {% if form.status_id and form.status_id|string == s.id|string %}selected{% endif %}>{{ s.name }}</option>
-            {% endfor %}
-          </select>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+          <div class="form-row">
+            <label class="label" for="status_id">Status</label>
+            <select class="select" id="status_id" name="status_id">
+              {% for s in project_statuses %}
+              <option value="{{ s.id }}" {% if form.status_id and form.status_id|string == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="label" for="type_id">Type</label>
+            <select class="select" id="type_id" name="type_id">
+              <option value="">Unspecified</option>
+              {% for t in project_types %}
+              <option value="{{ t.id }}" {% if form.type_id and form.type_id|string == t.id|string %}selected{% endif %}>{{ t.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
           <div class="form-row">

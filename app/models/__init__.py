@@ -32,6 +32,7 @@ from app.models.project_grant import ProjectGrant
 from app.models.project_note import ProjectNote
 from app.models.project_share_link import ProjectShareLink
 from app.models.project_status import ProjectStatus
+from app.models.project_type import ProjectType
 from app.models.project_use_case import ProjectUseCase
 from app.models.screenshot import Screenshot
 from app.models.smtp_config import SmtpConfig
@@ -75,6 +76,7 @@ __all__ = [
     "ProjectNote",
     "ProjectShareLink",
     "ProjectStatus",
+    "ProjectType",
     "ProjectUseCase",
     "Screenshot",
     "SmtpConfig",

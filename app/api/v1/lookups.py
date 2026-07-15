@@ -25,6 +25,7 @@ from app.models import (
     FeatureType,
     Project,
     ProjectStatus,
+    ProjectType,
     ProjectUseCase,
     Task,
     TaskPriority,
@@ -42,6 +43,9 @@ from app.schemas.lookups import (
     ProjectStatusCreate,
     ProjectStatusOut,
     ProjectStatusUpdate,
+    ProjectTypeCreate,
+    ProjectTypeOut,
+    ProjectTypeUpdate,
     TaskPriorityCreate,
     TaskPriorityOut,
     TaskPriorityUpdate,
@@ -216,6 +220,18 @@ project_statuses_router = _make_lookup_router(
     event_noun="project_status",
     order_by=ProjectStatus.sort_order,
     references=lambda rid: [("projects", Project, Project.status_id, rid)],
+)
+
+project_types_router = _make_lookup_router(
+    prefix="/project-types",
+    model=ProjectType,
+    out_schema=ProjectTypeOut,
+    create_schema=ProjectTypeCreate,
+    update_schema=ProjectTypeUpdate,
+    noun="Project type",
+    event_noun="project_type",
+    order_by=ProjectType.name,
+    references=lambda rid: [("projects", Project, Project.type_id, rid)],
 )
 
 feature_types_router = _make_lookup_router(

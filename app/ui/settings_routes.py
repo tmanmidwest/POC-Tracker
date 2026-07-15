@@ -2018,6 +2018,7 @@ def do_reset(
     reset_sample_data: str | None = Form(None),
     reset_contact_roles: str | None = Form(None),
     reset_project_statuses: str | None = Form(None),
+    reset_project_types: str | None = Form(None),
     reset_feature_types: str | None = Form(None),
     reset_use_case_statuses: str | None = Form(None),
     reset_use_case_library: str | None = Form(None),
@@ -2030,12 +2031,13 @@ def do_reset(
     do_sample = bool(reset_sample_data)
     do_roles = bool(reset_contact_roles)
     do_pstatuses = bool(reset_project_statuses)
+    do_ptypes = bool(reset_project_types)
     do_features = bool(reset_feature_types)
     do_ucstatuses = bool(reset_use_case_statuses)
     do_library = bool(reset_use_case_library)
     do_audit = bool(reset_audit_events)
 
-    do_lookups = do_roles or do_pstatuses or do_features or do_ucstatuses
+    do_lookups = do_roles or do_pstatuses or do_ptypes or do_features or do_ucstatuses
 
     # Lookups are referenced by customers/projects/use cases. Resetting a lookup
     # while that data still exists would violate a foreign key, so require the
@@ -2068,6 +2070,10 @@ def do_reset(
         if do_pstatuses:
             n = seed_data.reset_project_statuses(db)
             actions.append(f"project statuses ({n})")
+
+        if do_ptypes:
+            n = seed_data.reset_project_types(db)
+            actions.append(f"project types ({n})")
 
         if do_features:
             n = seed_data.reset_feature_types(db)

@@ -131,6 +131,7 @@ def _build_insights(
     at_risk = 0
     stalled = 0
     status_counter: Counter[int] = Counter()
+    type_counter: Counter[str] = Counter()
     se_counter: Counter[str] = Counter()
     uc_status_counter: Counter[str] = Counter()
     feature_counter: Counter[str] = Counter()
@@ -141,6 +142,7 @@ def _build_insights(
         if prog["total"]:
             pcts.append(prog["pct"])
         status_counter[p.status_id] += 1
+        type_counter[p.type.name if p.type else "Untyped"] += 1
         eng = p.sales_engineer.display_label if p.sales_engineer else "Unassigned"
         se_counter[eng] += 1
         for uc in p.use_cases:
@@ -210,6 +212,14 @@ def _build_insights(
         for s in statuses
         if status_counter.get(s.id)
     ]
+    # Projects by type: named types alphabetically (their canonical order — types
+    # carry no sort_order), with any untyped projects bucketed last.
+    type_series = [
+        {"label": name, "count": type_counter[name]}
+        for name in sorted(n for n in type_counter if n != "Untyped")
+    ]
+    if type_counter.get("Untyped"):
+        type_series.append({"label": "Untyped", "count": type_counter["Untyped"]})
     se_series = [
         {"label": name, "count": n} for name, n in se_counter.most_common(SE_LOAD_TOP)
     ]
@@ -228,6 +238,7 @@ def _build_insights(
             "stalled": stalled,
         },
         "status_series": status_series,
+        "type_series": type_series,
         "se_series": se_series,
         "uc_status_series": uc_status_series,
         "feature_series": feature_series,

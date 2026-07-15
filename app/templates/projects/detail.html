@@ -195,6 +195,9 @@
     <p class="page-header__subtitle">
       <a href="/ui/customers/{{ project.customer_id }}">{{ project.customer.name }}</a>
       · <span class="badge badge--neutral">{{ project.status.name }}</span>
+      {% if project.type %}
+      · <span class="badge badge--neutral">{{ project.type.name }}</span>
+      {% endif %}
       {% if project.salesforce_opp_url %}
       · <a href="{{ project.salesforce_opp_url }}" target="_blank" rel="noopener noreferrer">Salesforce Opp ↗</a>
       {% endif %}

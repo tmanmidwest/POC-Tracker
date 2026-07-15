@@ -110,6 +110,7 @@ def create_poc_from_wizard(db: Session, user, data: WizardInput) -> Project:
         customer_id=customer.id,
         name=(p.get("name") or None),
         status_id=p.get("status_id") or default_project_status_id(db),
+        type_id=p.get("type_id"),
         start_date=p.get("start_date"),
         end_date=p.get("end_date"),
         sales_engineer_id=p.get("sales_engineer_id"),

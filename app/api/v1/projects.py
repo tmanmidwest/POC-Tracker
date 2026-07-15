@@ -21,6 +21,7 @@ from app.models import (
     Project,
     ProjectNote,
     ProjectStatus,
+    ProjectType,
     ProjectUseCase,
     UseCaseStatus,
 )
@@ -142,6 +143,9 @@ def _validate_project_fks(db: Session, data: dict) -> None:
     st_id = data.get("status_id")
     if st_id is not None and db.get(ProjectStatus, st_id) is None:
         raise HTTPException(status_code=422, detail="Unknown project status.")
+    type_id = data.get("type_id")
+    if type_id is not None and db.get(ProjectType, type_id) is None:
+        raise HTTPException(status_code=422, detail="Unknown project type.")
     cust_id = data.get("customer_id")
     if cust_id is not None and db.get(Customer, cust_id) is None:
         raise HTTPException(status_code=422, detail="Unknown customer.")

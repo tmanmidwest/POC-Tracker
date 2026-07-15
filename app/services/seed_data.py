@@ -24,6 +24,7 @@ from app.models import (
     LibrarySet,
     Project,
     ProjectStatus,
+    ProjectType,
     ProjectUseCase,
     Screenshot,
     TaskPriority,
@@ -61,6 +62,15 @@ DEFAULT_PROJECT_STATUSES: list[tuple[str, int, bool, bool]] = [
     ("On Hold", 50, False, False),
     ("Completed - Won", 90, True, False),
     ("Completed - Lost", 100, True, False),
+]
+
+# (name, description, is_system)
+# The dashboard groups projects by these. Displayed alphabetically (no
+# sort_order), so seed order below doesn't matter.
+DEFAULT_PROJECT_TYPES: list[tuple[str, str | None, bool]] = [
+    ("Workshop", "Hands-on working session with the customer.", True),
+    ("POC Playbook", "Guided proof of concept following a standard playbook.", True),
+    ("POC Full Stack", "Full end-to-end proof of concept across the stack.", True),
 ]
 
 # (name, description, is_system)
@@ -179,6 +189,7 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
 
     seed_contact_roles(db)
     seed_project_statuses(db)
+    seed_project_types(db)
     seed_feature_types(db)
     seed_use_case_statuses(db)
     seed_task_statuses(db)
@@ -199,6 +210,8 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
             "project_statuses": db.scalar(
                 select(func.count()).select_from(ProjectStatus)
             )
+            or 0,
+            "project_types": db.scalar(select(func.count()).select_from(ProjectType))
             or 0,
             "feature_types": db.scalar(select(func.count()).select_from(FeatureType)) or 0,
             "use_case_statuses": db.scalar(
@@ -254,6 +267,26 @@ def seed_project_statuses(db: Session) -> int:
     if inserted:
         db.flush()
         log.info("seeded_project_statuses", extra={"inserted": inserted})
+    return inserted
+
+
+def seed_project_types(db: Session) -> int:
+    existing = {row[0] for row in db.execute(select(ProjectType.name)).all()}
+    inserted = 0
+    for name, description, is_system in DEFAULT_PROJECT_TYPES:
+        if name not in existing:
+            db.add(
+                ProjectType(
+                    name=name,
+                    description=description,
+                    is_active=True,
+                    is_system=is_system,
+                )
+            )
+            inserted += 1
+    if inserted:
+        db.flush()
+        log.info("seeded_project_types", extra={"inserted": inserted})
     return inserted
 
 
@@ -474,6 +507,9 @@ def seed_sample_data(db: Session) -> int:
     pending = db.scalar(
         select(ProjectStatus).where(ProjectStatus.name == "In Progress")
     )
+    full_stack = db.scalar(
+        select(ProjectType).where(ProjectType.name == "POC Full Stack")
+    )
     champion = db.scalar(select(ContactRole).where(ContactRole.name == "Champion"))
     uc_pending = db.scalar(
         select(UseCaseStatus).where(UseCaseStatus.name == "Pending Testing")
@@ -506,6 +542,7 @@ def seed_sample_data(db: Session) -> int:
         customer_id=customer.id,
         name="Acme IGA Proof of Concept",
         status_id=pending.id,
+        type_id=full_stack.id if full_stack else None,
         start_date=date(2026, 6, 1),
         end_date=date(2026, 7, 15),
         sales_engineer_id=admin.id if admin else None,
@@ -575,6 +612,14 @@ def reset_project_statuses(db: Session) -> int:
     db.query(ProjectStatus).delete()
     db.flush()
     inserted = seed_project_statuses(db)
+    db.commit()
+    return inserted
+
+
+def reset_project_types(db: Session) -> int:
+    db.query(ProjectType).delete()
+    db.flush()
+    inserted = seed_project_types(db)
     db.commit()
     return inserted
 
