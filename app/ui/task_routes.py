@@ -12,6 +12,7 @@ import json
 import logging
 from datetime import UTC, date, datetime
 from typing import Any
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -42,6 +43,20 @@ from app.ui.flash import flash
 from app.ui.templating import render
 
 log = logging.getLogger(__name__)
+
+
+def _safe_back(url: str | None, fallback: str = "/ui/tasks") -> str:
+    """Validate a caller-supplied return URL, guarding against open redirects.
+
+    Only same-origin absolute paths are allowed (e.g. ``/ui/projects/5#tasks``).
+    Scheme-relative (``//host``), absolute (``https://…``), and backslash-tricked
+    URLs fall back to the task list.
+    """
+    if not url:
+        return fallback
+    if url.startswith("/") and not url.startswith("//") and "://" not in url and "\\" not in url:
+        return url
+    return fallback
 
 router = APIRouter(prefix="/ui/tasks", tags=["ui"], include_in_schema=False)
 
@@ -285,6 +300,7 @@ def _form_context(db: Session, user: AppUser) -> dict[str, Any]:
 def new_form(
     request: Request,
     project_id: int | None = None,
+    return_to: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
     _mod: None = Depends(require_tasks_module),
@@ -299,6 +315,7 @@ def new_form(
         task=None,
         form={"status_id": default_status, "project_id": project_id},
         form_action="/ui/tasks/new",
+        return_to=return_to,
         **ctx,
     )
 
@@ -342,13 +359,23 @@ async def create_task(
 ) -> Response:
     form = await request.form()
     data = _read_task_form(form)
+    return_to = form.get("return_to") or None
+
+    def _back_to_new() -> str:
+        # Preserve the origin (and project link) so the retry keeps its context.
+        params = {}
+        if return_to:
+            params["return_to"] = return_to
+        if data["project_id"]:
+            params["project_id"] = data["project_id"]
+        return "/ui/tasks/new" + (f"?{urlencode(params)}" if params else "")
 
     if not data["title"]:
         flash(request, "A task title is required.", "error")
-        return RedirectResponse(url="/ui/tasks/new", status_code=303)
+        return RedirectResponse(url=_back_to_new(), status_code=303)
     if data["status_id"] is None:
         flash(request, "Pick a status for the task.", "error")
-        return RedirectResponse(url="/ui/tasks/new", status_code=303)
+        return RedirectResponse(url=_back_to_new(), status_code=303)
 
     details_html = sanitize_note_html(data["details_html_raw"])
     task = Task(
@@ -368,13 +395,14 @@ async def create_task(
     _task_event(request, user, task, "created", "Created")
     google_tasks_sync.sync_after_change(db, task)
     flash(request, f"Task '{task.title}' created.", "success")
-    return RedirectResponse(url="/ui/tasks", status_code=303)
+    return RedirectResponse(url=_safe_back(return_to), status_code=303)
 
 
 @router.get("/{task_id}/edit")
 def edit_form(
     task_id: int,
     request: Request,
+    return_to: str | None = None,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
     _mod: None = Depends(require_tasks_module),
@@ -402,6 +430,7 @@ def edit_form(
         task=task,
         form=form,
         form_action=f"/ui/tasks/{task_id}/edit",
+        return_to=return_to,
         **ctx,
     )
 
@@ -419,13 +448,18 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found.")
     form = await request.form()
     data = _read_task_form(form)
+    return_to = form.get("return_to") or None
+
+    def _back_to_edit() -> str:
+        qs = f"?return_to={quote(return_to, safe='/#')}" if return_to else ""
+        return f"/ui/tasks/{task_id}/edit{qs}"
 
     if not data["title"]:
         flash(request, "A task title is required.", "error")
-        return RedirectResponse(url=f"/ui/tasks/{task_id}/edit", status_code=303)
+        return RedirectResponse(url=_back_to_edit(), status_code=303)
     if data["status_id"] is None:
         flash(request, "Pick a status for the task.", "error")
-        return RedirectResponse(url=f"/ui/tasks/{task_id}/edit", status_code=303)
+        return RedirectResponse(url=_back_to_edit(), status_code=303)
 
     details_html = sanitize_note_html(data["details_html_raw"])
     task.title = data["title"][:300]
@@ -441,7 +475,7 @@ async def update_task(
     _task_event(request, user, task, "updated", "Updated")
     google_tasks_sync.sync_after_change(db, task)
     flash(request, "Task saved.", "success")
-    return RedirectResponse(url="/ui/tasks", status_code=303)
+    return RedirectResponse(url=_safe_back(return_to), status_code=303)
 
 
 @router.post("/{task_id}/status")

@@ -601,7 +601,7 @@
       Tasks
       {% if project_tasks %}<span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}
     </h3>
-    {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}" class="btn btn--primary btn--sm" onclick="event.stopPropagation();">+ Add task</a>{% endif %}
+    {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}&return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--primary btn--sm" onclick="event.stopPropagation();">+ Add task</a>{% endif %}
   </summary>
   <div class="card__body">
     {% if current_user.is_internal %}
@@ -645,7 +645,7 @@
           </td>
           {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
           <td class="table__actions">
-            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
+            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit?return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
           </td>
         </tr>
         {% endfor %}
