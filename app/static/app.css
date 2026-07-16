@@ -338,6 +338,102 @@ a.topbar__user-name:hover { text-decoration: underline; }
   .sidebar.is-open { transform: translateX(0); }
 }
 
+/* Sidebar collapse control — a nav-style button that sits directly below the
+   nav items (not pinned to the page bottom). Toggles the desktop icon rail.
+   Hidden by default (incl. the mobile drawer); shown only on desktop below. */
+.sb-collapse {
+  display: none;
+  align-items: center;
+  gap: var(--s-3);
+  margin: var(--s-2) var(--s-3) 0;
+  padding: 7px var(--s-3);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sb-collapse:hover { background: var(--surface-2); color: var(--text); }
+.sb-collapse__chevron {
+  display: inline-block;
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+/* ---- Desktop icon rail (collapsed sidebar). Scoped to >900px so the mobile
+   off-canvas drawer is unaffected. The collapsed state is rendered server-side
+   (.app-shell.is-rail) from the user's saved preference, so there's no flash. */
+@media (min-width: 901px) {
+  .app-shell { transition: grid-template-columns 0.2s ease; }
+  .app-shell.is-rail { grid-template-columns: 60px 1fr; }
+
+  /* The collapse control is a desktop-only affordance. */
+  .sb-collapse { display: flex; }
+
+  .is-rail .sidebar__brand { padding-left: var(--s-2); padding-right: var(--s-2); }
+  .is-rail .sidebar__brand-lockup { justify-content: center; }
+  .is-rail .sidebar__brand-name,
+  .is-rail .sidebar__brand-tagline { display: none; }
+
+  .is-rail .sidebar__nav { padding-left: var(--s-2); padding-right: var(--s-2); }
+  .is-rail .sidebar__link { justify-content: center; gap: 0; padding: 8px 0; position: relative; }
+
+  /* Labels stay in the DOM for screen readers, hidden only visually. */
+  .is-rail .sidebar__link-label,
+  .is-rail .sb-collapse__label {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Section labels shrink to a slim divider so grouping is still hinted. */
+  .is-rail .sidebar__section-label {
+    font-size: 0;
+    padding: 0;
+    height: 0;
+    margin: var(--s-2);
+    border-top: 1px solid var(--line);
+  }
+
+  .is-rail .sb-collapse { justify-content: center; padding-left: 0; padding-right: 0; }
+  .is-rail .sb-collapse__chevron { transform: rotate(180deg); }
+
+  .is-rail .sidebar__footer { display: none; }
+
+  /* Instant hover flyout label — nicer than the browser's ~1s title delay. */
+  .is-rail .sidebar__link::after {
+    content: attr(data-label);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--text);
+    color: var(--bg);
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 60;
+  }
+  .is-rail .sidebar__link:hover::after { opacity: 1; }
+}
+
 .main {
   grid-area: main;
   padding: var(--s-8);

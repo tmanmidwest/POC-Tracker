@@ -29,7 +29,7 @@
   </div>
   {% endif %}
 
-  <div class="app-shell">
+  <div class="app-shell{% if sidebar_collapsed %} is-rail{% endif %}" id="app-shell">
 
     <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 
@@ -43,93 +43,101 @@
       </div>
 
       <nav class="sidebar__nav">
-        <a href="/ui/dashboard" class="sidebar__link {% if active_section == 'dashboard' %}is-active{% endif %}">
+        <a href="/ui/dashboard" class="sidebar__link {% if active_section == 'dashboard' %}is-active{% endif %}" data-label="Dashboard">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/>
             <rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/><rect x="9" y="9" width="5.5" height="5.5" rx="1"/>
           </svg>
-          Dashboard
+          <span class="sidebar__link-label">Dashboard</span>
         </a>
 
         {% if current_user and current_user.is_internal %}
-        <a href="/ui/projects/wizard" class="sidebar__link {% if active_section == 'new_poc' %}is-active{% endif %}">
+        <a href="/ui/projects/wizard" class="sidebar__link {% if active_section == 'new_poc' %}is-active{% endif %}" data-label="New POC">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
             <path d="M8 3.5v9M3.5 8h9"/>
           </svg>
-          New POC
+          <span class="sidebar__link-label">New POC</span>
         </a>
         {% endif %}
 
-        <a href="/ui/projects" class="sidebar__link {% if active_section == 'projects' %}is-active{% endif %}">
+        <a href="/ui/projects" class="sidebar__link {% if active_section == 'projects' %}is-active{% endif %}" data-label="Projects">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M2 3.5h5l1.5 1.5H14v7.5H2z"/>
           </svg>
-          Projects
+          <span class="sidebar__link-label">Projects</span>
         </a>
 
         {% if current_user and current_user.is_internal and tasks_enabled %}
-        <a href="/ui/tasks" class="sidebar__link {% if active_section == 'tasks' %}is-active{% endif %}">
+        <a href="/ui/tasks" class="sidebar__link {% if active_section == 'tasks' %}is-active{% endif %}" data-label="Tasks">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M2 4l1.5 1.5L6 3M2 9l1.5 1.5L6 8M9 4.5h5M9 9.5h5"/>
           </svg>
-          Tasks
+          <span class="sidebar__link-label">Tasks</span>
         </a>
         {% endif %}
 
         {% if current_user and current_user.is_internal %}
-        <a href="/ui/customers" class="sidebar__link {% if active_section == 'customers' %}is-active{% endif %}">
+        <a href="/ui/customers" class="sidebar__link {% if active_section == 'customers' %}is-active{% endif %}" data-label="Customers">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2" y="2.5" width="9" height="11"/><path d="M11 6.5h3v7H11M4.5 5h4M4.5 7.5h4M4.5 10h2"/>
           </svg>
-          Customers
+          <span class="sidebar__link-label">Customers</span>
         </a>
 
-        <a href="/ui/library" class="sidebar__link {% if active_section == 'library' %}is-active{% endif %}">
+        <a href="/ui/library" class="sidebar__link {% if active_section == 'library' %}is-active{% endif %}" data-label="Use Case Library">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M3 2.5h7a1 1 0 0 1 1 1v10l-2-1.2-2 1.2V3.5M3 2.5v11"/>
           </svg>
-          Use Case Library
+          <span class="sidebar__link-label">Use Case Library</span>
         </a>
 
-        <a href="/ui/templates" class="sidebar__link {% if active_section == 'templates' %}is-active{% endif %}">
+        <a href="/ui/templates" class="sidebar__link {% if active_section == 'templates' %}is-active{% endif %}" data-label="POC Templates">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2.5" y="2" width="8" height="11" rx="1"/><path d="M5 5h3M5 7.5h3M5 10h2"/><path d="M11 4.5v9.5H4.5"/>
           </svg>
-          POC Templates
+          <span class="sidebar__link-label">POC Templates</span>
         </a>
         {% endif %}
 
-        <a href="/ui/reports" class="sidebar__link {% if active_section == 'reports' %}is-active{% endif %}">
+        <a href="/ui/reports" class="sidebar__link {% if active_section == 'reports' %}is-active{% endif %}" data-label="Reports">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M3 2.5h7l3 3v8H3z"/><path d="M5.5 8.5v3M8 6.5v5M10.5 9.5v2"/>
           </svg>
-          Reports
+          <span class="sidebar__link-label">Reports</span>
         </a>
 
         {% if current_user and current_user.is_internal %}
-        <a href="/ui/activity" class="sidebar__link {% if active_section == 'activity' %}is-active{% endif %}">
+        <a href="/ui/activity" class="sidebar__link {% if active_section == 'activity' %}is-active{% endif %}" data-label="Activity">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M1.5 8h3l1.5-4 3 9 1.5-5h3.5"/>
           </svg>
-          Activity
+          <span class="sidebar__link-label">Activity</span>
         </a>
         {% endif %}
 
         {% if current_user and current_user.is_admin %}
         <div class="sidebar__section-label">Admin</div>
-        <a href="/ui/settings" class="sidebar__link {% if request.url.path.startswith('/ui/settings') or request.url.path.startswith('/ui/lookups') %}is-active{% endif %}">
+        <a href="/ui/settings" class="sidebar__link {% if request.url.path.startswith('/ui/settings') or request.url.path.startswith('/ui/lookups') %}is-active{% endif %}" data-label="Settings">
           <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="8" cy="8" r="2.25"/>
             <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/>
           </svg>
-          Settings
+          <span class="sidebar__link-label">Settings</span>
         </a>
         {% endif %}
 
         {% if current_user and current_user.is_internal %}
         <div class="sidebar__section-label">External</div>
-        <a href="/docs" target="_blank" class="sidebar__link">API Docs ↗</a>
+        <a href="/docs" target="_blank" class="sidebar__link" data-label="API Docs">
+          <svg class="sidebar__link-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4L3 8l3 4M10 4l3 4-3 4"/></svg>
+          <span class="sidebar__link-label">API Docs ↗</span>
+        </a>
         {% endif %}
+        <button type="button" class="sb-collapse" id="sidebar-collapse"
+                onclick="toggleSidebar(this)" aria-label="Collapse sidebar" title="Collapse sidebar">
+          <span class="sb-collapse__chevron" aria-hidden="true">«</span>
+          <span class="sb-collapse__label">Collapse</span>
+        </button>
       </nav>
 
       <div class="sidebar__footer">v{{ app_version }} · {{ current_user.display_label if current_user else "" }}</div>

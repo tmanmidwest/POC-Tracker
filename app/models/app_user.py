@@ -43,6 +43,8 @@ class AppUser(Base, TimestampMixin):
     )
     # UI color theme preference: "light" | "dark" (None = light default).
     theme: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Collapse the desktop sidebar to an icon-only rail (per-user, persists).
+    sidebar_collapsed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Friendly name shown in the UI (e.g. "Robby Smith"); falls back to username.
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Email address. Null for legacy/internal accounts created before this field

@@ -118,6 +118,26 @@ function toggleTheme(btn) {
   }).catch(() => { /* non-blocking; the visual change already applied */ });
 }
 
+// Desktop sidebar rail toggle. Flips the icon-rail state instantly, then
+// persists it to the user's account (same pattern as the theme toggle) so it
+// sticks across pages with no flash — the server renders .is-rail on load.
+function toggleSidebar(btn) {
+  const shell = document.getElementById('app-shell');
+  if (!shell) return;
+  const collapsed = shell.classList.toggle('is-rail');
+  if (btn) {
+    const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+  }
+  fetch('/ui/sidebar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'collapsed=' + (collapsed ? '1' : '0'),
+    credentials: 'same-origin',
+  }).catch(() => { /* non-blocking; the visual change already applied */ });
+}
+
 // Modal: close on Escape, close on overlay click
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

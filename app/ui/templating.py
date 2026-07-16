@@ -109,6 +109,7 @@ def render(
         "branding": current_branding(),
         "tasks_enabled": tasks_enabled(),
         "theme": getattr(current_user, "theme", None) or "light",
+        "sidebar_collapsed": bool(getattr(current_user, "sidebar_collapsed", False)),
         "active_section": context.pop("active_section", None),
         "active_subsection": context.pop("active_subsection", None),
         "page_title": context.pop("page_title", None),

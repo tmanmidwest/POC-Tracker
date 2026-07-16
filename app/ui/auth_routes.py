@@ -187,6 +187,18 @@ def set_theme(
     return Response(status_code=204)
 
 
+@router.post("/sidebar")
+def set_sidebar(
+    collapsed: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Persist whether the desktop sidebar is collapsed to a rail. Returns 204."""
+    user.sidebar_collapsed = collapsed == "1"
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/")
 def ui_root() -> Response:
     """Redirect /ui to /ui/dashboard."""
