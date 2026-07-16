@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "_macros.html" as M %}
+{% set page_title = uc.name %}
+{% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/projects/{{ project.id }}#use-cases">{{ project.display_name }}</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ uc.name }}</span>{% endblock %}
+
+{% block main %}
+{% set here = '/ui/projects/' ~ project.id ~ '/use-cases/' ~ uc.id %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ uc.name }}</h1>
+    <p class="page-header__subtitle">
+      <a href="/ui/projects/{{ project.id }}#use-cases">← {{ project.display_name }}</a>
+      {% if uc.reference_number %} · <span class="mono">Ref {{ uc.reference_number }}</span>{% endif %}
+      · {{ uc.category }}
+      · <span class="badge badge--neutral">{{ uc.status.name if uc.status else "—" }}</span>
+      · <span class="badge {% if uc.source == 'library' %}badge--neutral{% else %}badge--warning{% endif %}">{{ uc.source }}</span>
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/projects/{{ project.id }}#use-cases" class="btn btn--secondary">Back to project</a>
+  </div>
+</div>
+
+<div class="uc-editor">
+  <div class="card">
+    <div class="card__body">
+      {{ M.uc_edit_form(uc, feature_types, uc_statuses, return_to=here, variant='page') }}
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap: var(--s-4);">
+    <div class="card">
+      <div class="card__header"><h3 class="card__title">Screenshots</h3></div>
+      <div class="card__body">{{ M.uc_screenshots(uc, return_to=here) }}</div>
+    </div>
+
+    <div class="card">
+      <div class="card__body">
+        <label class="label">Danger zone</label>
+        <p class="text-muted text-xs" style="margin: var(--s-1) 0 var(--s-3);">Removing a use case also deletes its screenshots. This can't be undone.</p>
+        {{ M.uc_delete_form(uc) }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

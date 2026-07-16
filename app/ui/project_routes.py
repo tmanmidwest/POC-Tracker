@@ -318,6 +318,18 @@ def _get_use_case(db: Session, use_case_id: int) -> ProjectUseCase:
     return uc
 
 
+def _safe_back(url: str | None, fallback: str) -> str:
+    """Validate a caller-supplied return path, guarding against open redirects.
+
+    Only same-origin absolute paths are allowed (e.g. ``/ui/projects/5/use-cases/9``).
+    Scheme-relative (``//host``), absolute (``https://…``), and backslash-tricked
+    URLs fall back to the given default.
+    """
+    if url and url.startswith("/") and not url.startswith("//") and "://" not in url and "\\" not in url:
+        return url
+    return fallback
+
+
 def _form_dropdowns(db: Session) -> dict:
     return {
         "customers": db.query(Customer).order_by(Customer.name).all(),
@@ -1730,6 +1742,38 @@ def add_custom_use_case(
     return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
 
 
+@router.get("/{project_id}/use-cases/{use_case_id}")
+def use_case_detail(
+    project_id: int,
+    use_case_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Focused, full-page view of a single use case — roomier than the modal."""
+    project = _get_viewable_project(db, project_id, user)
+    uc = _get_use_case(db, use_case_id)
+    if uc.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Use case not found.")
+    uc_statuses = (
+        db.query(UseCaseStatus)
+        .filter(UseCaseStatus.is_active.is_(True))
+        .order_by(UseCaseStatus.sort_order)
+        .all()
+    )
+    feature_types = (
+        db.query(FeatureType)
+        .filter(FeatureType.is_active.is_(True))
+        .order_by(FeatureType.name)
+        .all()
+    )
+    return render(
+        request, "projects/use_case_detail.html", current_user=user,
+        active_section="projects", project=project, uc=uc,
+        uc_statuses=uc_statuses, feature_types=feature_types,
+    )
+
+
 @router.post("/use-cases/{use_case_id}/edit")
 def update_use_case(
     use_case_id: int,
@@ -1743,6 +1787,7 @@ def update_use_case(
     status_id: str | None = Form(None),
     comments: str | None = Form(None),
     completed_on: str | None = Form(None),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -1765,7 +1810,9 @@ def update_use_case(
         message=f"Updated use case '{uc.name}'", detail={"surface": "ui"}, request=request,
     )
     flash(request, "Use case updated.", "success")
-    return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
+    return RedirectResponse(
+        url=_safe_back(return_to, f"/ui/projects/{uc.project_id}#use-cases"), status_code=303
+    )
 
 
 @router.post("/use-cases/{use_case_id}/status")
@@ -1913,20 +1960,22 @@ async def upload_screenshot(
     request: Request,
     file: UploadFile = File(...),
     caption: str | None = Form(None),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     uc = _get_use_case(db, use_case_id)
+    back = _safe_back(return_to, f"/ui/projects/{uc.project_id}#use-cases")
     content = await file.read()
     if not content:
         flash(request, "No file was uploaded.", "error")
-        return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
+        return RedirectResponse(url=back, status_code=303)
     if file.content_type not in screenshot_store.ALLOWED_CONTENT_TYPES:
         flash(request, "Only PNG, JPEG, GIF, or WebP images are supported.", "error")
-        return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
+        return RedirectResponse(url=back, status_code=303)
     if len(content) > screenshot_store.MAX_SIZE_BYTES:
         flash(request, "Image is too large (10 MB max).", "error")
-        return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
+        return RedirectResponse(url=back, status_code=303)
 
     stored = screenshot_store.store_bytes(content, file.content_type)
     shot = Screenshot(
@@ -1947,7 +1996,7 @@ async def upload_screenshot(
         detail={"surface": "ui", "filename": file.filename}, request=request,
     )
     flash(request, "Screenshot uploaded.", "success")
-    return RedirectResponse(url=f"/ui/projects/{uc.project_id}#use-cases", status_code=303)
+    return RedirectResponse(url=back, status_code=303)
 
 
 @router.get("/screenshots/{shot_id}")
@@ -1978,6 +2027,7 @@ def serve_screenshot(
 def delete_screenshot(
     shot_id: int,
     request: Request,
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -1989,4 +2039,6 @@ def delete_screenshot(
     db.delete(shot)
     db.commit()
     flash(request, "Screenshot deleted.", "success")
-    return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
+    return RedirectResponse(
+        url=_safe_back(return_to, f"/ui/projects/{project_id}#use-cases"), status_code=303
+    )

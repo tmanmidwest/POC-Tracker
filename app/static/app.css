@@ -802,6 +802,24 @@ a.topbar__user-name:hover { text-decoration: underline; }
 .tab-panel { display: none; }
 .tab-panel.is-active { display: block; }
 
+/* Use-case name in the list — reads like a heading but links to its focused
+   page. Keeps the neutral text color until hover so it doesn't look like a
+   generic link in a dense table. */
+a.uc-name { color: var(--text); font-weight: 600; }
+a.uc-name:hover { color: var(--accent-text); text-decoration: underline; }
+
+/* Focused use-case page — roomy edit form on the left, a rail (screenshots,
+   danger zone) on the right. Collapses to one column on narrow screens. */
+.uc-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .uc-editor { grid-template-columns: 1fr; }
+}
+
 /* =====================================================
  * Flash messages (toasts)
  * ===================================================== */

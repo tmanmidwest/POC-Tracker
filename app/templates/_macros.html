@@ -79,3 +79,128 @@
     {{ (text | e).replace("\n", "<br>" | safe) }}
   {%- endif -%}
 {% endmacro %}
+
+
+{# ===========================================================================
+   Use-case editor — shared by the quick-edit modal (projects/detail.html) and
+   the focused use-case page (projects/use_case_detail.html) so the two never
+   drift. Each field is a single fragment; the composing macros below arrange
+   them for each surface.
+   =========================================================================== #}
+
+{% macro uc_field_name(uc) %}
+<div class="form-row"><label class="label">Name</label>
+  <input class="input" name="name" value="{{ uc.name }}" required /></div>
+{% endmacro %}
+
+{% macro uc_field_category(uc) %}
+<div class="form-row"><label class="label">Category</label>
+  <input class="input" name="category" value="{{ uc.category }}" required /></div>
+{% endmacro %}
+
+{% macro uc_field_ref(uc) %}
+<div class="form-row"><label class="label">Ref #</label>
+  <input class="input" name="reference_number" value="{{ uc.reference_number or '' }}" /></div>
+{% endmacro %}
+
+{% macro uc_field_description(uc, rows=3) %}
+<div class="form-row"><label class="label">Description</label>
+  <textarea class="textarea" name="description" rows="{{ rows }}">{{ uc.description or '' }}</textarea></div>
+{% endmacro %}
+
+{% macro uc_field_success(uc, rows=3) %}
+<div class="form-row"><label class="label">Success validation</label>
+  <textarea class="textarea" name="success_validation" rows="{{ rows }}">{{ uc.success_validation or '' }}</textarea></div>
+{% endmacro %}
+
+{% macro uc_field_comments(uc, rows=3) %}
+<div class="form-row"><label class="label">Comments</label>
+  <textarea class="textarea" name="comments" rows="{{ rows }}">{{ uc.comments or '' }}</textarea></div>
+{% endmacro %}
+
+{% macro uc_field_feature(uc, feature_types) %}
+<div class="form-row"><label class="label">Feature type</label>
+  <select class="select" name="feature_type_id"><option value="">—</option>
+    {% for ft in feature_types %}<option value="{{ ft.id }}" {% if ft.id == uc.feature_type_id %}selected{% endif %}>{{ ft.name }}</option>{% endfor %}</select></div>
+{% endmacro %}
+
+{% macro uc_field_status(uc, uc_statuses) %}
+<div class="form-row"><label class="label">Status</label>
+  <select class="select" name="status_id">
+    {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+{% endmacro %}
+
+{% macro uc_field_completed(uc) %}
+<div class="form-row"><label class="label">Completed on</label>
+  <input class="input" type="date" name="completed_on" value="{{ uc.completed_on.isoformat() if uc.completed_on else '' }}" /></div>
+{% endmacro %}
+
+
+{# The main edit form. `variant` is 'modal' (compact) or 'page' (roomier text
+   areas + a link Cancel). `return_to` is a local path the edit redirects to. #}
+{% macro uc_edit_form(uc, feature_types, uc_statuses, return_to='', variant='modal') %}
+{% set rows = 7 if variant == 'page' else 3 %}
+<form method="post" action="/ui/projects/use-cases/{{ uc.id }}/edit">
+  {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}" />{% endif %}
+  <div style="display:grid; grid-template-columns: 1fr 110px; gap: var(--s-3);">
+    {{ uc_field_category(uc) }}
+    {{ uc_field_ref(uc) }}
+  </div>
+  {{ uc_field_name(uc) }}
+  {{ uc_field_description(uc, rows=rows) }}
+  {{ uc_field_success(uc, rows=(rows - 2)) }}
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-3);">
+    {{ uc_field_feature(uc, feature_types) }}
+    {{ uc_field_status(uc, uc_statuses) }}
+  </div>
+  {{ uc_field_comments(uc, rows=(rows - 2)) }}
+  {{ uc_field_completed(uc) }}
+  <div class="form-actions">
+    {% if variant == 'page' %}
+    <a class="btn btn--secondary" href="/ui/projects/{{ uc.project_id }}#use-cases">Cancel</a>
+    <button class="btn btn--primary">Save changes</button>
+    {% else %}
+    <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+    <button class="btn btn--primary">Save</button>
+    {% endif %}
+  </div>
+</form>
+{% endmacro %}
+
+
+{# Screenshot upload + thumbnail list (each row deletable). `return_to` threads
+   through both the upload and the per-shot delete so they land back here. #}
+{% macro uc_screenshots(uc, return_to='') %}
+<form method="post" action="/ui/projects/use-cases/{{ uc.id }}/screenshots" enctype="multipart/form-data">
+  {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}" />{% endif %}
+  <label class="label">Add screenshot</label>
+  <input class="input" type="file" name="file" accept="image/*" required />
+  <input class="input" name="caption" placeholder="Caption (optional)" style="margin-top: var(--s-2);" />
+  <div class="form-actions"><button class="btn btn--secondary btn--sm">Upload</button></div>
+</form>
+{% if uc.screenshots %}
+<div style="margin-top: var(--s-3);">
+  {% for shot in uc.screenshots %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-1) 0;">
+    <a href="/ui/projects/screenshots/{{ shot.id }}" target="_blank" style="display:flex; align-items:center; gap: var(--s-2); min-width:0;">
+      <img src="/ui/projects/screenshots/{{ shot.id }}" alt="" style="height:36px; width:auto; border-radius:4px; border:1px solid var(--line); flex:none;" />
+      <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ shot.original_filename or shot.stored_filename }}</span>
+    </a>
+    <form method="post" action="/ui/projects/screenshots/{{ shot.id }}/delete" style="margin:0; flex:none;">
+      {% if return_to %}<input type="hidden" name="return_to" value="{{ return_to }}" />{% endif %}
+      <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Delete screenshot">×</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+
+{# Remove-use-case form. Always returns to the project's use-case list (the use
+   case no longer exists to return to). #}
+{% macro uc_delete_form(uc) %}
+<form method="post" action="/ui/projects/use-cases/{{ uc.id }}/delete" onsubmit="return confirm('Remove use case {{ uc.name }}?');" style="margin:0;">
+  <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Remove use case</button>
+</form>
+{% endmacro %}

@@ -536,7 +536,7 @@
         {% if can_edit %}<td><input type="checkbox" class="uc-select" data-group="{{ gidx }}" value="{{ uc.id }}" /></td>{% endif %}
         {% if 'ref' in uc_fields %}<td class="mono">{{ uc.reference_number or "—" }}</td>{% endif %}
         <td>
-          <strong>{{ uc.name }}</strong>
+          {% if can_edit %}<a class="uc-name" href="/ui/projects/{{ project.id }}/use-cases/{{ uc.id }}">{{ uc.name }}</a>{% else %}<strong>{{ uc.name }}</strong>{% endif %}
           {% if 'description' in uc_fields and uc.description %}<br><span class="text-muted text-xs">{{ uc.description }}</span>{% endif %}
           {% if 'success_validation' in uc_fields and uc.success_validation %}<br><span class="text-xs">✓ <span class="text-muted">{{ uc.success_validation }}</span></span>{% endif %}
           {% if 'comments' in uc_fields and uc.comments %}<br><span class="text-xs">💬 {{ uc.comments }}</span>{% endif %}
@@ -572,55 +572,11 @@
             <div class="ucmodal__head"><span class="ucmodal__title">Edit use case</span>
               <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
             <div class="ucmodal__body">
-              <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/edit">
-                <div style="display:grid; grid-template-columns: 1fr 110px; gap: var(--s-3);">
-                  <div class="form-row"><label class="label">Category</label><input class="input" name="category" value="{{ uc.category }}" required /></div>
-                  <div class="form-row"><label class="label">Ref #</label><input class="input" name="reference_number" value="{{ uc.reference_number or '' }}" /></div>
-                </div>
-                <div class="form-row"><label class="label">Name</label><input class="input" name="name" value="{{ uc.name }}" required /></div>
-                <div class="form-row"><label class="label">Description</label><textarea class="textarea" name="description" rows="3">{{ uc.description or '' }}</textarea></div>
-                <div class="form-row"><label class="label">Success validation</label><textarea class="textarea" name="success_validation" rows="3">{{ uc.success_validation or '' }}</textarea></div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-3);">
-                  <div class="form-row"><label class="label">Feature type</label>
-                    <select class="select" name="feature_type_id"><option value="">—</option>
-                      {% for ft in feature_types %}<option value="{{ ft.id }}" {% if ft.id == uc.feature_type_id %}selected{% endif %}>{{ ft.name }}</option>{% endfor %}</select></div>
-                  <div class="form-row"><label class="label">Status</label>
-                    <select class="select" name="status_id">
-                      {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
-                </div>
-                <div class="form-row"><label class="label">Comments</label><textarea class="textarea" name="comments" rows="3">{{ uc.comments or '' }}</textarea></div>
-                <div class="form-row"><label class="label">Completed on</label><input class="input" type="date" name="completed_on" value="{{ uc.completed_on.isoformat() if uc.completed_on else '' }}" /></div>
-                <div class="form-actions">
-                  <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
-                  <button class="btn btn--primary">Save</button>
-                </div>
-              </form>
-
+              {{ M.uc_edit_form(uc, feature_types, uc_statuses) }}
+              <div class="ucmodal__section">{{ M.uc_screenshots(uc) }}</div>
               <div class="ucmodal__section">
-                <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/screenshots" enctype="multipart/form-data">
-                  <label class="label">Add screenshot</label>
-                  <input class="input" type="file" name="file" accept="image/*" required />
-                  <input class="input" name="caption" placeholder="Caption (optional)" style="margin-top: var(--s-2);" />
-                  <div class="form-actions"><button class="btn btn--secondary btn--sm">Upload</button></div>
-                </form>
-                {% if uc.screenshots %}
-                <div style="margin-top: var(--s-3);">
-                  {% for shot in uc.screenshots %}
-                  <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-1) 0;">
-                    <a href="/ui/projects/screenshots/{{ shot.id }}" target="_blank">{{ shot.original_filename or shot.stored_filename }}</a>
-                    <form method="post" action="/ui/projects/screenshots/{{ shot.id }}/delete" style="margin:0;">
-                      <button class="btn btn--ghost btn--sm" style="color:var(--danger);">×</button>
-                    </form>
-                  </div>
-                  {% endfor %}
-                </div>
-                {% endif %}
-              </div>
-
-              <div class="ucmodal__section">
-                <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/delete" onsubmit="return confirm('Remove use case {{ uc.name }}?');" style="margin:0;">
-                  <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Remove use case</button>
-                </form>
+                {{ M.uc_delete_form(uc) }}
+                <p class="text-muted text-xs" style="margin-top: var(--s-3);">Need more room? <a href="/ui/projects/{{ project.id }}/use-cases/{{ uc.id }}">Open the full page →</a></p>
               </div>
             </div>
            </div>
