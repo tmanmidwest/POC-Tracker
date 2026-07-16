@@ -255,14 +255,14 @@
     function donut(id, series) {
       if (!series || !series.length) return;
       mk(id, Object.assign({}, base, {
-        chart: Object.assign({}, base.chart, { type: 'donut', height: 268 }),
+        chart: Object.assign({}, base.chart, { type: 'donut', height: 180 }),
         series: series.map(function (s) { return s.count; }),
         labels: series.map(function (s) { return s.label; }),
         colors: palette,
         stroke: { colors: [surface], width: 2 },
         plotOptions: { pie: { donut: { size: '66%', labels: { show: true,
-          value: { color: v('--text'), fontSize: '22px', fontWeight: 600 },
-          total: { show: true, label: 'Total', color: muted, fontSize: '12px',
+          value: { color: v('--text'), fontSize: '18px', fontWeight: 600 },
+          total: { show: true, label: 'Total', color: muted, fontSize: '11px',
             formatter: function (w) {
               return w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0);
             } } } } } }
@@ -273,7 +273,7 @@
       if (!series || !series.length) return;
       mk(id, Object.assign({}, base, {
         chart: Object.assign({}, base.chart, { type: 'bar',
-          height: Math.max(200, series.length * 40 + 40) }),
+          height: Math.max(140, series.length * 30 + 24) }),
         series: [{ name: 'Count', data: series.map(function (s) { return s.count; }) }],
         xaxis: { categories: series.map(function (s) { return s.label; }),
           axisBorder: { color: line }, axisTicks: { color: line },

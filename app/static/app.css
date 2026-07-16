@@ -1608,27 +1608,27 @@ a.kpi-card:hover .kpi-card__hint { color: var(--text-muted); }
   transition: width 0.4s ease;
 }
 
-/* Chart panels — fit as many across as will fit, so 3 charts share one row
-   instead of wrapping 2 + 1. Collapses to fewer per row as the viewport narrows. */
+/* Chart panels — fit as many across as will fit, so more charts share one row
+   instead of wrapping. Collapses to fewer per row as the viewport narrows. */
 .chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--s-4);
 }
 
-.chart-panel { padding: var(--s-5); }
+.chart-panel { padding: var(--s-4); }
 
 .chart-panel__title {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: var(--s-3);
+  margin-bottom: var(--s-2);
 }
 
-.chart-panel__body { min-height: 200px; }
+.chart-panel__body { min-height: 0; }
 
 /* Attention lists */
 .attention-grid {
