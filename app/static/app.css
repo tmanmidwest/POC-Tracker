@@ -772,6 +772,36 @@ a.topbar__user-name:hover { text-decoration: underline; }
   box-shadow: var(--shadow-xs);
 }
 
+/* Full-width section tabs — the project-detail sub-navigation. Stretches .tabs
+   into a bar of equal-width tabs (optionally sticky), each with a count chip,
+   and pairs with .tab-panel to show one section at a time. */
+.tabs--full { display: flex; width: 100%; }
+.tabs--full .tabs__tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px var(--s-3);
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.tabs--sticky { position: sticky; top: 8px; z-index: 45; box-shadow: var(--shadow-xs); }
+.tabs__count {
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  border-radius: 20px;
+  padding: 1px 7px;
+}
+.tabs__tab.is-active .tabs__count { background: var(--primary-soft); color: var(--accent-text); }
+.tab-panel { display: none; }
+.tab-panel.is-active { display: block; }
+
 /* =====================================================
  * Flash messages (toasts)
  * ===================================================== */

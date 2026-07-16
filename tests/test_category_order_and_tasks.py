@@ -1,12 +1,11 @@
-"""Per-project use-case category ordering + collapsible Tasks section.
+"""Per-project use-case category ordering.
 
-Covers the pure grouping/sort helper, the inline category-order endpoint
-(set / change / clear), and the per-user tasks-collapsed preference.
+Covers the pure grouping/sort helper and the inline category-order endpoint
+(set / change / clear).
 """
 
 from __future__ import annotations
 
-import json
 import re
 
 import pytest
@@ -20,7 +19,6 @@ from app.models import (
     ProjectStatus,
     ProjectUseCase,
     UseCaseStatus,
-    UseCaseViewPref,
 )
 from app.ui.project_routes import _group_use_cases
 
@@ -209,74 +207,5 @@ def test_category_order_forbidden_for_external_viewer(client: TestClient) -> Non
             .count()
             == 0
         )
-    finally:
-        db.close()
-
-
-# --- tasks collapsed preference ------------------------------------------
-
-
-def _admin_user_id() -> int:
-    from app.config import get_settings
-    from app.models import AppUser
-
-    s = get_settings()
-    db = get_session_factory()()
-    try:
-        return (
-            db.query(AppUser)
-            .filter(AppUser.username == s.initial_admin_username)
-            .one()
-            .id
-        )
-    finally:
-        db.close()
-
-
-def test_tasks_collapsed_persists(admin_ui: TestClient) -> None:
-    resp = admin_ui.post("/ui/projects/tasks-collapsed", data={"collapsed": "1"})
-    assert resp.status_code == 204
-    uid = _admin_user_id()
-    db = get_session_factory()()
-    try:
-        pref = (
-            db.query(UseCaseViewPref)
-            .filter(UseCaseViewPref.app_user_id == uid)
-            .one()
-        )
-        assert json.loads(pref.config_json)["tasks_collapsed"] is True
-    finally:
-        db.close()
-    # Toggle back off.
-    admin_ui.post("/ui/projects/tasks-collapsed", data={"collapsed": "0"})
-    db = get_session_factory()()
-    try:
-        pref = (
-            db.query(UseCaseViewPref)
-            .filter(UseCaseViewPref.app_user_id == uid)
-            .one()
-        )
-        assert json.loads(pref.config_json)["tasks_collapsed"] is False
-    finally:
-        db.close()
-
-
-def test_saving_uc_view_preserves_tasks_collapsed(admin_ui: TestClient) -> None:
-    admin_ui.post("/ui/projects/tasks-collapsed", data={"collapsed": "1"})
-    # Saving the (separate) use-case field view must not wipe the collapse flag.
-    pid = _project_with_categories(["JML"])
-    admin_ui.post(
-        f"/ui/projects/{pid}/use-case-view",
-        data={"status_filter": "all", "field_ref": "1"}, follow_redirects=False,
-    )
-    uid = _admin_user_id()
-    db = get_session_factory()()
-    try:
-        pref = (
-            db.query(UseCaseViewPref)
-            .filter(UseCaseViewPref.app_user_id == uid)
-            .one()
-        )
-        assert json.loads(pref.config_json)["tasks_collapsed"] is True
     finally:
         db.close()

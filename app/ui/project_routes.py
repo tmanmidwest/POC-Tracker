@@ -260,7 +260,6 @@ def _load_uc_view(db: Session, user: AppUser) -> dict[str, object]:
     prefs: dict[str, object] = {
         "fields": DEFAULT_UC_FIELDS,
         "status_filter": "all",
-        "tasks_collapsed": False,
     }
     row = (
         db.query(UseCaseViewPref)
@@ -274,7 +273,6 @@ def _load_uc_view(db: Session, user: AppUser) -> dict[str, object]:
                 prefs["fields"] = [f for f in stored["fields"] if f in _UC_FIELD_KEYS]
             if stored.get("status_filter"):
                 prefs["status_filter"] = str(stored["status_filter"])
-            prefs["tasks_collapsed"] = bool(stored.get("tasks_collapsed"))
         except (ValueError, TypeError):
             log.warning("uc_view_prefs_parse_failed", extra={"user": user.username})
     return prefs
@@ -945,7 +943,6 @@ def detail(
         share_link=share_link, portal_base_url=portal_base_url,
         ai_configured=default_provider(db) is not None,
         tasks_on=tasks_on, project_tasks=project_tasks, task_statuses=task_statuses,
-        tasks_collapsed=bool(uc_view.get("tasks_collapsed")),
     )
 
 
@@ -1389,8 +1386,6 @@ async def save_use_case_view(
     config = {
         "fields": fields,  # empty list = show only name + status
         "status_filter": _clean(status_filter) or "all",
-        # Preserve the unrelated tasks-collapsed flag stored in the same blob.
-        "tasks_collapsed": bool(_load_uc_view(db, user).get("tasks_collapsed")),
     }
     _save_uc_view(db, user, config)
     flash(request, "Use-case view updated.", "success")
@@ -1409,31 +1404,6 @@ def _save_uc_view(db: Session, user: AppUser, config: dict) -> None:
         db.add(row)
     row.config_json = json.dumps(config)
     db.commit()
-
-
-@router.post("/tasks-collapsed")
-async def set_tasks_collapsed(
-    request: Request,
-    collapsed: str = Form(""),
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(require_ui_user),
-) -> Response:
-    """Persist whether the project-page Tasks section is collapsed (per user).
-
-    Toggled via a small ``fetch`` from the page, so it returns 204 with no
-    redirect. Stored alongside the other use-case view prefs.
-    """
-    view = _load_uc_view(db, user)
-    _save_uc_view(
-        db,
-        user,
-        {
-            "fields": list(view["fields"]),
-            "status_filter": str(view["status_filter"]),
-            "tasks_collapsed": collapsed == "1",
-        },
-    )
-    return Response(status_code=204)
 
 
 @router.post("/{project_id}/category-order")

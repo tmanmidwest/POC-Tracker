@@ -4,13 +4,7 @@
 {# External viewers are read-only: hide every mutating control. #}
 {% set can_edit = current_user and current_user.is_internal %}
 {% block breadcrumb %}<a href="/ui/projects">Projects</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ project.display_name }}</span>{% endblock %}
-{% block head_extra %}{% include "_rte_head.html" %}
-<style>
-  details.card > summary { list-style: none; }
-  details.card > summary::-webkit-details-marker { display: none; }
-  details#tasks[open] .tasks-caret { transform: rotate(90deg); }
-</style>
-{% endblock %}
+{% block head_extra %}{% include "_rte_head.html" %}{% endblock %}
 {% block body_scripts %}{% include "_rte_scripts.html" %}
 <script>
 // Progressive enhancement: stream the executive summary live. If streaming
@@ -172,6 +166,44 @@
   };
 })();
 </script>
+<script>
+// Project sub-navigation. One panel is visible at a time; the active section is
+// driven by the URL hash so that every server redirect (which already points at
+// #summary / #share / #notes / #tasks / #use-cases) lands on the right tab, and
+// deep links / refreshes are preserved. Clicking a tab updates the hash in place.
+(function () {
+  var bar = document.getElementById('proj-tabs');
+  if (!bar) return;
+  var tabs = Array.prototype.slice.call(bar.querySelectorAll('.tabs__tab'));
+  var panels = Array.prototype.slice.call(document.querySelectorAll('.tab-panel'));
+  // Server anchors → tab key (the exec summary lives on the Overview tab).
+  var hashMap = {
+    'use-cases': 'use-cases', 'overview': 'overview', 'summary': 'overview',
+    'notes': 'notes', 'tasks': 'tasks', 'share': 'share',
+  };
+
+  function show(key, updateHash) {
+    if (!tabs.some(function (t) { return t.dataset.tab === key; })) key = 'use-cases';
+    tabs.forEach(function (t) {
+      var on = t.dataset.tab === key;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach(function (p) { p.classList.toggle('is-active', p.id === 'tab-' + key); });
+    if (updateHash) { try { history.replaceState(null, '', '#' + key); } catch (e) {} }
+  }
+
+  function fromHash() { return hashMap[(location.hash || '').replace(/^#/, '')] || 'use-cases'; }
+
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { show(t.dataset.tab, true); });
+  });
+  // Honour hash changes that don't reload the page (in-page anchor links).
+  window.addEventListener('hashchange', function () { show(fromHash(), false); });
+
+  show(fromHash(), false);
+})();
+</script>
 {% endblock %}
 
 {% block main %}
@@ -262,419 +294,29 @@
 </div>
 {% endif %}
 
-{# ---- Overview ---- #}
-<div class="card" style="margin-bottom: var(--s-5);">
+{# ---- Key facts (always visible above the tabs) ---- #}
+<div class="card" style="margin-bottom: var(--s-4);">
   <div class="card__body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4);">
     <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.display_label if project.sales_engineer else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Account Exec</div><div class="stat__value">{{ project.account_executive or "—" }}</div></div>
     <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Use-case progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} ({{ progress.pct }}%)</div></div>
   </div>
-  {% if project.notes_html or project.notes %}<div class="card__body" style="border-top:1px solid var(--border);">{{ M.render_note(project.notes_html, project.notes) }}</div>{% endif %}
 </div>
 
-{# ---- Executive Summary (AI-generated) ---- #}
-{% if can_edit or project.exec_summary_html %}
-<div id="summary" class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
-    <h3 class="card__title">Executive Summary</h3>
-    {% if can_edit %}
-    <div style="display:flex; gap: var(--s-2);">
-      {% if project.exec_summary_html %}
-      <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-edit-summary')">Edit</button>
-      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/delete" style="margin:0;"
-            onsubmit="return confirm('Clear the executive summary?');">
-        <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
-      </form>
-      {% else %}
-      <button type="button" class="btn btn--secondary btn--sm" onclick="pocOpen('m-edit-summary')">✎ Write / paste</button>
-      {% endif %}
-      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate"
-            id="exec-gen-form" data-project="{{ project.id }}" style="margin:0;">
-        <button class="btn btn--primary btn--sm">{{ "Regenerate" if project.exec_summary_html else "✨ Generate" }}</button>
-      </form>
-    </div>
-    {% endif %}
-  </div>
-  <div class="card__body" id="exec-card-body">
-    {% if project.exec_summary_html %}
-      {{ M.render_note(project.exec_summary_html, project.exec_summary) }}
-      {% if project.exec_summary_generated_at %}
-      <p class="text-muted text-xs" style="margin-top: var(--s-3);">
-        🤖 Generated {{ project.exec_summary_generated_at.strftime('%b %-d, %Y') }}{% if project.exec_summary_model %} · {{ project.exec_summary_model }}{% endif %}{% if project.exec_summary_tokens %} · {{ "{:,}".format(project.exec_summary_tokens) }} tokens{% endif %}
-      </p>
-      {% endif %}
-    {% elif can_edit %}
-      {% if ai_configured %}
-      <p class="text-muted text-xs" style="margin-top:0;">No summary yet. Click <strong>Generate</strong> to draft one with AI from this project's use cases and notes, or <strong>Write / paste</strong> to add your own. Either can be edited afterward.</p>
-      {% else %}
-      <p class="text-muted text-xs" style="margin-top:0;">Click <strong>Write / paste</strong> to add a summary manually. To draft one with AI, configure a provider in <a href="/ui/settings/ai">Settings → AI Assistant</a>.</p>
-      {% endif %}
-    {% endif %}
-  </div>
+{# ---- Section tabs ---- #}
+<div class="tabs tabs--full tabs--sticky" id="proj-tabs" role="tablist" style="margin-bottom: var(--s-5);">
+  <button type="button" class="tabs__tab is-active" role="tab" data-tab="use-cases" aria-selected="true">Use cases{% if progress.total %} <span class="tabs__count">{{ progress.total }}</span>{% endif %}</button>
+  <button type="button" class="tabs__tab" role="tab" data-tab="overview" aria-selected="false">Overview</button>
+  <button type="button" class="tabs__tab" role="tab" data-tab="notes" aria-selected="false">Notes{% if notes %} <span class="tabs__count">{{ notes|length }}</span>{% endif %}</button>
+  {% if tasks_on %}<button type="button" class="tabs__tab" role="tab" data-tab="tasks" aria-selected="false">Tasks{% if project_tasks %} <span class="tabs__count">{{ project_tasks|length }}</span>{% endif %}</button>{% endif %}
+  {% if can_share %}<button type="button" class="tabs__tab" role="tab" data-tab="share" aria-selected="false">Share{% if grants %} <span class="tabs__count">{{ grants|length }}</span>{% endif %}</button>{% endif %}
 </div>
 
-{% if can_edit %}
-<div class="ucmodal" id="m-edit-summary" hidden>
- <div class="ucmodal__box">
-  <div class="ucmodal__head"><span class="ucmodal__title">{{ "Edit executive summary" if project.exec_summary_html else "Write executive summary" }}</span>
-    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
-  <div class="ucmodal__body">
-    <form method="post" action="/ui/projects/{{ project.id }}/exec-summary">
-      <div class="form-row">
-        <div class="rte" data-rte-target="#exec-summary-body" data-placeholder="Write or paste an executive summary…">{{ M.rte_seed(project.exec_summary_html, project.exec_summary) }}</div>
-        <input type="hidden" name="body" id="exec-summary-body" />
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
-        <button class="btn btn--primary">Save</button>
-      </div>
-    </form>
-  </div>
- </div>
-</div>
-{% endif %}
-{% endif %}
-
-{# ---- Share (per-project access) — only for admins / this project's SE ---- #}
-{% if can_share %}
-<details id="share" class="card" style="margin-bottom: var(--s-5);">
-  <summary class="card__header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; list-style:none;">
-    <h3 class="card__title" style="margin:0;">Shared access{% if grants %} <span class="badge badge--neutral">{{ grants|length }}</span>{% endif %}</h3>
-    <span class="text-muted text-xs">manage ▾</span>
-  </summary>
-  <div class="card__body">
-    <p class="text-muted text-xs" style="margin-top:0;">
-      External viewers can read this project (and its use cases, notes, and reports) but cannot edit anything.
-    </p>
-    {% if grants %}
-    <div style="margin-bottom: var(--s-3);">
-      {% for g in grants %}
-      <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-2) 0; border-top:1px solid var(--border);">
-        <span>
-          <strong>{{ g.user.display_label if g.user else g.user_id }}</strong>
-          <span class="badge badge--neutral">viewer</span>
-          {% if g.user and g.user.is_external and not g.user.password_hash %}<span class="badge badge--warning" title="Invited — hasn't set a password yet">Pending</span>
-          {% elif g.user and g.user.is_external and g.user.is_expired %}<span class="badge badge--warning" title="Account expired — extend to restore access">Expired</span>
-          {% elif g.user and g.user.is_external and g.user.days_until_expiry is not none %}
-            <span class="text-muted text-xs" {% if g.user.days_until_expiry <= 7 %}style="color: var(--warning);"{% endif %}
-                  title="Account expires {{ g.user.expires_at_aware.strftime('%Y-%m-%d') }}">· expires in {{ g.user.days_until_expiry }}d</span>
-          {% endif %}
-          {% if g.user and g.user.company %}<span class="text-muted text-xs">· {{ g.user.company }}</span>{% endif %}
-        </span>
-        <span style="display:flex; gap: var(--s-2); align-items:center;">
-          {% if g.user and g.user.is_external and g.user.password_hash %}
-          <details style="margin:0;">
-            <summary class="btn btn--ghost btn--sm" style="list-style:none;">Extend ▾</summary>
-            <form method="post" action="/ui/projects/{{ project.id }}/external/{{ g.user.id }}/extend"
-                  style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
-              <select class="select" name="preset" style="max-width:110px;">
-                <option value="30">+30 days</option>
-                <option value="60" selected>+60 days</option>
-                <option value="90">+90 days</option>
-              </select>
-              <span class="text-muted text-xs">or</span>
-              <input class="input" type="date" name="until" title="Extend until a specific date" style="max-width:150px;" />
-              <button class="btn btn--primary btn--sm" type="submit">Extend</button>
-            </form>
-          </details>
-          {% endif %}
-          <form method="post" action="/ui/projects/{{ project.id }}/grants/{{ g.id }}/delete" style="margin:0;"
-                onsubmit="return confirm('Remove access for {{ g.user.display_label if g.user else g.user_id }}?');">
-            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Revoke access">Remove</button>
-          </form>
-        </span>
-      </div>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-muted text-xs">No one outside the team has been given access yet.</p>
-    {% endif %}
-
-    {% if grantable_users %}
-    <form method="post" action="/ui/projects/{{ project.id }}/grants" style="display:flex; gap: var(--s-2); align-items:flex-end;">
-      <div class="form-row" style="flex:1; margin:0;">
-        <label class="label" for="grant_user">Add an existing external viewer</label>
-        <select class="select" id="grant_user" name="user_id" required>
-          <option value="">Select a user…</option>
-          {% for u in grantable_users %}<option value="{{ u.id }}">{{ u.display_label }} ({{ u.username }})</option>{% endfor %}
-        </select>
-      </div>
-      <button class="btn btn--primary">Share</button>
-    </form>
-    {% endif %}
-
-    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
-      <form method="post" action="/ui/projects/{{ project.id }}/invite">
-        <label class="label">Invite someone by email</label>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-2);">
-          <input class="input" type="text" name="name" placeholder="Name (optional)" autocomplete="off" />
-          <input class="input" type="text" name="company" placeholder="Company (optional)" autocomplete="off" />
-        </div>
-        <div style="display:flex; gap: var(--s-2); align-items:flex-end; margin-top: var(--s-2);">
-          <div class="form-row" style="flex:1; margin:0;">
-            <input class="input" type="email" name="email" placeholder="name@company.com" required autocomplete="off" />
-          </div>
-          <button class="btn btn--primary">Send invite</button>
-        </div>
-        <div class="form-hint">They'll get an email with a link to set a password and view this project. (Requires <a href="/ui/settings/email">email settings</a>.)</div>
-      </form>
-    </div>
-
-    {# ---- Public customer status link (no login) ---- #}
-    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
-      <div style="display:flex; align-items:center; gap: var(--s-2);">
-        <label class="label" style="margin:0;">Public status link</label>
-        {% if share_link and share_link.is_enabled %}<span class="badge badge--success">Live</span>
-        {% elif share_link %}<span class="badge badge--neutral">Disabled</span>{% endif %}
-      </div>
-      <p class="text-muted text-xs" style="margin:2px 0 var(--s-2);">
-        A polished, read-only status page a customer can open with no login — progress, use cases, and non-internal updates only.
-      </p>
-
-      {% if share_link and share_link.is_enabled %}
-        {% set portal_url = portal_base_url ~ '/portal/' ~ share_link.token %}
-        <div style="display:flex; gap: var(--s-2); align-items:center;">
-          <input class="input" type="text" readonly value="{{ portal_url }}" id="portalUrl"
-                 onclick="this.select()" style="flex:1; font-size:12px;" />
-          <button type="button" class="btn btn--primary btn--sm"
-                  onclick="navigator.clipboard.writeText(document.getElementById('portalUrl').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy link',1400);})">Copy link</button>
-          <a class="btn btn--ghost btn--sm" href="{{ portal_url }}" target="_blank" rel="noopener">Preview ↗</a>
-        </div>
-        <div style="display:flex; gap: var(--s-2); align-items:center; margin-top: var(--s-2); flex-wrap:wrap;">
-          <span class="text-muted text-xs">
-            {% if share_link.view_count %}Viewed {{ share_link.view_count }} time{{ 's' if share_link.view_count != 1 }}{% if share_link.last_viewed_at %}, last {{ share_link.last_viewed_at.strftime('%b %-d') }}{% endif %}{% else %}Not viewed yet{% endif %}
-          </span>
-          <span class="spacer" style="flex:1;"></span>
-          <form method="post" action="/ui/projects/{{ project.id }}/share-link/rotate" style="margin:0;"
-                onsubmit="return confirm('Generate a new link? The current URL will stop working immediately.');">
-            <button class="btn btn--ghost btn--sm">Regenerate</button>
-          </form>
-          <form method="post" action="/ui/projects/{{ project.id }}/share-link/disable" style="margin:0;"
-                onsubmit="return confirm('Disable the public status link? The URL will stop working (you can re-enable it later).');">
-            <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Disable</button>
-          </form>
-        </div>
-      {% else %}
-        <form method="post" action="/ui/projects/{{ project.id }}/share-link/enable" style="margin:0;">
-          <button class="btn btn--primary btn--sm">{% if share_link %}Re-enable link{% else %}Create public link{% endif %}</button>
-        </form>
-      {% endif %}
-    </div>
-  </div>
-</details>
-{% endif %}
-
-{# ---- Project Notes ---- #}
-{% macro note_row(note) %}
-<div style="display:flex; gap: var(--s-3); padding: var(--s-3) 0; border-top:1px solid var(--border);">
-  <div style="flex:none; width:120px;">
-    <div class="text-xs"><strong>{{ note.note_date.strftime('%b %-d, %Y') }}</strong></div>
-    {% if note.created_by %}<div class="text-muted text-xs">{{ note.created_by }}</div>{% endif %}
-    {% if note.is_internal_only %}<div style="margin-top: var(--s-1);"><span class="badge badge--warning" title="Hidden from external viewers">Internal only</span></div>{% endif %}
-  </div>
-  <div style="flex:1;">
-    {{ M.render_note(note.body_html, note.body) }}
-    {% if note.attachments %}
-    <div style="display:flex; flex-wrap:wrap; gap: var(--s-2); margin-top: var(--s-2);">
-      {% for att in note.attachments %}
-      <a href="/ui/projects/note-attachments/{{ att.id }}" target="_blank" class="badge badge--neutral" style="text-decoration:none;" title="{{ att.original_filename }}">📎 {{ att.original_filename or att.stored_filename }}</a>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </div>
-  {% if current_user and current_user.is_internal %}
-  <div style="flex:none; display:flex; gap: var(--s-1);">
-    <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-note-{{ note.id }}')" title="Edit note">✎</button>
-    <form method="post" action="/ui/projects/notes/{{ note.id }}/delete" style="margin:0;"
-          onsubmit="return confirm('Delete this note?');">
-      <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Delete note">×</button>
-    </form>
-  </div>
-  {% endif %}
-</div>
-<div class="ucmodal" id="m-note-{{ note.id }}" hidden>
- <div class="ucmodal__box">
-  <div class="ucmodal__head"><span class="ucmodal__title">Edit note</span>
-    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
-  <div class="ucmodal__body">
-    <form method="post" action="/ui/projects/notes/{{ note.id }}/edit">
-      <div class="form-row"><label class="label">Date</label>
-        <input class="input" type="date" name="note_date" value="{{ note.note_date.isoformat() }}" /></div>
-      <div class="form-row"><label class="label">Note</label>
-        <div class="rte" data-rte-target="#note-body-{{ note.id }}">{{ M.rte_seed(note.body_html, note.body) }}</div>
-        <input type="hidden" name="body" id="note-body-{{ note.id }}" /></div>
-      <div class="form-row">
-        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
-          <input type="checkbox" name="is_internal_only" value="1" {% if note.is_internal_only %}checked{% endif %} />
-          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
-        </label>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
-        <button class="btn btn--primary">Save</button>
-      </div>
-    </form>
-
-    <div class="ucmodal__section">
-      <form method="post" action="/ui/projects/notes/{{ note.id }}/attachments" enctype="multipart/form-data">
-        <label class="label">Add attachments</label>
-        <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" />
-        <div class="form-actions"><button class="btn btn--secondary btn--sm">Upload</button></div>
-      </form>
-      {% if note.attachments %}
-      <div style="margin-top: var(--s-3);">
-        {% for att in note.attachments %}
-        <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-1) 0;">
-          <a href="/ui/projects/note-attachments/{{ att.id }}" target="_blank">📎 {{ att.original_filename or att.stored_filename }}</a>
-          <form method="post" action="/ui/projects/note-attachments/{{ att.id }}/delete" style="margin:0;">
-            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Remove attachment">×</button>
-          </form>
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </div>
-  </div>
- </div>
-</div>
-{% endmacro %}
-
-<div id="notes" class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
-    <h3 class="card__title">Project Notes</h3>
-    {% if can_edit %}<button type="button" class="btn btn--primary btn--sm" onclick="pocOpen('m-add-note')">+ Add note</button>{% endif %}
-  </div>
-  <div class="card__body">
-    {% if notes %}
-    {% set visible_limit = 1 %}
-    {% set hidden_count = notes|length - visible_limit %}
-    <div>
-      {% for note in notes[:visible_limit] %}{{ note_row(note) }}{% endfor %}
-      {% if hidden_count > 0 %}
-      <details style="margin-top: var(--s-1);">
-        <summary style="cursor:pointer; padding: var(--s-3) 0; color: var(--primary); font-size:13px; font-weight:500;">Show {{ hidden_count }} earlier note{{ "s" if hidden_count != 1 else "" }}</summary>
-        {% for note in notes[visible_limit:] %}{{ note_row(note) }}{% endfor %}
-      </details>
-      {% endif %}
-    </div>
-    {% else %}
-    <p class="text-muted text-xs">No notes yet. Click “Add note” to add the first update.</p>
-    {% endif %}
-  </div>
-</div>
-
-<div class="ucmodal" id="m-add-note" hidden>
- <div class="ucmodal__box">
-  <div class="ucmodal__head"><span class="ucmodal__title">Add note</span>
-    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
-  <div class="ucmodal__body">
-    <form method="post" action="/ui/projects/{{ project.id }}/notes" enctype="multipart/form-data">
-      <div class="form-row"><label class="label">Date</label>
-        <input class="input" type="date" name="note_date" value="{{ today }}" /></div>
-      <div class="form-row"><label class="label">Note</label>
-        <div class="rte" data-rte-target="#add-note-body" data-placeholder="Add an update…"></div>
-        <input type="hidden" name="body" id="add-note-body" /></div>
-      <div class="form-row">
-        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
-          <input type="checkbox" name="is_internal_only" value="1" />
-          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
-        </label>
-      </div>
-      <div class="form-row"><label class="label">Attachments <span class="text-muted text-xs">(optional — PDF, Word, Excel, images)</span></label>
-        <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" /></div>
-      <div class="form-actions">
-        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
-        <button class="btn btn--primary">Add note</button>
-      </div>
-    </form>
-  </div>
- </div>
-</div>
-
-{# ---- Tasks assigned to this project ---- #}
-{% if tasks_on %}
-<details id="tasks" class="card" style="margin-bottom: var(--s-5);" {% if not tasks_collapsed %}open{% endif %}>
-  <summary class="card__header" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; list-style:none;">
-    <h3 class="card__title" style="display:flex; align-items:center; gap: var(--s-2);">
-      <span class="tasks-caret" aria-hidden="true" style="display:inline-block; transition:transform .15s; font-size:0.8em; color:var(--text-muted);">▸</span>
-      Tasks
-      {% if project_tasks %}<span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}
-    </h3>
-    {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}&return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--primary btn--sm" onclick="event.stopPropagation();">+ Add task</a>{% endif %}
-  </summary>
-  <div class="card__body">
-    {% if current_user.is_internal %}
-    <p class="text-muted text-xs" style="margin-top:0;">Tasks assigned to this project are visible to its external viewers unless marked <strong>Internal only</strong>.</p>
-    {% endif %}
-    {% if not project_tasks %}
-    <p class="text-muted text-xs">No tasks assigned to this project yet.</p>
-    {% else %}
-    <div class="table-wrap">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Priority</th>
-          <th>Due</th>
-          <th style="width:180px;">Status</th>
-          {% if current_user.is_admin %}<th>Owner</th>{% endif %}
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for task in project_tasks %}
-        <tr>
-          <td><strong>{{ task.title }}</strong></td>
-          <td>
-            {% if task.priority %}
-            <span class="badge" style="{% if task.priority.color %}background:{{ task.priority.color }}1a; color:{{ task.priority.color }}; border-color:{{ task.priority.color }}66;{% endif %}">{{ task.priority.name }}</span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
-          </td>
-          <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
-          <td>
-            {% if current_user.is_internal %}
-            <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;">
-              <select class="select" name="status_id" onchange="this.form.submit()">
-                {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
-              </select>
-            </form>
-            {% else %}
-            <span class="badge badge--neutral">{{ task.status.name if task.status else "—" }}</span>
-            {% endif %}
-          </td>
-          {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
-          <td class="table__actions">
-            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit?return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% endif %}
-  </div>
-</details>
-<script>
-// Persist the Tasks section collapsed/expanded state per user. The <details>
-// starts in the server-rendered state; on toggle we save the new state so it
-// sticks across visits.
-(function () {
-  var d = document.getElementById('tasks');
-  if (!d) return;
-  d.addEventListener('toggle', function () {
-    fetch('/ui/projects/tasks-collapsed', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'collapsed=' + (d.open ? '0' : '1'),
-    }).catch(function () {});
-  });
-})();
-</script>
-{% endif %}
-
+{# ===== Use cases panel (default) ===== #}
+<div class="tab-panel is-active" id="tab-use-cases" role="tabpanel">
 {# ---- Add use cases ---- #}
-<div id="use-cases" class="page-header">
+<div class="page-header">
   <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Use cases</h2></div>
   <div class="page-header__actions">
     <button type="button" class="btn btn--ghost" onclick="pocOpen('m-uc-view')" title="Choose fields & filter">⚙ View</button>
@@ -819,7 +461,7 @@
 
 {# ---- Bulk actions (select checkboxes in the tables below) ---- #}
 {% if can_edit and use_case_groups %}
-<div id="bulk-bar" class="card" style="display:none; position:sticky; top:8px; z-index:30; margin-bottom: var(--s-4); border-color: var(--primary);">
+<div id="bulk-bar" class="card" style="display:none; position:sticky; top:60px; z-index:30; margin-bottom: var(--s-4); border-color: var(--primary);">
   <div class="card__body" style="display:flex; gap: var(--s-3); align-items:center; flex-wrap:wrap;">
     <strong id="bulk-count">0 selected</strong>
     <select id="bulk-action" class="select" style="width:auto;" onchange="bulkActionChanged()">
@@ -993,12 +635,409 @@
 </div>
 {% endfor %}
 
+</div>
+
+{# ===== Overview panel ===== #}
+<div class="tab-panel" id="tab-overview" role="tabpanel">
+{% if project.notes_html or project.notes %}
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__body">{{ M.render_note(project.notes_html, project.notes) }}</div>
+</div>
+{% endif %}
+{# ---- Executive Summary (AI-generated) ---- #}
+{% if can_edit or project.exec_summary_html %}
+<div id="summary" class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="card__title">Executive Summary</h3>
+    {% if can_edit %}
+    <div style="display:flex; gap: var(--s-2);">
+      {% if project.exec_summary_html %}
+      <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-edit-summary')">Edit</button>
+      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/delete" style="margin:0;"
+            onsubmit="return confirm('Clear the executive summary?');">
+        <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Clear</button>
+      </form>
+      {% else %}
+      <button type="button" class="btn btn--secondary btn--sm" onclick="pocOpen('m-edit-summary')">✎ Write / paste</button>
+      {% endif %}
+      <form method="post" action="/ui/projects/{{ project.id }}/exec-summary/generate"
+            id="exec-gen-form" data-project="{{ project.id }}" style="margin:0;">
+        <button class="btn btn--primary btn--sm">{{ "Regenerate" if project.exec_summary_html else "✨ Generate" }}</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+  <div class="card__body" id="exec-card-body">
+    {% if project.exec_summary_html %}
+      {{ M.render_note(project.exec_summary_html, project.exec_summary) }}
+      {% if project.exec_summary_generated_at %}
+      <p class="text-muted text-xs" style="margin-top: var(--s-3);">
+        🤖 Generated {{ project.exec_summary_generated_at.strftime('%b %-d, %Y') }}{% if project.exec_summary_model %} · {{ project.exec_summary_model }}{% endif %}{% if project.exec_summary_tokens %} · {{ "{:,}".format(project.exec_summary_tokens) }} tokens{% endif %}
+      </p>
+      {% endif %}
+    {% elif can_edit %}
+      {% if ai_configured %}
+      <p class="text-muted text-xs" style="margin-top:0;">No summary yet. Click <strong>Generate</strong> to draft one with AI from this project's use cases and notes, or <strong>Write / paste</strong> to add your own. Either can be edited afterward.</p>
+      {% else %}
+      <p class="text-muted text-xs" style="margin-top:0;">Click <strong>Write / paste</strong> to add a summary manually. To draft one with AI, configure a provider in <a href="/ui/settings/ai">Settings → AI Assistant</a>.</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{% if can_edit %}
+<div class="ucmodal" id="m-edit-summary" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">{{ "Edit executive summary" if project.exec_summary_html else "Write executive summary" }}</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <form method="post" action="/ui/projects/{{ project.id }}/exec-summary">
+      <div class="form-row">
+        <div class="rte" data-rte-target="#exec-summary-body" data-placeholder="Write or paste an executive summary…">{{ M.rte_seed(project.exec_summary_html, project.exec_summary) }}</div>
+        <input type="hidden" name="body" id="exec-summary-body" />
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+        <button class="btn btn--primary">Save</button>
+      </div>
+    </form>
+  </div>
+ </div>
+</div>
+{% endif %}
+{% endif %}
+
 {% if can_edit %}
 <div style="margin-top: var(--s-5);">
   <form action="/ui/projects/{{ project.id }}/delete" method="post"
         onsubmit="return confirm('Delete project {{ project.display_name }}? This removes its use cases and screenshots.');">
     <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete project</button>
   </form>
+</div>
+{% endif %}
+</div>
+
+{# ===== Notes panel ===== #}
+<div class="tab-panel" id="tab-notes" role="tabpanel">
+{# ---- Project Notes ---- #}
+{% macro note_row(note) %}
+<div style="display:flex; gap: var(--s-3); padding: var(--s-3) 0; border-top:1px solid var(--border);">
+  <div style="flex:none; width:120px;">
+    <div class="text-xs"><strong>{{ note.note_date.strftime('%b %-d, %Y') }}</strong></div>
+    {% if note.created_by %}<div class="text-muted text-xs">{{ note.created_by }}</div>{% endif %}
+    {% if note.is_internal_only %}<div style="margin-top: var(--s-1);"><span class="badge badge--warning" title="Hidden from external viewers">Internal only</span></div>{% endif %}
+  </div>
+  <div style="flex:1;">
+    {{ M.render_note(note.body_html, note.body) }}
+    {% if note.attachments %}
+    <div style="display:flex; flex-wrap:wrap; gap: var(--s-2); margin-top: var(--s-2);">
+      {% for att in note.attachments %}
+      <a href="/ui/projects/note-attachments/{{ att.id }}" target="_blank" class="badge badge--neutral" style="text-decoration:none;" title="{{ att.original_filename }}">📎 {{ att.original_filename or att.stored_filename }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% if current_user and current_user.is_internal %}
+  <div style="flex:none; display:flex; gap: var(--s-1);">
+    <button type="button" class="btn btn--ghost btn--sm" onclick="pocOpen('m-note-{{ note.id }}')" title="Edit note">✎</button>
+    <form method="post" action="/ui/projects/notes/{{ note.id }}/delete" style="margin:0;"
+          onsubmit="return confirm('Delete this note?');">
+      <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Delete note">×</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+<div class="ucmodal" id="m-note-{{ note.id }}" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Edit note</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <form method="post" action="/ui/projects/notes/{{ note.id }}/edit">
+      <div class="form-row"><label class="label">Date</label>
+        <input class="input" type="date" name="note_date" value="{{ note.note_date.isoformat() }}" /></div>
+      <div class="form-row"><label class="label">Note</label>
+        <div class="rte" data-rte-target="#note-body-{{ note.id }}">{{ M.rte_seed(note.body_html, note.body) }}</div>
+        <input type="hidden" name="body" id="note-body-{{ note.id }}" /></div>
+      <div class="form-row">
+        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+          <input type="checkbox" name="is_internal_only" value="1" {% if note.is_internal_only %}checked{% endif %} />
+          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+        <button class="btn btn--primary">Save</button>
+      </div>
+    </form>
+
+    <div class="ucmodal__section">
+      <form method="post" action="/ui/projects/notes/{{ note.id }}/attachments" enctype="multipart/form-data">
+        <label class="label">Add attachments</label>
+        <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" />
+        <div class="form-actions"><button class="btn btn--secondary btn--sm">Upload</button></div>
+      </form>
+      {% if note.attachments %}
+      <div style="margin-top: var(--s-3);">
+        {% for att in note.attachments %}
+        <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-1) 0;">
+          <a href="/ui/projects/note-attachments/{{ att.id }}" target="_blank">📎 {{ att.original_filename or att.stored_filename }}</a>
+          <form method="post" action="/ui/projects/note-attachments/{{ att.id }}/delete" style="margin:0;">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Remove attachment">×</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+ </div>
+</div>
+{% endmacro %}
+
+<div id="notes" class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="card__title">Project Notes</h3>
+    {% if can_edit %}<button type="button" class="btn btn--primary btn--sm" onclick="pocOpen('m-add-note')">+ Add note</button>{% endif %}
+  </div>
+  <div class="card__body">
+    {% if notes %}
+    {% set visible_limit = 1 %}
+    {% set hidden_count = notes|length - visible_limit %}
+    <div>
+      {% for note in notes[:visible_limit] %}{{ note_row(note) }}{% endfor %}
+      {% if hidden_count > 0 %}
+      <details style="margin-top: var(--s-1);">
+        <summary style="cursor:pointer; padding: var(--s-3) 0; color: var(--primary); font-size:13px; font-weight:500;">Show {{ hidden_count }} earlier note{{ "s" if hidden_count != 1 else "" }}</summary>
+        {% for note in notes[visible_limit:] %}{{ note_row(note) }}{% endfor %}
+      </details>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-muted text-xs">No notes yet. Click “Add note” to add the first update.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="ucmodal" id="m-add-note" hidden>
+ <div class="ucmodal__box">
+  <div class="ucmodal__head"><span class="ucmodal__title">Add note</span>
+    <button type="button" class="btn btn--ghost btn--sm" data-ucmodal-close>✕</button></div>
+  <div class="ucmodal__body">
+    <form method="post" action="/ui/projects/{{ project.id }}/notes" enctype="multipart/form-data">
+      <div class="form-row"><label class="label">Date</label>
+        <input class="input" type="date" name="note_date" value="{{ today }}" /></div>
+      <div class="form-row"><label class="label">Note</label>
+        <div class="rte" data-rte-target="#add-note-body" data-placeholder="Add an update…"></div>
+        <input type="hidden" name="body" id="add-note-body" /></div>
+      <div class="form-row">
+        <label class="label" style="display:flex; align-items:center; gap: var(--s-2); cursor:pointer;">
+          <input type="checkbox" name="is_internal_only" value="1" />
+          Internal only <span class="text-muted text-xs">— hidden from external viewers</span>
+        </label>
+      </div>
+      <div class="form-row"><label class="label">Attachments <span class="text-muted text-xs">(optional — PDF, Word, Excel, images)</span></label>
+        <input class="input" type="file" name="files" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" /></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn--secondary" data-ucmodal-close>Cancel</button>
+        <button class="btn btn--primary">Add note</button>
+      </div>
+    </form>
+  </div>
+ </div>
+</div>
+
+</div>
+
+{% if tasks_on %}
+{# ===== Tasks panel ===== #}
+<div class="tab-panel" id="tab-tasks" role="tabpanel">
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+    <h3 class="card__title">Tasks{% if project_tasks %} <span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}</h3>
+    {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}&return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--primary btn--sm">+ Add task</a>{% endif %}
+  </div>
+  <div class="card__body">
+    {% if current_user.is_internal %}
+    <p class="text-muted text-xs" style="margin-top:0;">Tasks assigned to this project are visible to its external viewers unless marked <strong>Internal only</strong>.</p>
+    {% endif %}
+    {% if not project_tasks %}
+    <p class="text-muted text-xs">No tasks assigned to this project yet.</p>
+    {% else %}
+    <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Priority</th>
+          <th>Due</th>
+          <th style="width:180px;">Status</th>
+          {% if current_user.is_admin %}<th>Owner</th>{% endif %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in project_tasks %}
+        <tr>
+          <td><strong>{{ task.title }}</strong></td>
+          <td>
+            {% if task.priority %}
+            <span class="badge" style="{% if task.priority.color %}background:{{ task.priority.color }}1a; color:{{ task.priority.color }}; border-color:{{ task.priority.color }}66;{% endif %}">{{ task.priority.name }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
+          <td>
+            {% if current_user.is_internal %}
+            <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;">
+              <select class="select" name="status_id" onchange="this.form.submit()">
+                {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+              </select>
+            </form>
+            {% else %}
+            <span class="badge badge--neutral">{{ task.status.name if task.status else "—" }}</span>
+            {% endif %}
+          </td>
+          {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
+          <td class="table__actions">
+            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit?return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+</div>
+{% endif %}
+
+{% if can_share %}
+{# ===== Share panel ===== #}
+<div class="tab-panel" id="tab-share" role="tabpanel">
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header">
+    <h3 class="card__title" style="margin:0;">Shared access{% if grants %} <span class="badge badge--neutral">{{ grants|length }}</span>{% endif %}</h3>
+  </div>
+  <div class="card__body">
+    <p class="text-muted text-xs" style="margin-top:0;">
+      External viewers can read this project (and its use cases, notes, and reports) but cannot edit anything.
+    </p>
+    {% if grants %}
+    <div style="margin-bottom: var(--s-3);">
+      {% for g in grants %}
+      <div style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-2); padding: var(--s-2) 0; border-top:1px solid var(--border);">
+        <span>
+          <strong>{{ g.user.display_label if g.user else g.user_id }}</strong>
+          <span class="badge badge--neutral">viewer</span>
+          {% if g.user and g.user.is_external and not g.user.password_hash %}<span class="badge badge--warning" title="Invited — hasn't set a password yet">Pending</span>
+          {% elif g.user and g.user.is_external and g.user.is_expired %}<span class="badge badge--warning" title="Account expired — extend to restore access">Expired</span>
+          {% elif g.user and g.user.is_external and g.user.days_until_expiry is not none %}
+            <span class="text-muted text-xs" {% if g.user.days_until_expiry <= 7 %}style="color: var(--warning);"{% endif %}
+                  title="Account expires {{ g.user.expires_at_aware.strftime('%Y-%m-%d') }}">· expires in {{ g.user.days_until_expiry }}d</span>
+          {% endif %}
+          {% if g.user and g.user.company %}<span class="text-muted text-xs">· {{ g.user.company }}</span>{% endif %}
+        </span>
+        <span style="display:flex; gap: var(--s-2); align-items:center;">
+          {% if g.user and g.user.is_external and g.user.password_hash %}
+          <details style="margin:0;">
+            <summary class="btn btn--ghost btn--sm" style="list-style:none;">Extend ▾</summary>
+            <form method="post" action="/ui/projects/{{ project.id }}/external/{{ g.user.id }}/extend"
+                  style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+              <select class="select" name="preset" style="max-width:110px;">
+                <option value="30">+30 days</option>
+                <option value="60" selected>+60 days</option>
+                <option value="90">+90 days</option>
+              </select>
+              <span class="text-muted text-xs">or</span>
+              <input class="input" type="date" name="until" title="Extend until a specific date" style="max-width:150px;" />
+              <button class="btn btn--primary btn--sm" type="submit">Extend</button>
+            </form>
+          </details>
+          {% endif %}
+          <form method="post" action="/ui/projects/{{ project.id }}/grants/{{ g.id }}/delete" style="margin:0;"
+                onsubmit="return confirm('Remove access for {{ g.user.display_label if g.user else g.user_id }}?');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);" title="Revoke access">Remove</button>
+          </form>
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted text-xs">No one outside the team has been given access yet.</p>
+    {% endif %}
+
+    {% if grantable_users %}
+    <form method="post" action="/ui/projects/{{ project.id }}/grants" style="display:flex; gap: var(--s-2); align-items:flex-end;">
+      <div class="form-row" style="flex:1; margin:0;">
+        <label class="label" for="grant_user">Add an existing external viewer</label>
+        <select class="select" id="grant_user" name="user_id" required>
+          <option value="">Select a user…</option>
+          {% for u in grantable_users %}<option value="{{ u.id }}">{{ u.display_label }} ({{ u.username }})</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn btn--primary">Share</button>
+    </form>
+    {% endif %}
+
+    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
+      <form method="post" action="/ui/projects/{{ project.id }}/invite">
+        <label class="label">Invite someone by email</label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-2);">
+          <input class="input" type="text" name="name" placeholder="Name (optional)" autocomplete="off" />
+          <input class="input" type="text" name="company" placeholder="Company (optional)" autocomplete="off" />
+        </div>
+        <div style="display:flex; gap: var(--s-2); align-items:flex-end; margin-top: var(--s-2);">
+          <div class="form-row" style="flex:1; margin:0;">
+            <input class="input" type="email" name="email" placeholder="name@company.com" required autocomplete="off" />
+          </div>
+          <button class="btn btn--primary">Send invite</button>
+        </div>
+        <div class="form-hint">They'll get an email with a link to set a password and view this project. (Requires <a href="/ui/settings/email">email settings</a>.)</div>
+      </form>
+    </div>
+
+    {# ---- Public customer status link (no login) ---- #}
+    <div style="margin-top: var(--s-4); border-top:1px solid var(--border); padding-top: var(--s-4);">
+      <div style="display:flex; align-items:center; gap: var(--s-2);">
+        <label class="label" style="margin:0;">Public status link</label>
+        {% if share_link and share_link.is_enabled %}<span class="badge badge--success">Live</span>
+        {% elif share_link %}<span class="badge badge--neutral">Disabled</span>{% endif %}
+      </div>
+      <p class="text-muted text-xs" style="margin:2px 0 var(--s-2);">
+        A polished, read-only status page a customer can open with no login — progress, use cases, and non-internal updates only.
+      </p>
+
+      {% if share_link and share_link.is_enabled %}
+        {% set portal_url = portal_base_url ~ '/portal/' ~ share_link.token %}
+        <div style="display:flex; gap: var(--s-2); align-items:center;">
+          <input class="input" type="text" readonly value="{{ portal_url }}" id="portalUrl"
+                 onclick="this.select()" style="flex:1; font-size:12px;" />
+          <button type="button" class="btn btn--primary btn--sm"
+                  onclick="navigator.clipboard.writeText(document.getElementById('portalUrl').value).then(()=>{this.textContent='Copied ✓';setTimeout(()=>this.textContent='Copy link',1400);})">Copy link</button>
+          <a class="btn btn--ghost btn--sm" href="{{ portal_url }}" target="_blank" rel="noopener">Preview ↗</a>
+        </div>
+        <div style="display:flex; gap: var(--s-2); align-items:center; margin-top: var(--s-2); flex-wrap:wrap;">
+          <span class="text-muted text-xs">
+            {% if share_link.view_count %}Viewed {{ share_link.view_count }} time{{ 's' if share_link.view_count != 1 }}{% if share_link.last_viewed_at %}, last {{ share_link.last_viewed_at.strftime('%b %-d') }}{% endif %}{% else %}Not viewed yet{% endif %}
+          </span>
+          <span class="spacer" style="flex:1;"></span>
+          <form method="post" action="/ui/projects/{{ project.id }}/share-link/rotate" style="margin:0;"
+                onsubmit="return confirm('Generate a new link? The current URL will stop working immediately.');">
+            <button class="btn btn--ghost btn--sm">Regenerate</button>
+          </form>
+          <form method="post" action="/ui/projects/{{ project.id }}/share-link/disable" style="margin:0;"
+                onsubmit="return confirm('Disable the public status link? The URL will stop working (you can re-enable it later).');">
+            <button class="btn btn--ghost btn--sm" style="color:var(--danger);">Disable</button>
+          </form>
+        </div>
+      {% else %}
+        <form method="post" action="/ui/projects/{{ project.id }}/share-link/enable" style="margin:0;">
+          <button class="btn btn--primary btn--sm">{% if share_link %}Re-enable link{% else %}Create public link{% endif %}</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
 </div>
 {% endif %}
 {% endblock %}
