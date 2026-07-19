@@ -703,6 +703,12 @@ a.topbar__user-name:hover { text-decoration: underline; }
   vertical-align: middle;
 }
 
+/* Top-align cells for tables whose rows can grow tall (e.g. the use-case list,
+   where the name cell stacks title + description + validation). Without this,
+   one-line cells like Feature/Status/Source float to the vertical center of a
+   tall row instead of lining up with the name at the top. */
+.table--top td { vertical-align: top; }
+
 .table th {
   background: var(--surface-2);
   font-weight: 500;
@@ -895,6 +901,23 @@ a.topbar__user-name:hover { text-decoration: underline; }
   padding: 1px 7px;
 }
 .tabs__tab.is-active .tabs__count { background: var(--primary-soft); color: var(--accent-text); }
+
+/* Project sub-nav affordance: make it obvious these switch views. Non-active
+   tabs light up (surface lift + full-strength text) on hover; the active tab
+   lifts onto the surface with gold accent text and a gold underline so the
+   current view is unmistakable. Scoped to .tabs--full so the smaller inline
+   segmented controls elsewhere keep their subtler look. */
+.tabs--full .tabs__tab { transition: background 0.12s, color 0.12s, box-shadow 0.12s; }
+.tabs--full .tabs__tab:hover:not(.is-active) {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-xs);
+}
+.tabs--full .tabs__tab.is-active {
+  color: var(--accent-text);
+  box-shadow: var(--shadow-sm), inset 0 -2px 0 var(--primary);
+}
+
 .tab-panel { display: none; }
 .tab-panel.is-active { display: block; }
 
