@@ -162,11 +162,11 @@ MCP_TG_ARN=$(aws elbv2 describe-target-groups \
 if [ -n "$MCP_TG_ARN" ]; then
   DEPLOY_MCP="true"
   MCP_PORT=$(aws elbv2 describe-target-groups --target-group-arns "$MCP_TG_ARN" \
-    --query 'TargetGroups[0].Port' --output text --region "$REGION" 2>/dev/null || echo "8011")
+    --query 'TargetGroups[0].Port' --output text --region "$REGION" 2>/dev/null || echo "8443")
   success "MCP target group: $MCP_TG_ARN (port $MCP_PORT)"
 else
   DEPLOY_MCP="false"
-  MCP_PORT="8011"
+  MCP_PORT="8443"
   skip "No MCP target group — web-app-only deployment"
 fi
 

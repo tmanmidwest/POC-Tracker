@@ -86,8 +86,9 @@ else
   APP_BASE="http://${ALB_DNS}"
   MCP_SCHEME="http"; MCP_HOST="${ALB_DNS}"
 fi
-# MCP endpoint (only meaningful when the MCP container was deployed)
-MCP_BASE="${MCP_SCHEME}://${MCP_HOST}:${MCP_PORT:-8011}"
+# MCP endpoint (only meaningful when the MCP container was deployed). The
+# streamable-HTTP transport is served at /mcp.
+MCP_BASE="${MCP_SCHEME}://${MCP_HOST}:${MCP_PORT:-8443}/mcp"
 
 CMD="${1:-help}"
 
@@ -131,7 +132,7 @@ case "$CMD" in
     echo -e "  Region:        $REGION"
     echo ""
     echo -e "  ${BOLD}URL:${NC}  ${APP_BASE}/"
-    [ "${DEPLOY_MCP:-false}" = "true" ] && echo -e "  ${BOLD}MCP:${NC}  ${MCP_BASE}/"
+    [ "${DEPLOY_MCP:-false}" = "true" ] && echo -e "  ${BOLD}MCP:${NC}  ${MCP_BASE}"
     echo ""
     ;;
 
@@ -249,7 +250,7 @@ case "$CMD" in
     echo -e "  ${BOLD}App URL:${NC}   ${APP_BASE}/"
     echo -e "  ${BOLD}API Docs:${NC}  ${APP_BASE}/docs"
     echo -e "  ${BOLD}Health:${NC}    ${APP_BASE}/health"
-    [ "${DEPLOY_MCP:-false}" = "true" ] && echo -e "  ${BOLD}MCP:${NC}       ${MCP_BASE}/"
+    [ "${DEPLOY_MCP:-false}" = "true" ] && echo -e "  ${BOLD}MCP:${NC}       ${MCP_BASE}"
     echo ""
     ;;
 

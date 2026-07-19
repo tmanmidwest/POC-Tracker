@@ -28,9 +28,9 @@ cd docs/deploy_to_AWS_fargate
 |---|---|
 | ECR repository (`<name>-webapp`) | Stores the image built from this repo |
 | ECS cluster + service (`<name>`) | Runs the Fargate task |
-| Fargate task (2 containers) | **web app** on `8010` + **MCP server** on `8011` |
+| Fargate task (2 containers) | **web app** on `8010` + **MCP server** on `8443` |
 | EFS filesystem + access point | Persistent `/data` (SQLite DB, secrets, keys) |
-| Application Load Balancer | Public endpoint(s) — `:80/:443` for the app, `:8011` for MCP |
+| Application Load Balancer | Public endpoint(s) — `:80/:443` for the app, `:8443` for MCP |
 | Target groups | `<name>-tg` (app) and `<name>-mcp-tg` (MCP) |
 | Security groups | `<name>-alb-sg`, `<name>-ecs-sg` |
 | CloudWatch log group (`/ecs/<name>-webapp`) | Container logs (`ecs/*` = app, `mcp/*` = MCP) |
@@ -60,21 +60,25 @@ By default both containers deploy. To deploy the **web app only**:
 DEPLOY_MCP=false ./deploy.sh
 ```
 
-The MCP endpoint is published on the ALB at port **8011** and is **auth-gated** —
+The MCP endpoint is published on the ALB at port **8443** and is **auth-gated** —
 it answers `401`/`503` until you generate a gateway token in the app UI
 (**Settings → MCP**), so it's safe to expose. Its ALB target-group health check
-accepts any `200-499` response as healthy for exactly this reason.
+accepts any `200-499` response as healthy for exactly this reason. Port **8443**
+is used (rather than 8011) because it is one of the HTTPS ports Cloudflare's proxy
+forwards — so behind a custom domain the MCP endpoint works through Cloudflare's
+orange-cloud proxy just like the app on 443.
 
 Verify it's reachable:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' http://<alb-dns>:8011/
+curl -sS -o /dev/null -w '%{http_code}\n' http://<alb-dns>:8443/
 # Any HTTP code (503/401/406) = server is up. Connection refused/hang = not up.
 ```
 
 Then, in **Settings → MCP**: generate the outbound API token, add an inbound
-gateway token, and point your client at `http://<host>:8011/` with
-`Authorization: Bearer <gateway-token>`.
+gateway token, and point your client at `http://<host>:8443/mcp` with
+`Authorization: Bearer <gateway-token>` (the streamable-HTTP transport is served
+at the `/mcp` path).
 
 ---
 
@@ -82,16 +86,33 @@ gateway token, and point your client at `http://<host>:8011/` with
 
 By default the app serves plain HTTP on the ALB's generated DNS name. To serve
 HTTPS on your own domain, the script provisions a free ACM certificate, adds a
-443 listener, and redirects HTTP→443. You add two Cloudflare CNAMEs when prompted
-(one to validate the cert, one to point the domain at the ALB).
+443 listener, redirects HTTP→443, and (when MCP is enabled) adds an HTTPS listener
+on 8443 using the **same certificate**.
 
 ```bash
 ENABLE_HTTPS=true DOMAIN_NAME=poc.trevorcombs.com ./deploy.sh
 ```
 
-When HTTPS is enabled, the MCP listener also switches to HTTPS on `8011` using the
-same certificate. Once the domain resolves you can flip Cloudflare to the
-orange-cloud proxy with SSL/TLS mode **Full (strict)**.
+The script prompts you for **exactly two Cloudflare DNS records**, in order:
+
+1. **Certificate validation** (shown mid-run): a one-time CNAME from ACM. Add it
+   as **DNS only** (grey cloud). It can stay forever so ACM auto-renews.
+2. **Traffic** (shown at the very end): a single CNAME `<domain> → <ALB DNS name>`.
+   This one record serves **both** the app (443) and the MCP server (8443) —
+   they're the same hostname on the load balancer, just different ports.
+
+Because MCP is on **8443** — a Cloudflare-proxyable HTTPS port — you can set the
+traffic record to **Proxied** (orange cloud) and both endpoints work through
+Cloudflare. Set **SSL/TLS → encryption mode = Full (strict)**; the ACM cert on the
+load balancer keeps that origin hop valid. Prefer to start simple? Set it to **DNS
+only** (grey cloud) and both HTTPS URLs still work directly against the ALB.
+
+Resulting endpoints:
+
+| | URL |
+|---|---|
+| App | `https://<domain>/` |
+| MCP | `https://<domain>:8443/mcp` |
 
 ---
 
@@ -107,7 +128,7 @@ The web app container (env prefix `POCT_`):
 | `POCT_PUBLIC_BASE_URL` | set by `update.sh` (and by `deploy.sh` for HTTPS) | Pins OAuth/redirect base URL |
 
 The MCP container additionally gets `POCT_MCP_TRANSPORT=streamable-http`,
-`POCT_MCP_HOST=0.0.0.0`, `POCT_MCP_PORT=8011`, and
+`POCT_MCP_HOST=0.0.0.0`, `POCT_MCP_PORT=8443`, and
 `POCT_MCP_BASE_URL=http://localhost:8010`. Inbound access (gateway token, allowed
 hosts) is managed in the UI and read from the shared volume — no secrets at deploy
 time.

@@ -17,7 +17,12 @@ INSTANCE="${INSTANCE:-}"
 GITHUB_REPO="https://github.com/tmanmidwest/POC-Tracker.git"
 CONTAINER_IMAGE=""  # Set automatically — built from source and pushed to ECR
 CONTAINER_PORT=8010   # web app
-MCP_PORT=8011         # MCP server (second container in the same task)
+# MCP server (second container in the same task). Default 8443 because that is one
+# of the few HTTPS ports Cloudflare's proxy (orange cloud) will forward — so the
+# MCP endpoint works behind Cloudflare exactly like the app on 443. Cloudflare's
+# proxied HTTPS ports are 443, 2053, 2083, 2087, 2096, 8443; a value outside that
+# set (e.g. 8011) only works with the domain set to "DNS only" (grey cloud).
+MCP_PORT=8443
 # Two containers share one task, so size it for both. 0.5 vCPU / 1 GB is a safe
 # baseline; drop to 256/512 if you disable the MCP container below.
 CPU=512        # 0.5 vCPU
@@ -760,7 +765,7 @@ if [ "$ENABLE_HTTPS" = "true" ]; then
     [ -n "$VAL_NAME" ] && [ "$VAL_NAME" != "None" ] || error "ACM did not return a validation record. Re-run ./deploy.sh — it will reuse this certificate."
 
     echo ""
-    echo -e "  ${BOLD}${YELLOW}ACTION REQUIRED — add this CNAME in Cloudflare to validate the certificate:${NC}"
+    echo -e "  ${BOLD}${YELLOW}ACTION REQUIRED (record 1 of 2) — add this CNAME in Cloudflare to validate the certificate:${NC}"
     echo ""
     echo -e "    ${BOLD}Type:${NC}    CNAME"
     echo -e "    ${BOLD}Name:${NC}    ${VAL_NAME}"
@@ -769,6 +774,8 @@ if [ "$ENABLE_HTTPS" = "true" ]; then
     echo ""
     echo -e "  ${YELLOW}In Cloudflare you can paste the full Name; it won't double-append the zone.${NC}"
     echo -e "  ${YELLOW}This record can stay in place permanently so ACM auto-renews the cert.${NC}"
+    echo -e "  ${YELLOW}This one cert secures both the app (443) and the MCP server (${MCP_PORT}).${NC}"
+    echo -e "  ${YELLOW}The second record (pointing the domain at the load balancer) comes at the end.${NC}"
     echo ""
     read -rp "  Press Enter once the record is added to continue..." _
 
@@ -845,9 +852,9 @@ else
   success "Listener created (port 80 → container port $CONTAINER_PORT)"
 fi
 
-# MCP listener — a dedicated port (8011) forwarding to the MCP target group.
-# HTTPS reuses the same ACM cert when enabled; otherwise plain HTTP. Gateways
-# (e.g. Saviynt) point at this port with their generated token.
+# MCP listener — a dedicated port (8443, Cloudflare-proxyable) forwarding to the
+# MCP target group. HTTPS reuses the same ACM cert when enabled; otherwise plain
+# HTTP. Gateways (e.g. Saviynt) point at this port with their generated token.
 if [ "$DEPLOY_MCP" = "true" ]; then
   MCP_LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
     --query "Listeners[?Port==\`${MCP_PORT}\`].ListenerArn | [0]" --output text 2>/dev/null || echo "")
@@ -981,16 +988,30 @@ done
 echo ""
 
 if [ "$ENABLE_HTTPS" = "true" ]; then
-  echo -e "${BOLD}${YELLOW}── LAST STEP — point your domain at the load balancer in Cloudflare ${NC}"
+  echo -e "${BOLD}${YELLOW}── LAST STEP — add ONE DNS record in Cloudflare ${NC}"
+  echo ""
+  echo -e "  Add exactly this record in your Cloudflare dashboard (DNS → Records → Add record)."
+  echo -e "  This single record makes ${BOLD}both${NC} the app (port 443) and the MCP server"
+  echo -e "  (port ${MCP_PORT}) reachable — they share the same hostname on the load balancer:"
   echo ""
   echo -e "    ${BOLD}Type:${NC}    CNAME"
   echo -e "    ${BOLD}Name:${NC}    ${DOMAIN_NAME}"
   echo -e "    ${BOLD}Target:${NC}  ${ALB_DNS}"
-  echo -e "    ${BOLD}Proxy:${NC}   DNS only (grey cloud) to start"
+  if [ "$DEPLOY_MCP" = "true" ]; then
+    echo -e "    ${BOLD}Proxy:${NC}   Proxied (orange cloud) ${YELLOW}— OK for both ports; 443 and ${MCP_PORT} are Cloudflare-proxyable${NC}"
+    echo -e "    ${BOLD}TLS:${NC}     SSL/TLS → Overview → set encryption mode to ${BOLD}Full (strict)${NC}"
+  else
+    echo -e "    ${BOLD}Proxy:${NC}   Proxied (orange cloud) ${YELLOW}— set SSL/TLS mode to Full (strict)${NC}"
+  fi
   echo ""
-  echo -e "  Once that record resolves, the app is live at ${BOLD}https://${DOMAIN_NAME}/${NC}"
-  echo -e "  ${YELLOW}Later, you can switch Cloudflare to the orange-cloud proxy with${NC}"
-  echo -e "  ${YELLOW}SSL/TLS mode = Full (strict) — the ACM cert keeps that hop valid.${NC}"
+  echo -e "  ${YELLOW}Prefer to start unproxied? Set Proxy to \"DNS only\" (grey cloud) — the ACM${NC}"
+  echo -e "  ${YELLOW}cert still makes both HTTPS URLs valid directly against the load balancer.${NC}"
+  echo ""
+  echo -e "  Once the record resolves, your endpoints are:"
+  echo -e "    ${BOLD}App:${NC}  https://${DOMAIN_NAME}/"
+  if [ "$DEPLOY_MCP" = "true" ]; then
+    echo -e "    ${BOLD}MCP:${NC}  https://${DOMAIN_NAME}:${MCP_PORT}/mcp"
+  fi
   echo ""
   APP_BASE="https://${DOMAIN_NAME}"
 else
@@ -1006,9 +1027,9 @@ echo -e "  ${BOLD}API Docs:${NC}  ${APP_BASE}/docs"
 echo -e "  ${BOLD}Health:${NC}    ${APP_BASE}/health"
 if [ "$DEPLOY_MCP" = "true" ]; then
   if [ "$ENABLE_HTTPS" = "true" ]; then
-    echo -e "  ${BOLD}MCP:${NC}       https://${DOMAIN_NAME}:${MCP_PORT}/"
+    echo -e "  ${BOLD}MCP:${NC}       https://${DOMAIN_NAME}:${MCP_PORT}/mcp"
   else
-    echo -e "  ${BOLD}MCP:${NC}       http://${ALB_DNS}:${MCP_PORT}/"
+    echo -e "  ${BOLD}MCP:${NC}       http://${ALB_DNS}:${MCP_PORT}/mcp"
   fi
   echo -e "             ${YELLOW}(generate the gateway token in Settings → MCP before use)${NC}"
 fi
