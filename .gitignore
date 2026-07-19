@@ -52,3 +52,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# AWS Fargate deploy state (contains account/resource IDs — do not commit)
+.poc-tracker-state*
