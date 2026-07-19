@@ -235,9 +235,13 @@ shopt -s nullglob
 EXISTING_STATES=( .poc-tracker-state* )
 shopt -u nullglob
 OTHER_COUNT=0
-for f in "${EXISTING_STATES[@]}"; do
-  [ "$f" = "$STATE_FILE" ] || OTHER_COUNT=$((OTHER_COUNT + 1))
-done
+# Guard the loop: on macOS bash 3.2, referencing an empty array under `set -u`
+# ("${EXISTING_STATES[@]}") errors with "unbound variable". ${#arr[@]} is safe.
+if [ "${#EXISTING_STATES[@]}" -gt 0 ]; then
+  for f in "${EXISTING_STATES[@]}"; do
+    [ "$f" = "$STATE_FILE" ] || OTHER_COUNT=$((OTHER_COUNT + 1))
+  done
+fi
 if [ "$OTHER_COUNT" -gt 0 ]; then
   warn "$OTHER_COUNT other instance(s) already tracked on this machine — each running"
   warn "instance has its own load balancer (~\$16/month). Run ./teardown.sh to remove one."
