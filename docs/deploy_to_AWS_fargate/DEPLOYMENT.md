@@ -62,11 +62,14 @@ DEPLOY_MCP=false ./deploy.sh
 
 The MCP endpoint is published on the ALB at port **8443** and is **auth-gated** —
 it answers `401`/`503` until you generate a gateway token in the app UI
-(**Settings → MCP**), so it's safe to expose. Its ALB target-group health check
-accepts any `200-499` response as healthy for exactly this reason. Port **8443**
-is used (rather than 8011) because it is one of the HTTPS ports Cloudflare's proxy
-forwards — so behind a custom domain the MCP endpoint works through Cloudflare's
-orange-cloud proxy just like the app on 443.
+(**Settings → MCP**), so it's safe to expose. Because ALB health-check matchers
+only allow codes 200–499 (a `503` can never be "healthy"), the MCP target group
+health-checks the **web app's `/health` on port 8010** instead of the MCP port —
+i.e. "route MCP traffic to this task whenever the task is up." Clients still
+receive the real `503`/`401` from the MCP server. Port **8443** is used (rather
+than 8011) because it is one of the HTTPS ports Cloudflare's proxy forwards — so
+behind a custom domain the MCP endpoint works through Cloudflare's orange-cloud
+proxy just like the app on 443.
 
 Verify it's reachable:
 
@@ -219,7 +222,12 @@ eliminate compute charges; `./teardown.sh` to stop all charges.
 ## Notes & caveats
 
 - **Single replica only.** SQLite can't handle concurrent writers — desired count
-  stays at 1. Don't scale the service.
+  stays at 1. Don't scale the service. The scripts also set the ECS rollout to
+  **`max 100% / min 0%`** (with Availability Zone Rebalancing disabled) so a deploy
+  **stops the old task before starting the new one** — otherwise ECS's default
+  (min 100% / max 200%) briefly runs two tasks against the same SQLite file on EFS
+  and throws `sqlite3.OperationalError: disk I/O error`. The trade-off is a few
+  seconds of downtime per deploy, which is correct for a single-writer DB.
 - **`/data` is non-negotiable.** It holds the DB, session secret, and MCP token
   files. Teardown deletes the EFS filesystem and everything on it.
 - **Toggling MCP on an existing deployment:** re-running `deploy.sh` with a

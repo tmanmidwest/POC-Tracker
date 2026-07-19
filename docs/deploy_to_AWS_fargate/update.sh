@@ -200,10 +200,16 @@ NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
 success "Registered task definition: ${NEW_TASK_DEF_ARN##*/}"
 
 log "Forcing new ECS deployment with updated image..."
+# Enforce stop-before-start (max 100% / min 0%) so the old and new tasks never run
+# at the same time — the app's SQLite DB lives on EFS (NFS) and cannot survive two
+# concurrent writers (you'd get "sqlite3.OperationalError: disk I/O error"). max<=100
+# also needs Availability Zone Rebalancing OFF. Idempotent — safe to set every run.
 aws ecs update-service \
   --cluster "$APP_NAME" \
   --service "${APP_NAME}-webapp" \
   --task-definition "$NEW_TASK_DEF_ARN" \
+  --availability-zone-rebalancing DISABLED \
+  --deployment-configuration "maximumPercent=100,minimumHealthyPercent=0" \
   --force-new-deployment \
   --region "$REGION" >/dev/null
 success "ECS deployment triggered"

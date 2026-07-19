@@ -701,9 +701,13 @@ if [ -z "$TG_ARN" ] || [ "$TG_ARN" = "None" ]; then
 fi
 success "Target group: $TG_ARN"
 
-# MCP target group. The MCP endpoint is auth-gated (returns 401/503 without a
-# token), so a strict /health check would fail — we health-check "/" and accept
-# any 200-499 response as healthy.
+# MCP target group. Traffic goes to the MCP container on $MCP_PORT, but the MCP
+# endpoint is auth-gated and returns 503 until a gateway token is generated — and
+# ALB health-check matchers only allow codes 200-499, so a 503 can NEVER be marked
+# healthy. An always-unhealthy target makes ECS kill the whole task (both
+# containers share the task's fate). So we health-check the *web app* port
+# ($CONTAINER_PORT /health, always 200) instead: "route MCP traffic here whenever
+# the task is up". Clients still receive the real 503/401 from the MCP container.
 MCP_TG_ARN=""
 if [ "$DEPLOY_MCP" = "true" ]; then
   log "Creating MCP target group (or reusing if it exists)..."
@@ -718,7 +722,9 @@ if [ "$DEPLOY_MCP" = "true" ]; then
       --port "$MCP_PORT" \
       --vpc-id "$VPC_ID" \
       --target-type ip \
-      --health-check-path / \
+      --health-check-protocol HTTP \
+      --health-check-port "$CONTAINER_PORT" \
+      --health-check-path /health \
       --health-check-interval-seconds 30 \
       --health-check-timeout-seconds 5 \
       --healthy-threshold-count 2 \
@@ -726,7 +732,24 @@ if [ "$DEPLOY_MCP" = "true" ]; then
       --matcher HttpCode=200-499 \
       --query 'TargetGroups[0].TargetGroupArn' --output text)
   fi
+
+  # Reconcile the health check on re-runs (an MCP TG created by an older version of
+  # this script may still health-check :$MCP_PORT and crash-loop on 503). Idempotent.
+  aws elbv2 modify-target-group --target-group-arn "$MCP_TG_ARN" --region "$REGION" \
+    --health-check-protocol HTTP --health-check-port "$CONTAINER_PORT" \
+    --health-check-path /health --matcher HttpCode=200-499 >/dev/null 2>&1 || true
   success "MCP target group: $MCP_TG_ARN"
+fi
+
+# Short deregistration delay on both target groups. With the max-100% rollout (see
+# ECS service below) ECS stops the old task before starting the new one; a long
+# drain (default 300s) makes it wait ages before the replacement launches. 15s
+# keeps deploys quick. Idempotent.
+aws elbv2 modify-target-group-attributes --target-group-arn "$TG_ARN" --region "$REGION" \
+  --attributes Key=deregistration_delay.timeout_seconds,Value=15 >/dev/null 2>&1 || true
+if [ "$DEPLOY_MCP" = "true" ] && [ -n "$MCP_TG_ARN" ]; then
+  aws elbv2 modify-target-group-attributes --target-group-arn "$MCP_TG_ARN" --region "$REGION" \
+    --attributes Key=deregistration_delay.timeout_seconds,Value=15 >/dev/null 2>&1 || true
 fi
 
 # ── TLS CERTIFICATE (ACM) ─────────────────────────────────────────────────────
@@ -902,6 +925,15 @@ if [ "$DEPLOY_MCP" = "true" ] && [ -n "$MCP_TG_ARN" ]; then
   LB_MAPPINGS="$LB_MAPPINGS targetGroupArn=${MCP_TG_ARN},containerName=${APP_NAME}-mcp,containerPort=${MCP_PORT}"
 fi
 
+# CRITICAL for SQLite: the app keeps its DB in a single SQLite file on EFS (NFS),
+# which cannot tolerate two writers at once. ECS's default rollout (min 100% /
+# max 200%) briefly runs TWO tasks during every deploy — both open the same DB and
+# you get "sqlite3.OperationalError: disk I/O error". Forcing max 100% / min 0%
+# makes ECS STOP the old task before starting the new one (a few seconds of
+# downtime per deploy — the correct trade for a single-writer DB). max<=100 also
+# requires Availability Zone Rebalancing OFF (meaningless for a 1-task service).
+DEPLOY_CFG="maximumPercent=100,minimumHealthyPercent=0"
+
 log "Creating ECS service (or updating if it exists)..."
 EXISTING_SVC=$(aws ecs describe-services \
   --cluster "$APP_NAME" --services "${APP_NAME}-webapp" \
@@ -916,6 +948,8 @@ if [ -n "$EXISTING_SVC" ] && [ "$EXISTING_SVC" != "None" ]; then
     --task-definition "${APP_NAME}-webapp" \
     --desired-count 1 \
     --load-balancers $LB_MAPPINGS \
+    --availability-zone-rebalancing DISABLED \
+    --deployment-configuration "$DEPLOY_CFG" \
     --force-new-deployment >/dev/null
 else
   # shellcheck disable=SC2086
@@ -931,6 +965,8 @@ else
       assignPublicIp=ENABLED
     }" \
     --load-balancers $LB_MAPPINGS \
+    --availability-zone-rebalancing DISABLED \
+    --deployment-configuration "$DEPLOY_CFG" \
     --health-check-grace-period-seconds 30 >/dev/null
 fi
 success "ECS service created"
