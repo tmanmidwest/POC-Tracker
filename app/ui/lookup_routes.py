@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import (
     AppUser,
+    CloseReason,
     ContactRole,
     FeatureType,
     ProjectStatus,
@@ -49,6 +50,17 @@ LOOKUPS: dict[str, dict[str, Any]] = {
             {"name": "name", "label": "Name", "type": "text", "required": True},
         ],
     },
+    "close-reasons": {
+        "model": CloseReason,
+        "title": "Close Reasons",
+        "subtitle": "Why a POC closed won or lost. Used by win/loss analytics.",
+        "subsection": "close_reasons",
+        "event_noun": "close_reason",
+        "order_by": CloseReason.name,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+        ],
+    },
     "project-statuses": {
         "model": ProjectStatus,
         "title": "Project Statuses",
@@ -60,6 +72,19 @@ LOOKUPS: dict[str, dict[str, Any]] = {
             {"name": "name", "label": "Name", "type": "text", "required": True},
             {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
             {"name": "is_terminal", "label": "Terminal (e.g. Won/Lost)", "type": "checkbox"},
+            {
+                "name": "outcome",
+                "label": "Win/loss outcome",
+                "type": "select",
+                "default": "none",
+                "help": "Drives win-rate analytics. Set Won/Lost on your terminal statuses.",
+                "options": [
+                    {"value": "none", "label": "None (in-flight / not a close)"},
+                    {"value": "won", "label": "Won"},
+                    {"value": "lost", "label": "Lost"},
+                    {"value": "no_decision", "label": "No decision"},
+                ],
+            },
         ],
     },
     "project-types": {
@@ -146,6 +171,12 @@ def _coerce(field: dict[str, Any], form: Any) -> Any:
             return int(raw) if raw not in (None, "") else 100
         except (ValueError, TypeError):
             return 100
+    if ftype == "select":
+        # Constrain to the allowed option values; fall back to the field's
+        # default (used e.g. for the non-null ``outcome`` column).
+        allowed = {opt["value"] for opt in field.get("options", [])}
+        default = field.get("default")
+        return raw if raw in allowed else default
     return raw or None
 
 

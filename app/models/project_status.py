@@ -25,6 +25,13 @@ class ProjectStatus(Base, TimestampMixin):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     # Marks a terminal status (Completed / Lost) for filtering and reporting.
     is_terminal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Structured win/loss outcome this status represents. The single source of
+    # truth for win-rate analytics: a status like "Completed - Won" maps to
+    # ``won``, "Completed - Lost" to ``lost``. Non-terminal / in-flight statuses
+    # stay ``none``. Values: none | won | lost | no_decision.
+    outcome: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="none", server_default="none"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_system: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

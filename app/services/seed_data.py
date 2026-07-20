@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.models import (
     AppUser,
+    CloseReason,
     Contact,
     ContactRole,
     Customer,
@@ -53,15 +54,27 @@ DEFAULT_CONTACT_ROLES: list[tuple[str, bool]] = [
     ("End User", False),
 ]
 
-# (name, sort_order, is_terminal, is_system)
-DEFAULT_PROJECT_STATUSES: list[tuple[str, int, bool, bool]] = [
-    ("Pending Scheduling", 10, False, True),
-    ("Pending Use Cases", 20, False, True),
-    ("Scheduled", 30, False, False),
-    ("In Progress", 40, False, True),
-    ("On Hold", 50, False, False),
-    ("Completed - Won", 90, True, False),
-    ("Completed - Lost", 100, True, False),
+# (name, sort_order, is_terminal, outcome, is_system)
+# ``outcome`` is the structured win/loss value the status represents (none | won
+# | lost | no_decision) — the single source of truth for win-rate analytics.
+DEFAULT_PROJECT_STATUSES: list[tuple[str, int, bool, str, bool]] = [
+    ("Pending Scheduling", 10, False, "none", True),
+    ("Pending Use Cases", 20, False, "none", True),
+    ("Scheduled", 30, False, "none", False),
+    ("In Progress", 40, False, "none", True),
+    ("On Hold", 50, False, "none", False),
+    ("Completed - Won", 90, True, "won", False),
+    ("Completed - Lost", 100, True, "lost", False),
+]
+
+# (name, is_system)
+DEFAULT_CLOSE_REASONS: list[tuple[str, bool]] = [
+    ("Technical fit", True),
+    ("Chose competitor", True),
+    ("Budget / no funding", True),
+    ("No decision / stalled", True),
+    ("Timeline / priorities changed", True),
+    ("Missing capability", True),
 ]
 
 # (name, description, is_system)
@@ -189,6 +202,7 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
 
     seed_contact_roles(db)
     seed_project_statuses(db)
+    seed_close_reasons(db)
     seed_project_types(db)
     seed_feature_types(db)
     seed_use_case_statuses(db)
@@ -252,13 +266,14 @@ def seed_contact_roles(db: Session) -> int:
 def seed_project_statuses(db: Session) -> int:
     existing = {row[0] for row in db.execute(select(ProjectStatus.name)).all()}
     inserted = 0
-    for name, sort_order, is_terminal, is_system in DEFAULT_PROJECT_STATUSES:
+    for name, sort_order, is_terminal, outcome, is_system in DEFAULT_PROJECT_STATUSES:
         if name not in existing:
             db.add(
                 ProjectStatus(
                     name=name,
                     sort_order=sort_order,
                     is_terminal=is_terminal,
+                    outcome=outcome,
                     is_active=True,
                     is_system=is_system,
                 )
@@ -267,6 +282,19 @@ def seed_project_statuses(db: Session) -> int:
     if inserted:
         db.flush()
         log.info("seeded_project_statuses", extra={"inserted": inserted})
+    return inserted
+
+
+def seed_close_reasons(db: Session) -> int:
+    existing = {row[0] for row in db.execute(select(CloseReason.name)).all()}
+    inserted = 0
+    for name, is_system in DEFAULT_CLOSE_REASONS:
+        if name not in existing:
+            db.add(CloseReason(name=name, is_active=True, is_system=is_system))
+            inserted += 1
+    if inserted:
+        db.flush()
+        log.info("seeded_close_reasons", extra={"inserted": inserted})
     return inserted
 
 

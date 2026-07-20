@@ -94,6 +94,29 @@
       <input class="input" type="url" id="poc_instance_url" name="poc_instance_url" value="{{ form.poc_instance_url or '' }}" maxlength="1000" placeholder="https://…" />
       <div class="form-hint">Paste the full URL — it shows as a “POC Instance” link on the project and dashboard.</div>
     </div>
+    <div class="form-row" style="border-top:1px solid var(--border); padding-top:var(--s-4); margin-top:var(--s-4);">
+      <h2 class="section-heading" style="font-size:0.95rem; margin:0 0 var(--s-1);">Close details</h2>
+      <div class="form-hint">Fill these in when the POC reaches a Won/Lost status — they power win/loss analytics. Closed date defaults to today when you set a terminal status.</div>
+    </div>
+    <div class="form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:var(--s-4);">
+      <div class="form-row">
+        <label class="label" for="close_reason_id">Close reason</label>
+        <select class="select" id="close_reason_id" name="close_reason_id">
+          <option value="">—</option>
+          {% for r in close_reasons %}
+          <option value="{{ r.id }}" {% if form.close_reason_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label class="label" for="closed_date">Closed date</label>
+        <input class="input" type="date" id="closed_date" name="closed_date" value="{{ form.closed_date or '' }}" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="label" for="competitor">Competitor</label>
+      <input class="input" id="competitor" name="competitor" value="{{ form.competitor or '' }}" maxlength="200" placeholder="Who we were up against / lost to" />
+    </div>
     <div class="form-row">
       <label class="label" for="notes">Notes</label>
       <div class="rte" data-rte-target="#notes" data-placeholder="Notes about this project…">{{ M.rte_seed(form.notes_html, form.notes) }}</div>

@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.models import (
     AppUser,
+    CloseReason,
     Customer,
     FeatureType,
     LibrarySet,
@@ -345,6 +346,10 @@ def _form_dropdowns(db: Session) -> dict:
         .filter(AppUser.is_active.is_(True))
         .order_by(AppUser.username)
         .all(),
+        "close_reasons": db.query(CloseReason)
+        .filter(CloseReason.is_active.is_(True))
+        .order_by(CloseReason.name)
+        .all(),
     }
 
 
@@ -444,10 +449,32 @@ async def _read_project_form(request: Request) -> dict:
         "salesforce_opp_url": _clean_url(form.get("salesforce_opp_url")),  # type: ignore[arg-type]
         "notebook_url": _clean_url(form.get("notebook_url")),  # type: ignore[arg-type]
         "poc_instance_url": _clean_url(form.get("poc_instance_url")),  # type: ignore[arg-type]
+        # Win/loss close details (relevant once the status is terminal).
+        "close_reason_id": form.get("close_reason_id"),
+        "competitor": _clean(form.get("competitor")),  # type: ignore[arg-type]
+        "closed_date": _parse_date(form.get("closed_date")),  # type: ignore[arg-type]
         # Rich-text notes: store sanitized HTML + a plain-text rendering.
         "notes": html_to_text(notes_html),
         "notes_html": notes_html,
     }
+
+
+def _apply_close_details(project: Project, data: dict, db: Session) -> None:
+    """Set the win/loss close fields, auto-stamping ``closed_date``.
+
+    When the project sits in a terminal status and no close date was entered,
+    default it to today so cycle-time analytics have a date without extra SE
+    effort. Non-terminal statuses keep whatever the user set (usually blank).
+    """
+    project.close_reason_id = (
+        int(data["close_reason_id"]) if data["close_reason_id"] else None
+    )
+    project.competitor = data["competitor"]
+    closed_date = data["closed_date"]
+    status = db.get(ProjectStatus, project.status_id)
+    if closed_date is None and status is not None and status.is_terminal:
+        closed_date = date.today()
+    project.closed_date = closed_date
 
 
 @router.post("/new")
@@ -481,6 +508,7 @@ async def create_project(
         notes=data["notes"],
         notes_html=data["notes_html"],
     )
+    _apply_close_details(project, data, db)
     db.add(project)
     db.commit()
     record_event(
@@ -729,6 +757,9 @@ def edit_form(
         "salesforce_opp_url": project.salesforce_opp_url,
         "notebook_url": project.notebook_url,
         "poc_instance_url": project.poc_instance_url,
+        "close_reason_id": project.close_reason_id,
+        "competitor": project.competitor,
+        "closed_date": project.closed_date.isoformat() if project.closed_date else None,
         "notes": project.notes,
         "notes_html": project.notes_html,
     }
@@ -768,6 +799,7 @@ async def update_project(
     project.poc_instance_url = data["poc_instance_url"]
     project.notes = data["notes"]
     project.notes_html = data["notes_html"]
+    _apply_close_details(project, data, db)
     db.commit()
     record_event(
         category="project", event_type="project.updated", actor_type="user",

@@ -14,10 +14,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.models import AppUser, Project, ProjectStatus
+from app.services import insights
 from app.services import (
     report_archive,
     report_docx,
@@ -32,7 +33,7 @@ from app.services.audit import record_event
 from app.services.access import accessible_project_ids, notes_for_report
 from app.services.branding import current_branding
 from app.services.tasks import tasks_for_report
-from app.ui.dependencies import require_ui_user
+from app.ui.dependencies import require_internal_ui, require_ui_user
 from app.ui.project_routes import (
     _get_viewable_project,
     _grouped_use_cases,
@@ -141,6 +142,30 @@ def all_pocs(
         request, "reports/all.html", current_user=user, active_section="reports",
         rows=rows, include_archived=include_archived,
         generated_for=user.username,
+    )
+
+
+@router.get("/analytics")
+def win_loss_analytics(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Portfolio win/loss analytics — win rate, cycle time, and the breakdowns
+    behind them. Internal-only (external viewers never see aggregate outcomes).
+
+    Aggregates over every project including archived ones, since closed (and
+    often archived) deals are exactly what win-rate is about.
+    """
+    projects = (
+        db.query(Project)
+        .options(selectinload(Project.use_cases))
+        .all()
+    )
+    stats = insights.portfolio_stats(projects)
+    return render(
+        request, "reports/analytics.html", current_user=user,
+        active_section="reports", stats=stats, generated_for=user.username,
     )
 
 

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 from app.models._mixins import TimestampMixin
 from app.models.app_user import AppUser
+from app.models.close_reason import CloseReason
 from app.models.customer import Customer
 from app.models.project_status import ProjectStatus
 from app.models.project_type import ProjectType
@@ -89,6 +90,19 @@ class Project(Base, TimestampMixin):
     # Total tokens the AI used to produce the current summary (input + output).
     exec_summary_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Win/loss close details, filled in when the project reaches a terminal
+    # status. The won/lost outcome itself lives on the status (see
+    # ``ProjectStatus.outcome``); these capture the surrounding context.
+    #   - close_reason_id: why it closed (admin-managed lookup)
+    #   - competitor: who we lost to / were up against (free text)
+    #   - closed_date: when it closed — drives cycle-time analytics (vs
+    #     ``start_date``); distinct from ``updated_at``, which any edit bumps.
+    close_reason_id: Mapped[int | None] = mapped_column(
+        ForeignKey("close_reasons.id"), nullable=True, index=True
+    )
+    competitor: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    closed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, index=True
     )
@@ -101,6 +115,9 @@ class Project(Base, TimestampMixin):
     )
     status: Mapped[ProjectStatus] = relationship("ProjectStatus", lazy="joined")
     type: Mapped[ProjectType | None] = relationship("ProjectType", lazy="joined")
+    close_reason: Mapped[CloseReason | None] = relationship(
+        "CloseReason", lazy="joined"
+    )
     sales_engineer: Mapped[AppUser | None] = relationship("AppUser", lazy="joined")
     use_cases: Mapped[list[ProjectUseCase]] = relationship(
         "ProjectUseCase",

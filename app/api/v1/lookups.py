@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.v1._helpers import raise_conflict_if_referenced, raise_conflict_system_row
 from app.db import get_db
 from app.models import (
+    CloseReason,
     Contact,
     ContactRole,
     FeatureType,
@@ -34,6 +35,9 @@ from app.models import (
     UseCaseStatus,
 )
 from app.schemas.lookups import (
+    CloseReasonCreate,
+    CloseReasonOut,
+    CloseReasonUpdate,
     ContactRoleCreate,
     ContactRoleOut,
     ContactRoleUpdate,
@@ -208,6 +212,18 @@ contact_roles_router = _make_lookup_router(
     event_noun="contact_role",
     order_by=ContactRole.name,
     references=lambda rid: [("contacts", Contact, Contact.role_id, rid)],
+)
+
+close_reasons_router = _make_lookup_router(
+    prefix="/close-reasons",
+    model=CloseReason,
+    out_schema=CloseReasonOut,
+    create_schema=CloseReasonCreate,
+    update_schema=CloseReasonUpdate,
+    noun="Close reason",
+    event_noun="close_reason",
+    order_by=CloseReason.name,
+    references=lambda rid: [("projects", Project, Project.close_reason_id, rid)],
 )
 
 project_statuses_router = _make_lookup_router(

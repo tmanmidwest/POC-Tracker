@@ -688,6 +688,56 @@ def all_pocs_summary() -> str:
 
 
 @mcp.tool()
+def win_rate_summary() -> str:
+    """Portfolio win/loss analytics: win rate, won/lost/open counts, average
+    cycle time, and the breakdowns behind them (by sales engineer, project type,
+    loss reason, and competitor). Win rate is won ÷ (won + lost); no-decision
+    deals are excluded from that denominator. Covers all POCs, archived included."""
+    s = _get("/projects/analytics/win-loss")
+    wr = s.get("win_rate")
+    wr_txt = f"{wr}%" if wr is not None else "n/a (no decided deals)"
+    cyc = s.get("avg_cycle_time_days")
+    cyc_txt = f"{cyc} days" if cyc is not None else "n/a"
+    lines = [
+        "POC Win/Loss Summary",
+        f"- Win rate: {wr_txt} ({s['won']} won / {s['decided']} decided)",
+        f"- Open: {s['open']}  |  Won: {s['won']}  |  Lost: {s['lost']}  |  "
+        f"No-decision: {s['no_decision']}  |  Total: {s['total']}",
+        f"- Avg cycle time (start→close): {cyc_txt}",
+    ]
+
+    def _rows(title: str, rows: list, fmt) -> None:
+        if rows:
+            lines.append("")
+            lines.append(title)
+            lines.extend(fmt(r) for r in rows)
+
+    _rows(
+        "By Sales Engineer:",
+        s.get("by_sales_engineer", []),
+        lambda r: f"  - {r['label']}: {r['won']}W/{r['lost']}L"
+        + (f" ({r['win_rate']}%)" if r["win_rate"] is not None else ""),
+    )
+    _rows(
+        "By Project Type:",
+        s.get("by_type", []),
+        lambda r: f"  - {r['label']}: {r['won']}W/{r['lost']}L"
+        + (f" ({r['win_rate']}%)" if r["win_rate"] is not None else ""),
+    )
+    _rows(
+        "Loss reasons:",
+        s.get("loss_reasons", []),
+        lambda r: f"  - {r['label']}: {r['count']}",
+    )
+    _rows(
+        "Competitors (on losses):",
+        s.get("competitors", []),
+        lambda r: f"  - {r['label']}: {r['count']}",
+    )
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def project_report(project_id: int, include_internal: bool = False) -> str:
     """Generate a full text report for one POC: header, dates, people, and every
     use case grouped by category with status, comments, and validation.

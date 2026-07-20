@@ -16,6 +16,16 @@
     <label class="checkbox-row" style="display:flex; gap:var(--s-2); align-items:center; padding: var(--s-2) 0;">
       <input type="checkbox" name="{{ f.name }}" value="1" {% if form[f.name] %}checked{% endif %} /> {{ f.label }}
     </label>
+    {% elif f.type == 'select' %}
+    <div class="form-row">
+      <label class="label" for="{{ f.name }}">{{ f.label }}</label>
+      <select class="input" id="{{ f.name }}" name="{{ f.name }}">
+        {% for opt in f.options %}
+        <option value="{{ opt.value }}" {% if form[f.name] == opt.value %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+      {% if f.help %}<p class="form-hint" style="margin-top:var(--s-1); color:var(--text-muted); font-size:0.85em;">{{ f.help }}</p>{% endif %}
+    </div>
     {% else %}
     <div class="form-row">
       <label class="label" for="{{ f.name }}">{{ f.label }}{% if f.required %}<span class="label__required">*</span>{% endif %}</label>

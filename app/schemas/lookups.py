@@ -9,6 +9,7 @@ Naming convention:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,8 +40,38 @@ class ContactRoleUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Close Reason
+# ---------------------------------------------------------------------------
+
+
+class CloseReasonOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    is_active: bool
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CloseReasonCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    is_active: bool = True
+
+
+class CloseReasonUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
 # Project Status
 # ---------------------------------------------------------------------------
+
+# Structured win/loss values a project status can represent.
+PROJECT_OUTCOMES = ("none", "won", "lost", "no_decision")
+ProjectOutcome = Literal["none", "won", "lost", "no_decision"]
 
 
 class ProjectStatusOut(BaseModel):
@@ -50,6 +81,7 @@ class ProjectStatusOut(BaseModel):
     name: str
     sort_order: int
     is_terminal: bool
+    outcome: str
     is_active: bool
     is_system: bool
     created_at: datetime
@@ -60,6 +92,7 @@ class ProjectStatusCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     sort_order: int = 100
     is_terminal: bool = False
+    outcome: ProjectOutcome = "none"
     is_active: bool = True
 
 
@@ -67,6 +100,7 @@ class ProjectStatusUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sort_order: int | None = None
     is_terminal: bool | None = None
+    outcome: ProjectOutcome | None = None
     is_active: bool | None = None
 
 

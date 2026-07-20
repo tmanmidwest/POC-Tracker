@@ -9,6 +9,9 @@
     <p class="page-header__subtitle">{{ rows | length }} project(s){% if not include_archived %} (active only){% endif %}.</p>
   </div>
   <div class="page-header__actions">
+    {% if current_user.is_internal %}
+    <a href="/ui/reports/analytics" class="btn btn--secondary">Win/Loss Analytics</a>
+    {% endif %}
     {% if include_archived %}
     <a href="/ui/reports" class="btn btn--secondary">Hide archived</a>
     {% else %}

@@ -12,6 +12,7 @@ from app.models.app_user import AppUser
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import AuthProvider
 from app.models.backup_run import BackupRun
+from app.models.close_reason import CloseReason
 from app.models.contact import Contact
 from app.models.contact_role import ContactRole
 from app.models.customer import Customer
@@ -56,6 +57,7 @@ __all__ = [
     "AuditEvent",
     "AuthProvider",
     "BackupRun",
+    "CloseReason",
     "Contact",
     "ContactRole",
     "Customer",

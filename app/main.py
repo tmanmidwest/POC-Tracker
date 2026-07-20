@@ -182,6 +182,7 @@ def create_app() -> FastAPI:
     from app.api.v1.customers import router as customers_router
     from app.api.v1.library_sets import router as library_sets_router
     from app.api.v1.lookups import (
+        close_reasons_router,
         contact_roles_router,
         feature_types_router,
         project_statuses_router,
@@ -204,6 +205,7 @@ def create_app() -> FastAPI:
 
     # /api/v1/* (lookups)
     app.include_router(contact_roles_router, prefix="/api/v1")
+    app.include_router(close_reasons_router, prefix="/api/v1")
     app.include_router(project_statuses_router, prefix="/api/v1")
     app.include_router(project_types_router, prefix="/api/v1")
     app.include_router(feature_types_router, prefix="/api/v1")

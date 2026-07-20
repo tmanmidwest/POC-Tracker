@@ -39,6 +39,7 @@ from app.schemas.poc import (
     ProjectUseCaseOut,
     ProjectUseCaseUpdate,
 )
+from app.services import insights
 from app.services import note_attachments as note_store
 from app.services import screenshots as screenshot_store
 from app.services.audit import principal_actor, record_event
@@ -90,6 +91,22 @@ def list_projects(
     if customer_id is not None:
         query = query.filter(Project.customer_id == customer_id)
     return query.order_by(Project.id.desc()).all()
+
+
+@router.get("/analytics/win-loss")
+def win_loss_analytics(
+    db: Session = Depends(get_db),
+    _principal: Principal = Depends(get_authenticated_principal),
+) -> dict:
+    """Portfolio win/loss analytics over every project (archived included).
+
+    Returns win rate (won ÷ won+lost, no-decision excluded), counts, average
+    cycle time, and breakdowns by sales engineer, project type, loss reason, and
+    competitor. Outcomes derive from each project's status, so this matches the
+    UI's Win/Loss Analytics page exactly.
+    """
+    projects = db.query(Project).all()
+    return insights.portfolio_stats(projects)
 
 
 @router.get("/{project_id}", response_model=ProjectDetailOut)

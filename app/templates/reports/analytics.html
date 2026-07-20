@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% set page_title = "Win/Loss Analytics" %}
+{% block breadcrumb %}<a href="/ui/reports">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>Win/Loss Analytics</span>{% endblock %}
+
+{% macro rate(v) %}{% if v is none %}<span class="text-muted">—</span>{% else %}{{ v }}%{% endif %}{% endmacro %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Win/Loss Analytics</h1>
+    <p class="page-header__subtitle">Across all {{ stats.total }} project(s), including archived. Win rate counts decided deals only (won ÷ won+lost); no-decision deals are excluded.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/reports" class="btn btn--secondary">All POCs</a>
+    <button onclick="window.print()" class="btn btn--primary">Print / Save PDF</button>
+  </div>
+</div>
+
+<div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:var(--s-4); margin-bottom:var(--s-6);">
+  <div class="card"><div class="card__body">
+    <div class="text-muted" style="font-size:0.8rem;">Win rate</div>
+    <div style="font-size:1.8rem; font-weight:700;">{{ rate(stats.win_rate) }}</div>
+    <div class="text-muted" style="font-size:0.8rem;">{{ stats.won }} won / {{ stats.decided }} decided</div>
+  </div></div>
+  <div class="card"><div class="card__body">
+    <div class="text-muted" style="font-size:0.8rem;">Won</div>
+    <div style="font-size:1.8rem; font-weight:700; color:var(--success, #16a34a);">{{ stats.won }}</div>
+  </div></div>
+  <div class="card"><div class="card__body">
+    <div class="text-muted" style="font-size:0.8rem;">Lost</div>
+    <div style="font-size:1.8rem; font-weight:700; color:var(--danger, #dc2626);">{{ stats.lost }}</div>
+  </div></div>
+  <div class="card"><div class="card__body">
+    <div class="text-muted" style="font-size:0.8rem;">Open</div>
+    <div style="font-size:1.8rem; font-weight:700;">{{ stats.open }}</div>
+    <div class="text-muted" style="font-size:0.8rem;">{{ stats.no_decision }} no-decision</div>
+  </div></div>
+  <div class="card"><div class="card__body">
+    <div class="text-muted" style="font-size:0.8rem;">Avg cycle time</div>
+    <div style="font-size:1.8rem; font-weight:700;">{% if stats.avg_cycle_time_days is none %}<span class="text-muted">—</span>{% else %}{{ stats.avg_cycle_time_days }}d{% endif %}</div>
+    <div class="text-muted" style="font-size:0.8rem;">{% if stats.avg_cycle_time_won_days is not none %}{{ stats.avg_cycle_time_won_days }}d for wins{% endif %}</div>
+  </div></div>
+</div>
+
+<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:var(--s-6);">
+
+  <div class="card card--flush">
+    <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">By Sales Engineer</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Sales Engineer</th><th>Won</th><th>Lost</th><th>Win rate</th></tr></thead>
+      <tbody>
+        {% for r in stats.by_sales_engineer %}
+        <tr><td>{{ r.label }}</td><td>{{ r.won }}</td><td>{{ r.lost }}</td><td>{{ rate(r.win_rate) }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="table__empty">No decided deals yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card card--flush">
+    <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">By Project Type</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Type</th><th>Won</th><th>Lost</th><th>Win rate</th></tr></thead>
+      <tbody>
+        {% for r in stats.by_type %}
+        <tr><td>{{ r.label }}</td><td>{{ r.won }}</td><td>{{ r.lost }}</td><td>{{ rate(r.win_rate) }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="table__empty">No decided deals yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card card--flush">
+    <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">Loss Reasons</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Reason</th><th>Lost deals</th></tr></thead>
+      <tbody>
+        {% for r in stats.loss_reasons %}
+        <tr><td>{{ r.label }}</td><td>{{ r.count }}</td></tr>
+        {% else %}
+        <tr><td colspan="2" class="table__empty">No losses recorded.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card card--flush">
+    <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">Competitors (on losses)</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Competitor</th><th>Lost to</th></tr></thead>
+      <tbody>
+        {% for r in stats.competitors %}
+        <tr><td>{{ r.label }}</td><td>{{ r.count }}</td></tr>
+        {% else %}
+        <tr><td colspan="2" class="table__empty">No competitors recorded on losses.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+
+</div>
+{% endblock %}

@@ -8,6 +8,8 @@ the set you land on when you click that KPI card.
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
+from collections.abc import Iterable
 from datetime import date, datetime, timezone
 
 from app.models import Project
@@ -53,3 +55,170 @@ def is_stalled(project: Project, now: datetime | None = None) -> bool:
     """No update in ``STALLED_DAYS`` or more."""
     days = idle_days(project.updated_at, now)
     return days is not None and days >= STALLED_DAYS
+
+
+# ---------------------------------------------------------------------------
+# Win/loss outcome — derived from the project's status (single source of truth)
+# ---------------------------------------------------------------------------
+
+
+def outcome(project: Project) -> str:
+    """The structured win/loss outcome of a project's current status.
+
+    One of ``none`` | ``won`` | ``lost`` | ``no_decision``. In-flight projects
+    (and any status not mapped to an outcome) are ``none``.
+    """
+    return project.status.outcome if project.status else "none"
+
+
+def is_closed(project: Project) -> bool:
+    """Reached a terminal status (won, lost, or otherwise decided)."""
+    return bool(project.status and project.status.is_terminal)
+
+
+def is_won(project: Project) -> bool:
+    return outcome(project) == "won"
+
+
+def is_lost(project: Project) -> bool:
+    return outcome(project) == "lost"
+
+
+def is_no_decision(project: Project) -> bool:
+    return outcome(project) == "no_decision"
+
+
+def is_open(project: Project) -> bool:
+    """Still in flight — not in a terminal status."""
+    return not is_closed(project)
+
+
+def cycle_time_days(project: Project) -> int | None:
+    """Days from start to close (``closed_date`` − ``start_date``).
+
+    Returns ``None`` unless both dates are present. Uses ``closed_date`` (set on
+    close), not ``updated_at``, so routine edits don't distort cycle time.
+    """
+    if project.start_date is None or project.closed_date is None:
+        return None
+    return (project.closed_date - project.start_date).days
+
+
+def win_rate(won: int, lost: int) -> float | None:
+    """Won / (won + lost) as a 0–100 percentage.
+
+    ``no_decision`` deals are deliberately excluded from the denominator — a
+    stalled deal that never chose is not a competitive loss. Returns ``None``
+    when there are no decided deals (avoids a misleading 0%).
+    """
+    decided = won + lost
+    return round(won / decided * 100, 1) if decided else None
+
+
+def _avg(values: list[int]) -> float | None:
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def portfolio_stats(
+    projects: Iterable[Project], today: date | None = None
+) -> dict:
+    """Aggregate win/loss analytics over a set of projects.
+
+    Pure over the passed iterable — the caller decides which projects are in
+    scope (typically all projects, including archived closed ones, since closed
+    deals are what win-rate is about). Everything here derives from
+    ``status.outcome`` and the stored dates, so the dashboard and any report
+    read the exact same numbers.
+    """
+    projects = list(projects)
+
+    won = [p for p in projects if is_won(p)]
+    lost = [p for p in projects if is_lost(p)]
+    no_decision = [p for p in projects if is_no_decision(p)]
+    open_ = [p for p in projects if is_open(p)]
+    decided = len(won) + len(lost)
+
+    cycle_all = [d for p in projects if (d := cycle_time_days(p)) is not None]
+    cycle_won = [d for p in won if (d := cycle_time_days(p)) is not None]
+
+    # Win rate by Sales Engineer (only SEs who have a decided deal appear).
+    se_won: dict[str, int] = defaultdict(int)
+    se_lost: dict[str, int] = defaultdict(int)
+    for p in won:
+        se_won[_se_name(p)] += 1
+    for p in lost:
+        se_lost[_se_name(p)] += 1
+    by_sales_engineer = _breakdown_rows(se_won, se_lost)
+
+    # Win rate by project type.
+    type_won: dict[str, int] = defaultdict(int)
+    type_lost: dict[str, int] = defaultdict(int)
+    for p in won:
+        type_won[_type_name(p)] += 1
+    for p in lost:
+        type_lost[_type_name(p)] += 1
+    by_type = _breakdown_rows(type_won, type_lost)
+
+    # Why we lose: reasons and competitors on lost deals.
+    loss_reasons = _labeled_counts(
+        p.close_reason.name if p.close_reason else "Unspecified" for p in lost
+    )
+    competitors = _labeled_counts(
+        (p.competitor or "").strip() for p in lost if (p.competitor or "").strip()
+    )
+
+    return {
+        "total": len(projects),
+        "open": len(open_),
+        "won": len(won),
+        "lost": len(lost),
+        "no_decision": len(no_decision),
+        "decided": decided,
+        "win_rate": win_rate(len(won), len(lost)),
+        "avg_cycle_time_days": _avg(cycle_all),
+        "avg_cycle_time_won_days": _avg(cycle_won),
+        "by_sales_engineer": by_sales_engineer,
+        "by_type": by_type,
+        "loss_reasons": loss_reasons,
+        "competitors": competitors,
+    }
+
+
+def _se_name(project: Project) -> str:
+    se = project.sales_engineer
+    if se is None:
+        return "Unassigned"
+    return se.display_label
+
+
+def _type_name(project: Project) -> str:
+    return project.type.name if project.type else "Untyped"
+
+
+def _breakdown_rows(
+    won_by: dict[str, int], lost_by: dict[str, int]
+) -> list[dict]:
+    """Merge won/lost counts per key into sorted rows with a win rate.
+
+    Ordered by most decided deals first, so the busiest SE/type leads.
+    """
+    keys = set(won_by) | set(lost_by)
+    rows = [
+        {
+            "label": k,
+            "won": won_by.get(k, 0),
+            "lost": lost_by.get(k, 0),
+            "win_rate": win_rate(won_by.get(k, 0), lost_by.get(k, 0)),
+        }
+        for k in keys
+    ]
+    rows.sort(key=lambda r: (-(r["won"] + r["lost"]), r["label"].lower()))
+    return rows
+
+
+def _labeled_counts(labels: Iterable[str]) -> list[dict]:
+    """Count occurrences, returned as rows sorted most-frequent first."""
+    counts = Counter(labels)
+    rows = [{"label": k, "count": v} for k, v in counts.items()]
+    rows.sort(key=lambda r: (-r["count"], r["label"].lower()))
+    return rows
