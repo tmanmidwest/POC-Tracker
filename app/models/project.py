@@ -18,6 +18,7 @@ from app.models.project_type import ProjectType
 
 if TYPE_CHECKING:
     from app.models.project_category_order import ProjectCategoryOrder
+    from app.models.project_milestone import ProjectMilestone
     from app.models.project_note import ProjectNote
     from app.models.project_use_case import ProjectUseCase
     from app.models.task import Task
@@ -134,6 +135,14 @@ class Project(Base, TimestampMixin):
     # User tasks assigned to this project. Tasks are user-owned and survive the
     # project's deletion (their project_id is set null), so this is not a cascade.
     tasks: Mapped[list[Task]] = relationship("Task", back_populates="project")
+    # Lifecycle milestones — project-owned, ordered for the timeline. Deleted with
+    # the project.
+    milestones: Mapped[list["ProjectMilestone"]] = relationship(
+        "ProjectMilestone",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        order_by="ProjectMilestone.sort_order, ProjectMilestone.target_date",
+    )
     # Optional explicit sort numbers for use-case category sections (one row per
     # numbered category). Categories without a row fall back to alphabetical.
     category_orders: Mapped[list["ProjectCategoryOrder"]] = relationship(

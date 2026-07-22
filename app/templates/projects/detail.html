@@ -179,7 +179,7 @@
   // Server anchors → tab key (the exec summary lives on the Overview tab).
   var hashMap = {
     'use-cases': 'use-cases', 'overview': 'overview', 'summary': 'overview',
-    'notes': 'notes', 'tasks': 'tasks', 'share': 'share',
+    'timeline': 'timeline', 'notes': 'notes', 'tasks': 'tasks', 'share': 'share',
   };
 
   function show(key, updateHash) {
@@ -296,11 +296,25 @@
 
 {# ---- Key facts (always visible above the tabs) ---- #}
 <div class="card" style="margin-bottom: var(--s-4);">
-  <div class="card__body" style="display:grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-4);">
+  <div class="card__body" style="display:grid; grid-template-columns: repeat(5, 1fr); gap: var(--s-4);">
     <div class="stat"><div class="stat__label">Sales Engineer</div><div class="stat__value">{{ project.sales_engineer.display_label if project.sales_engineer else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Account Exec</div><div class="stat__value">{{ project.account_executive or "—" }}</div></div>
     <div class="stat"><div class="stat__label">Dates</div><div class="stat__value">{{ project.start_date.isoformat() if project.start_date else "—" }} → {{ project.end_date.isoformat() if project.end_date else "—" }}</div></div>
     <div class="stat"><div class="stat__label">Use-case progress</div><div class="stat__value">{{ progress.done }}/{{ progress.total }} ({{ progress.pct }}%)</div></div>
+    <div class="stat">
+      <div class="stat__label">Next milestone</div>
+      <div class="stat__value">
+        {% if next_milestone %}
+        <a href="#timeline" style="text-decoration:none;">{{ next_milestone.name }}</a>
+        {% if milestone_off_track %}<span class="badge badge--danger" title="A milestone is past its target date">Off track</span>{% endif %}
+        <div class="text-muted text-xs">{{ next_milestone.target_date.isoformat() if next_milestone.target_date else "no date" }}</div>
+        {% elif milestone_progress.total %}
+        <span class="text-muted">All complete</span>
+        {% else %}
+        <a href="#timeline" class="text-muted" style="text-decoration:none;">—</a>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -308,6 +322,7 @@
 <div class="tabs tabs--full tabs--sticky" id="proj-tabs" role="tablist" style="margin-bottom: var(--s-5);">
   <button type="button" class="tabs__tab is-active" role="tab" data-tab="use-cases" aria-selected="true">Use cases{% if progress.total %} <span class="tabs__count">{{ progress.total }}</span>{% endif %}</button>
   <button type="button" class="tabs__tab" role="tab" data-tab="overview" aria-selected="false">Overview</button>
+  <button type="button" class="tabs__tab" role="tab" data-tab="timeline" aria-selected="false">Timeline{% if milestone_progress.total %} <span class="tabs__count">{{ milestone_progress.done }}/{{ milestone_progress.total }}</span>{% endif %}</button>
   <button type="button" class="tabs__tab" role="tab" data-tab="notes" aria-selected="false">Notes{% if notes %} <span class="tabs__count">{{ notes|length }}</span>{% endif %}</button>
   {% if tasks_on %}<button type="button" class="tabs__tab" role="tab" data-tab="tasks" aria-selected="false">Tasks{% if project_tasks %} <span class="tabs__count">{{ project_tasks|length }}</span>{% endif %}</button>{% endif %}
   {% if can_share %}<button type="button" class="tabs__tab" role="tab" data-tab="share" aria-selected="false">Share{% if grants %} <span class="tabs__count">{{ grants|length }}</span>{% endif %}</button>{% endif %}
@@ -671,6 +686,123 @@
   </form>
 </div>
 {% endif %}
+</div>
+
+{# ===== Timeline panel ===== #}
+<div class="tab-panel" id="tab-timeline" role="tabpanel">
+<div class="card" style="margin-bottom: var(--s-5);">
+  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center; gap:var(--s-3);">
+    <h3 class="card__title">
+      Timeline
+      {% if milestone_progress.total %}<span class="badge badge--neutral">{{ milestone_progress.done }}/{{ milestone_progress.total }} done</span>{% endif %}
+      {% if milestone_off_track %}<span class="badge badge--danger">Off track</span>{% endif %}
+    </h3>
+    {% if current_user.is_internal and not milestones %}
+    <form method="post" action="/ui/projects/{{ project.id }}/milestones/apply-defaults" style="margin:0;">
+      <button type="submit" class="btn btn--secondary btn--sm">Apply standard set</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card__body">
+    {% if not milestones %}
+    <p class="text-muted text-xs">No milestones yet. Apply the standard set to lay out a Kickoff → Readout lifecycle, or add your own below.</p>
+    {% else %}
+    <div class="table-wrap">
+    <table class="table table--top">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th>Milestone</th>
+          <th style="width:130px;">Target</th>
+          <th style="width:120px;">Status</th>
+          <th>Notes</th>
+          {% if current_user.is_internal %}<th style="width:150px;"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in milestones %}
+        <tr>
+          <td>
+            {% if current_user.is_internal %}
+            <form method="post" action="/ui/projects/{{ project.id }}/milestones/{{ m.id }}/complete" style="margin:0;">
+              <input type="hidden" name="complete" value="{{ '0' if m.is_complete else '1' }}" />
+              <button type="submit" class="btn btn--ghost btn--sm" title="{{ 'Reopen' if m.is_complete else 'Mark complete' }}" style="padding:2px 6px;">{{ "☑" if m.is_complete else "☐" }}</button>
+            </form>
+            {% else %}
+            {{ "☑" if m.is_complete else "☐" }}
+            {% endif %}
+          </td>
+          <td><strong{% if m.is_complete %} style="text-decoration:line-through; opacity:0.65;"{% endif %}>{{ m.name }}</strong></td>
+          <td class="mono text-muted">{{ m.target_date.isoformat() if m.target_date else "—" }}</td>
+          <td>
+            {% if m.is_complete %}
+              <span class="badge badge--ok">Done {{ m.completed_date.isoformat() }}</span>
+            {% elif m.is_overdue() %}
+              <span class="badge badge--danger">Overdue</span>
+            {% elif m.target_date %}
+              <span class="badge badge--neutral">Upcoming</span>
+            {% else %}
+              <span class="badge badge--neutral">No date</span>
+            {% endif %}
+          </td>
+          <td class="text-muted text-xs">{{ m.notes or "" }}</td>
+          {% if current_user.is_internal %}
+          <td class="table__actions" style="white-space:nowrap;">
+            <form method="post" action="/ui/projects/{{ project.id }}/milestones/{{ m.id }}/move" style="margin:0; display:inline;">
+              <input type="hidden" name="direction" value="up" />
+              <button type="submit" class="btn btn--ghost btn--sm" title="Move up" style="padding:2px 6px;">↑</button>
+            </form>
+            <form method="post" action="/ui/projects/{{ project.id }}/milestones/{{ m.id }}/move" style="margin:0; display:inline;">
+              <input type="hidden" name="direction" value="down" />
+              <button type="submit" class="btn btn--ghost btn--sm" title="Move down" style="padding:2px 6px;">↓</button>
+            </form>
+            <details style="display:inline-block; position:relative;">
+              <summary class="btn btn--ghost btn--sm" style="list-style:none; cursor:pointer;">Edit</summary>
+              <div class="card" style="position:absolute; right:0; z-index:20; width:280px; padding:var(--s-3); box-shadow:var(--shadow-lg, 0 8px 24px rgba(0,0,0,.18));">
+                <form method="post" action="/ui/projects/{{ project.id }}/milestones/{{ m.id }}/edit" style="margin:0; text-align:left;">
+                  <div class="form-row"><label class="label">Name</label>
+                    <input class="input" name="name" value="{{ m.name }}" maxlength="150" required /></div>
+                  <div class="form-row"><label class="label">Target date</label>
+                    <input class="input" type="date" name="target_date" value="{{ m.target_date.isoformat() if m.target_date else '' }}" /></div>
+                  <div class="form-row"><label class="label">Notes</label>
+                    <input class="input" name="notes" value="{{ m.notes or '' }}" /></div>
+                  <div class="form-actions" style="margin-top:var(--s-3);">
+                    <button type="submit" class="btn btn--primary btn--sm">Save</button>
+                  </div>
+                </form>
+                <form method="post" action="/ui/projects/{{ project.id }}/milestones/{{ m.id }}/delete" style="margin-top:var(--s-2);" onsubmit="return confirm('Delete milestone “{{ m.name }}”?');">
+                  <button type="submit" class="btn btn--ghost btn--sm" style="color:var(--danger,#dc2626);">Delete</button>
+                </form>
+              </div>
+            </details>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    {% if current_user.is_internal %}
+    <form method="post" action="/ui/projects/{{ project.id }}/milestones" style="margin-top:var(--s-4); display:grid; grid-template-columns: 2fr 1fr 2fr auto; gap:var(--s-3); align-items:end;">
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="ms-name">Add milestone</label>
+        <input class="input" id="ms-name" name="name" maxlength="150" placeholder="e.g. Security Review" required />
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="ms-date">Target date</label>
+        <input class="input" type="date" id="ms-date" name="target_date" />
+      </div>
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="ms-notes">Notes</label>
+        <input class="input" id="ms-notes" name="notes" placeholder="Optional" />
+      </div>
+      <button type="submit" class="btn btn--primary">Add</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
 </div>
 
 {# ===== Notes panel ===== #}

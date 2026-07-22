@@ -1667,7 +1667,9 @@ html[data-theme="dark"] .ql-snow.ql-toolbar button.ql-active .ql-fill {
 /* KPI stat cards */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Auto-fit rather than a fixed count so adding a KPI card (e.g. "Off track")
+     doesn't strand one on a row of its own. */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--s-4);
 }
 
@@ -1832,6 +1834,8 @@ a.kpi-card:hover .kpi-card__hint { color: var(--text-muted); }
 }
 .pill--overdue { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line); }
 .pill--stalled { background: var(--warning-soft); color: var(--warning); border-color: var(--warning-line); }
+/* A milestone past its target date — as urgent as an overdue project. */
+.pill--off_track { background: var(--danger-soft); color: var(--danger); border-color: var(--danger-line); }
 
 @media (max-width: 1100px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }

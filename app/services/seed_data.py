@@ -23,6 +23,7 @@ from app.models import (
     Customer,
     FeatureType,
     LibrarySet,
+    MilestoneDefault,
     Project,
     ProjectStatus,
     ProjectType,
@@ -65,6 +66,16 @@ DEFAULT_PROJECT_STATUSES: list[tuple[str, int, bool, str, bool]] = [
     ("On Hold", 50, False, "none", False),
     ("Completed - Won", 90, True, "won", False),
     ("Completed - Lost", 100, True, "lost", False),
+]
+
+# (name, target_offset_days, sort_order, is_system)
+# The standard POC lifecycle new projects seed from, dated relative to the
+# project start date.
+DEFAULT_MILESTONES: list[tuple[str, int | None, int, bool]] = [
+    ("Kickoff", 0, 10, True),
+    ("Success Criteria Agreed", 3, 20, True),
+    ("Mid-point Check", 14, 30, True),
+    ("Readout", 28, 40, True),
 ]
 
 # (name, is_system)
@@ -203,6 +214,7 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
     seed_contact_roles(db)
     seed_project_statuses(db)
     seed_close_reasons(db)
+    seed_milestone_defaults(db)
     seed_project_types(db)
     seed_feature_types(db)
     seed_use_case_statuses(db)
@@ -295,6 +307,27 @@ def seed_close_reasons(db: Session) -> int:
     if inserted:
         db.flush()
         log.info("seeded_close_reasons", extra={"inserted": inserted})
+    return inserted
+
+
+def seed_milestone_defaults(db: Session) -> int:
+    existing = {row[0] for row in db.execute(select(MilestoneDefault.name)).all()}
+    inserted = 0
+    for name, offset, sort_order, is_system in DEFAULT_MILESTONES:
+        if name not in existing:
+            db.add(
+                MilestoneDefault(
+                    name=name,
+                    target_offset_days=offset,
+                    sort_order=sort_order,
+                    is_active=True,
+                    is_system=is_system,
+                )
+            )
+            inserted += 1
+    if inserted:
+        db.flush()
+        log.info("seeded_milestone_defaults", extra={"inserted": inserted})
     return inserted
 
 

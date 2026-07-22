@@ -21,14 +21,17 @@ from app.models.feature_type import FeatureType
 from app.models.google_tasks_config import GoogleTasksConfig
 from app.models.library_set import LibrarySet
 from app.models.mcp_gateway_token import McpGatewayToken
+from app.models.milestone_default import MilestoneDefault
 from app.models.note_attachment import NoteAttachment
 from app.models.oauth_client import OAuthClient
 from app.models.password_reset_token import PasswordResetToken
 from app.models.poc_template import PocTemplate
+from app.models.poc_template_milestone import PocTemplateMilestone
 from app.models.poc_template_task import PocTemplateTask
 from app.models.poc_template_use_case import PocTemplateUseCase
 from app.models.project import Project
 from app.models.project_category_order import ProjectCategoryOrder
+from app.models.project_milestone import ProjectMilestone
 from app.models.project_grant import ProjectGrant
 from app.models.project_note import ProjectNote
 from app.models.project_share_link import ProjectShareLink
@@ -66,14 +69,17 @@ __all__ = [
     "GoogleTasksConfig",
     "LibrarySet",
     "McpGatewayToken",
+    "MilestoneDefault",
     "NoteAttachment",
     "OAuthClient",
     "PasswordResetToken",
     "PocTemplate",
+    "PocTemplateMilestone",
     "PocTemplateTask",
     "PocTemplateUseCase",
     "Project",
     "ProjectCategoryOrder",
+    "ProjectMilestone",
     "ProjectGrant",
     "ProjectNote",
     "ProjectShareLink",

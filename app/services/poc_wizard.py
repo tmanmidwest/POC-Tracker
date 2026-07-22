@@ -19,8 +19,16 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Customer, Project, ProjectUseCase, Task, TaskStatus
+from app.models import (
+    Customer,
+    Project,
+    ProjectMilestone,
+    ProjectUseCase,
+    Task,
+    TaskStatus,
+)
 from app.models.project_use_case import SOURCE_CUSTOM
+from app.services.milestones import seed_project_milestones
 from app.services.use_cases import (
     copy_library_entries_to_project,
     default_project_status_id,
@@ -48,6 +56,12 @@ class TaskInput:
 
 
 @dataclass
+class MilestoneInput:
+    name: str
+    target_date: date | None = None
+
+
+@dataclass
 class WizardInput:
     # Customer: exactly one of these is used. An existing id wins if both are set.
     existing_customer_id: int | None = None
@@ -57,6 +71,10 @@ class WizardInput:
     library_ids: list[int] = field(default_factory=list)
     custom_use_cases: list[CustomUseCaseInput] = field(default_factory=list)
     tasks: list[TaskInput] = field(default_factory=list)
+    # Lifecycle milestones. Empty means "use the global default set" — an
+    # explicitly cleared timeline is expressed by ``skip_milestones``.
+    milestones: list[MilestoneInput] = field(default_factory=list)
+    skip_milestones: bool = False
 
 
 def _default_task_status_id(db: Session) -> int | None:
@@ -142,6 +160,23 @@ def create_poc_from_wizard(db: Session, user, data: WizardInput) -> Project:
                 status_id=uc_status_id,
             )
         )
+
+    # Lifecycle milestones: whatever the wizard submitted (a template's set, or
+    # hand-edited rows), else the global standard set. Project-owned, so they're
+    # visible to the whole team unlike the per-user tasks below.
+    if not data.skip_milestones:
+        if data.milestones:
+            for i, ms in enumerate(data.milestones):
+                db.add(
+                    ProjectMilestone(
+                        project_id=project.id,
+                        name=ms.name,
+                        target_date=ms.target_date,
+                        sort_order=(i + 1) * 10,
+                    )
+                )
+        else:
+            seed_project_milestones(db, project)
 
     # Optional kickoff tasks, owned by the creating user.
     if data.tasks:

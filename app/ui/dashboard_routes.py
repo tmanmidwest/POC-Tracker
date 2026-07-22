@@ -19,6 +19,7 @@ from app.services.insights import (
     idle_days,
     is_at_risk,
     is_stalled,
+    overdue_milestones,
 )
 from app.services.scope import (
     get_scope,
@@ -116,6 +117,7 @@ def _build_insights(
             joinedload(Project.customer),
             joinedload(Project.sales_engineer),
             selectinload(Project.use_cases),
+            selectinload(Project.milestones),
         )
         .filter(Project.is_archived.is_(False))
     )
@@ -130,6 +132,7 @@ def _build_insights(
     pcts: list[int] = []
     at_risk = 0
     stalled = 0
+    off_track = 0
     status_counter: Counter[int] = Counter()
     type_counter: Counter[str] = Counter()
     se_counter: Counter[str] = Counter()
@@ -164,6 +167,18 @@ def _build_insights(
             reasons.append({"kind": "stalled", "label": f"no update in {idle}d"})
             severity = max(severity, 1)
             days = max(days, idle)
+        overdue_ms = overdue_milestones(p, today)
+        if overdue_ms:
+            off_track += 1
+            # Surface the most overdue milestone by name — more actionable than a
+            # bare count.
+            worst = min(overdue_ms, key=lambda m: m.target_date)  # type: ignore[arg-type]
+            late = (today - worst.target_date).days  # type: ignore[operator]
+            reasons.append(
+                {"kind": "off_track", "label": f"{worst.name} {late}d overdue"}
+            )
+            severity = max(severity, 3)
+            days = max(days, late)
         if reasons:
             attention.append(
                 {
@@ -236,6 +251,7 @@ def _build_insights(
             "avg_completion": round(sum(pcts) / len(pcts)) if pcts else 0,
             "at_risk": at_risk,
             "stalled": stalled,
+            "off_track": off_track,
         },
         "status_series": status_series,
         "type_series": type_series,

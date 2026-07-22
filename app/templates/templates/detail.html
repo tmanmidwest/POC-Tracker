@@ -65,4 +65,28 @@
     {% endif %}
   </div>
 </div>
+
+<div class="card" style="margin-top: var(--s-5);">
+  <div class="card__body">
+    <h2 class="card__title">Timeline <span class="text-muted">({{ template.milestones | length }})</span></h2>
+    {% if template.milestones %}
+    <p class="text-muted text-xs">Offsets are days from the new project's start date. A POC created from this template gets these milestones instead of the standard set.</p>
+    <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Milestone</th><th>Target (offset)</th></tr></thead>
+      <tbody>
+        {% for m in template.milestones %}
+        <tr>
+          <td><strong>{{ m.name }}</strong></td>
+          <td class="text-muted">{% if m.target_offset_days is not none %}day {{ m.target_offset_days }}{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No milestones in this template — POCs created from it use the standard default set.</p>
+    {% endif %}
+  </div>
+</div>
 {% endblock %}

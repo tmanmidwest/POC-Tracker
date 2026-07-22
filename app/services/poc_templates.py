@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models import (
     PocTemplate,
+    PocTemplateMilestone,
     PocTemplateTask,
     PocTemplateUseCase,
     Project,
@@ -99,6 +100,17 @@ def create_template_from_project(
             )
         )
 
+    # Milestones snapshot the same way — offsets from the start date, so the
+    # lifecycle re-anchors onto whatever start the next POC has.
+    for i, ms in enumerate(project.milestones):
+        template.milestones.append(
+            PocTemplateMilestone(
+                name=ms.name,
+                target_offset_days=_offset_days(start, ms.target_date),
+                sort_order=i,
+            )
+        )
+
     db.flush()
     return template
 
@@ -150,9 +162,21 @@ def template_to_wizard_context(
             }
         )
 
+    milestone_rows: list[dict] = []
+    for m in template.milestones:
+        target = (
+            base_date + timedelta(days=m.target_offset_days)
+            if m.target_offset_days is not None
+            else None
+        )
+        milestone_rows.append(
+            {"name": m.name, "target_date": target.isoformat() if target else ""}
+        )
+
     return {
         "form": {"status_id": template.default_status_id},
         "selected_library_ids": selected_library_ids,
         "custom_rows": custom_rows,
         "task_rows": task_rows,
+        "milestone_rows": milestone_rows,
     }

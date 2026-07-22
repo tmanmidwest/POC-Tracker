@@ -23,7 +23,7 @@
 <div class="table-wrap">
 <table class="table">
   <thead>
-    <tr><th>Name</th><th>Description</th><th>Use cases</th><th>Tasks</th><th>Author</th></tr>
+    <tr><th>Name</th><th>Description</th><th>Use cases</th><th>Tasks</th><th>Milestones</th><th>Author</th></tr>
   </thead>
   <tbody>
     {% for t in templates %}
@@ -32,6 +32,7 @@
       <td class="text-muted">{{ t.description or "—" }}</td>
       <td>{{ t.use_cases | length }}</td>
       <td>{{ t.tasks | length }}</td>
+      <td>{{ t.milestones | length }}</td>
       <td class="text-muted">{{ t.created_by or "—" }}</td>
     </tr>
     {% endfor %}

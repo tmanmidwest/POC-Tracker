@@ -12,7 +12,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime, timezone
 
-from app.models import Project
+from app.models import Project, ProjectMilestone
 
 # No update in this many days → "stalled". Kept here as the single source of
 # truth; the dashboard and project list both import it.
@@ -55,6 +55,56 @@ def is_stalled(project: Project, now: datetime | None = None) -> bool:
     """No update in ``STALLED_DAYS`` or more."""
     days = idle_days(project.updated_at, now)
     return days is not None and days >= STALLED_DAYS
+
+
+# ---------------------------------------------------------------------------
+# Milestone timeline health
+# ---------------------------------------------------------------------------
+
+
+def overdue_milestones(
+    project: Project, today: date | None = None
+) -> list[ProjectMilestone]:
+    """Incomplete milestones whose target date has passed."""
+    today = today or date.today()
+    return [m for m in project.milestones if m.is_overdue(today)]
+
+
+def is_off_track(project: Project, today: date | None = None) -> bool:
+    """Has at least one overdue, incomplete milestone.
+
+    Kept alongside ``is_at_risk``/``is_stalled`` so the dashboard KPI, the
+    project-list filter, and the project-page chip all agree on the exact set.
+    Terminal (closed) projects are never flagged — a finished POC isn't "off
+    track" for a milestone it never closed out.
+    """
+    if is_closed(project):
+        return False
+    return bool(overdue_milestones(project, today))
+
+
+def next_milestone(
+    project: Project, today: date | None = None
+) -> ProjectMilestone | None:
+    """The upcoming (incomplete) milestone to focus on.
+
+    Prefers the earliest dated one; falls back to the first undated incomplete
+    milestone by timeline order. Returns None when everything is done.
+    """
+    incomplete = [m for m in project.milestones if not m.is_complete]
+    if not incomplete:
+        return None
+    dated = [m for m in incomplete if m.target_date is not None]
+    if dated:
+        return min(dated, key=lambda m: m.target_date)  # type: ignore[arg-type,return-value]
+    return min(incomplete, key=lambda m: m.sort_order)
+
+
+def milestone_progress(project: Project) -> dict:
+    """Simple done/total tally for the timeline header."""
+    total = len(project.milestones)
+    done = sum(1 for m in project.milestones if m.is_complete)
+    return {"total": total, "done": done, "pct": round(done / total * 100) if total else 0}
 
 
 # ---------------------------------------------------------------------------

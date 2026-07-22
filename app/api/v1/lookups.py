@@ -24,6 +24,7 @@ from app.models import (
     Contact,
     ContactRole,
     FeatureType,
+    MilestoneDefault,
     Project,
     ProjectStatus,
     ProjectType,
@@ -44,6 +45,9 @@ from app.schemas.lookups import (
     FeatureTypeCreate,
     FeatureTypeOut,
     FeatureTypeUpdate,
+    MilestoneDefaultCreate,
+    MilestoneDefaultOut,
+    MilestoneDefaultUpdate,
     ProjectStatusCreate,
     ProjectStatusOut,
     ProjectStatusUpdate,
@@ -224,6 +228,19 @@ close_reasons_router = _make_lookup_router(
     event_noun="close_reason",
     order_by=CloseReason.name,
     references=lambda rid: [("projects", Project, Project.close_reason_id, rid)],
+)
+
+milestone_defaults_router = _make_lookup_router(
+    prefix="/milestone-defaults",
+    model=MilestoneDefault,
+    out_schema=MilestoneDefaultOut,
+    create_schema=MilestoneDefaultCreate,
+    update_schema=MilestoneDefaultUpdate,
+    noun="Default milestone",
+    event_noun="milestone_default",
+    order_by=MilestoneDefault.sort_order,
+    # Copied onto projects, never referenced by FK — always safe to delete.
+    references=lambda rid: [],
 )
 
 project_statuses_router = _make_lookup_router(

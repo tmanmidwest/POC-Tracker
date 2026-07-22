@@ -72,7 +72,8 @@
     <li class="wiz-steps__item" data-goto="2"><span class="wiz-steps__num">2</span> Project</li>
     <li class="wiz-steps__item" data-goto="3"><span class="wiz-steps__num">3</span> Use cases</li>
     <li class="wiz-steps__item" data-goto="4"><span class="wiz-steps__num">4</span> Tasks</li>
-    <li class="wiz-steps__item" data-goto="5"><span class="wiz-steps__num">5</span> Review</li>
+    <li class="wiz-steps__item" data-goto="5"><span class="wiz-steps__num">5</span> Timeline</li>
+    <li class="wiz-steps__item" data-goto="6"><span class="wiz-steps__num">6</span> Review</li>
   </ol>
 
   <form method="post" action="/ui/projects/wizard" id="wiz-form" class="card" novalidate>
@@ -259,8 +260,27 @@
         <button type="button" class="btn btn--secondary btn--sm" id="add-task" style="margin-top: var(--s-3);">+ Add task</button>
       </section>
 
-      {# ---- Step 5: Review ---- #}
+      {# ---- Step 5: Timeline (milestones) ---- #}
       <section class="wiz-step" data-step="5" hidden>
+        <p class="wiz-explain">The POC lifecycle. Pre-filled from {% if active_template %}the template{% else %}your standard set{% endif %} and dated from the project start — adjust or clear any you don't need. Unlike tasks, milestones are shared with the whole team.</p>
+        <div class="wiz-rows" id="milestone-rows">
+          {% for r in milestone_rows %}
+          <div class="wiz-row">
+            <div class="wiz-row__grid">
+              <div class="form-row"><label class="label">Milestone</label>
+                <input class="input" name="milestone_name" value="{{ r.name or '' }}" placeholder="e.g. Kickoff" /></div>
+              <div class="form-row"><label class="label">Target date</label>
+                <input class="input" type="date" name="milestone_date" value="{{ r.target_date or '' }}" /></div>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+          </div>
+          {% endfor %}
+        </div>
+        <button type="button" class="btn btn--secondary btn--sm" id="add-milestone" style="margin-top: var(--s-3);">+ Add milestone</button>
+      </section>
+
+      {# ---- Step 6: Review ---- #}
+      <section class="wiz-step" data-step="6" hidden>
         <p class="wiz-explain">Review and create. Nothing is saved until you click Create POC.</p>
         <div class="wiz-review" id="wiz-review"></div>
       </section>
@@ -310,12 +330,23 @@
     <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
   </div>
 </template>
+<template id="tpl-milestone-row">
+  <div class="wiz-row">
+    <div class="wiz-row__grid">
+      <div class="form-row"><label class="label">Milestone</label>
+        <input class="input" name="milestone_name" placeholder="e.g. Kickoff" /></div>
+      <div class="form-row"><label class="label">Target date</label>
+        <input class="input" type="date" name="milestone_date" /></div>
+    </div>
+    <button type="button" class="btn btn--ghost btn--sm wiz-row__remove" data-remove-row>Remove</button>
+  </div>
+</template>
 {% endblock %}
 
 {% block body_scripts %}
 <script>
 (function () {
-  var TOTAL = 5;
+  var TOTAL = 6;
   var current = 1;
   var form = document.getElementById('wiz-form');
   var steps = Array.prototype.slice.call(document.querySelectorAll('.wiz-step'));
@@ -392,6 +423,7 @@
   }
   document.getElementById('add-custom').addEventListener('click', function () { addRow('custom-rows', 'tpl-custom-row'); });
   document.getElementById('add-task').addEventListener('click', function () { addRow('task-rows', 'tpl-task-row'); });
+  document.getElementById('add-milestone').addEventListener('click', function () { addRow('milestone-rows', 'tpl-milestone-row'); });
   form.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-remove-row]');
     if (btn) btn.closest('.wiz-row').remove();
@@ -428,6 +460,10 @@
     var taskCount = 0;
     form.querySelectorAll('#task-rows input[name="task_title"]').forEach(function (i) { if (i.value.trim()) taskCount++; });
     out += group('Tasks', esc(taskCount + ' task' + (taskCount === 1 ? '' : 's')));
+
+    var msCount = 0;
+    form.querySelectorAll('#milestone-rows input[name="milestone_name"]').forEach(function (i) { if (i.value.trim()) msCount++; });
+    out += group('Timeline', esc(msCount + ' milestone' + (msCount === 1 ? '' : 's')));
 
     document.getElementById('wiz-review').innerHTML = out;
   }

@@ -40,6 +40,7 @@ from app.models import (
     Project,
     ProjectCategoryOrder,
     ProjectGrant,
+    ProjectMilestone,
     ProjectNote,
     ProjectStatus,
     ProjectType,
@@ -52,6 +53,7 @@ from app.models import (
     UseCaseViewPref,
 )
 from app.models.project_use_case import SOURCE_CUSTOM
+from app.services import milestones as milestone_service
 from app.services import note_attachments as note_store
 from app.services import portal as portal_service
 from app.services import screenshots as screenshot_store
@@ -72,7 +74,13 @@ from app.services.ai.summaries import (
     stream_project_summary,
 )
 from app.services.audit import record_event
-from app.services.insights import is_at_risk, is_stalled
+from app.services.insights import (
+    is_at_risk,
+    is_off_track,
+    is_stalled,
+    milestone_progress,
+    next_milestone,
+)
 from app.services.rich_text import html_to_text, sanitize_note_html
 from app.services.scope import (
     resolve_scope,
@@ -96,6 +104,7 @@ from app.services.poc_templates import (
 )
 from app.services.poc_wizard import (
     CustomUseCaseInput,
+    MilestoneInput,
     TaskInput,
     WizardError,
     WizardInput,
@@ -364,6 +373,7 @@ def _form_dropdowns(db: Session) -> dict:
 _SIGNAL_FILTERS = {
     "at_risk": (is_at_risk, "At risk"),
     "stalled": (is_stalled, "Stalled"),
+    "off_track": (is_off_track, "Off track"),
 }
 
 
@@ -397,8 +407,11 @@ def list_projects(
 
     signal = _SIGNAL_FILTERS.get(filter_ or "")
     if signal is not None:
-        # Need use cases + statuses to evaluate the predicate; eager-load them.
-        query = query.options(selectinload(Project.use_cases))
+        # Need use cases + milestones + statuses to evaluate the predicate;
+        # eager-load them.
+        query = query.options(
+            selectinload(Project.use_cases), selectinload(Project.milestones)
+        )
     projects = query.order_by(Project.updated_at.desc()).all()
     if signal is not None:
         predicate, _ = signal
@@ -510,6 +523,8 @@ async def create_project(
     )
     _apply_close_details(project, data, db)
     db.add(project)
+    # Lay out the standard lifecycle so the new POC starts with a timeline.
+    milestone_service.seed_project_milestones(db, project)
     db.commit()
     record_event(
         category="project", event_type="project.created", actor_type="user",
@@ -552,12 +567,28 @@ def _wizard_library(db: Session) -> list[dict]:
 
 
 def _render_wizard(request, db, user, *, form, error=None, selected_library_ids=None,
-                   custom_rows=None, task_rows=None, active_template=None):
+                   custom_rows=None, task_rows=None, milestone_rows=None,
+                   active_template=None):
+    # With no template applied, pre-fill the timeline from the global standard
+    # set so the wizard shows the lifecycle it's about to create.
+    if milestone_rows is None:
+        milestone_rows = [
+            {
+                "name": m.name,
+                "target_date": (
+                    (date.today() + timedelta(days=m.target_offset_days)).isoformat()
+                    if m.target_offset_days is not None
+                    else ""
+                ),
+            }
+            for m in milestone_service.default_milestone_blueprints(db)
+        ]
     return render(
         request, "projects/wizard.html", current_user=user, active_section="new_poc",
         form=form, error=error,
         selected_library_ids=selected_library_ids or set(),
         custom_rows=custom_rows or [], task_rows=task_rows or [],
+        milestone_rows=milestone_rows,
         templates=list_templates(db, include_inactive=False),
         active_template=active_template,
         library=_wizard_library(db), **_form_dropdowns(db),
@@ -584,6 +615,7 @@ def wizard_form(
         request, db, user, form=form, active_template=active_template,
         selected_library_ids=ctx.get("selected_library_ids"),
         custom_rows=ctx.get("custom_rows"), task_rows=ctx.get("task_rows"),
+        milestone_rows=ctx.get("milestone_rows"),
     )
 
 
@@ -647,10 +679,22 @@ async def wizard_create(
         for title, start, due in task_rows if _clean(title)
     ]
 
+    milestone_rows = list(zip(
+        form.getlist("milestone_name"), form.getlist("milestone_date"),  # type: ignore[attr-defined]
+    ))
+    wizard_milestones = [
+        MilestoneInput(name=_clean(name), target_date=_parse_date(target))
+        for name, target in milestone_rows if _clean(name)
+    ]
+
     data = WizardInput(
         existing_customer_id=existing_customer_id, new_customer=new_customer,
         project=project, library_ids=library_ids,
         custom_use_cases=custom_use_cases, tasks=tasks,
+        milestones=wizard_milestones,
+        # The wizard always renders the timeline rows, so an empty submission is a
+        # deliberate "no milestones" — don't silently re-apply the default set.
+        skip_milestones=not wizard_milestones,
     )
 
     # Echo of the raw submission, so a validation error re-renders with input intact.
@@ -673,6 +717,9 @@ async def wizard_create(
             task_rows=[{"title": t.title,
                         "start_date": t.start_date.isoformat() if t.start_date else "",
                         "due_date": t.due_date.isoformat() if t.due_date else ""} for t in tasks],
+            milestone_rows=[{"name": m.name,
+                             "target_date": m.target_date.isoformat() if m.target_date else ""}
+                            for m in wizard_milestones],
         )
 
     uc_count = len(proj.use_cases)
@@ -987,6 +1034,10 @@ def detail(
         share_link=share_link, portal_base_url=portal_base_url,
         ai_configured=default_provider(db) is not None,
         tasks_on=tasks_on, project_tasks=project_tasks, task_statuses=task_statuses,
+        milestones=list(project.milestones),
+        milestone_progress=milestone_progress(project),
+        milestone_off_track=is_off_track(project),
+        next_milestone=next_milestone(project),
     )
 
 
@@ -1448,6 +1499,159 @@ def _save_uc_view(db: Session, user: AppUser, config: dict) -> None:
         db.add(row)
     row.config_json = json.dumps(config)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Milestones (project timeline)
+# ---------------------------------------------------------------------------
+
+
+def _get_milestone(db: Session, project: Project, milestone_id: int) -> ProjectMilestone:
+    m = db.get(ProjectMilestone, milestone_id)
+    if m is None or m.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Milestone not found.")
+    return m
+
+
+def _timeline_redirect(project_id: int) -> RedirectResponse:
+    return RedirectResponse(url=f"/ui/projects/{project_id}#timeline", status_code=303)
+
+
+@router.post("/{project_id}/milestones")
+async def add_milestone(
+    project_id: int,
+    request: Request,
+    name: str = Form(...),
+    target_date: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    clean_name = _clean(name)
+    if not clean_name:
+        flash(request, "Milestone name is required.", "error")
+        return _timeline_redirect(project_id)
+    project.milestones.append(
+        ProjectMilestone(
+            name=clean_name,
+            target_date=_parse_date(target_date),
+            notes=_clean(notes),
+            sort_order=milestone_service.next_sort_order(project),
+        )
+    )
+    db.commit()
+    record_event(
+        category="project", event_type="project.milestone.added", actor_type="user",
+        actor_label=user.username, actor_id=user.id, target_type="project",
+        target_id=project.id, target_label=project.display_name,
+        message=f"Added milestone '{clean_name}' to '{project.display_name}'",
+        detail={"surface": "ui"}, request=request,
+    )
+    flash(request, "Milestone added.", "success")
+    return _timeline_redirect(project_id)
+
+
+@router.post("/{project_id}/milestones/{milestone_id}/edit")
+async def edit_milestone(
+    project_id: int,
+    milestone_id: int,
+    request: Request,
+    name: str = Form(...),
+    target_date: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    m = _get_milestone(db, project, milestone_id)
+    clean_name = _clean(name)
+    if not clean_name:
+        flash(request, "Milestone name is required.", "error")
+        return _timeline_redirect(project_id)
+    m.name = clean_name
+    m.target_date = _parse_date(target_date)
+    m.notes = _clean(notes)
+    db.commit()
+    flash(request, "Milestone updated.", "success")
+    return _timeline_redirect(project_id)
+
+
+@router.post("/{project_id}/milestones/{milestone_id}/complete")
+async def toggle_milestone(
+    project_id: int,
+    milestone_id: int,
+    request: Request,
+    complete: str = Form("1"),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    m = _get_milestone(db, project, milestone_id)
+    milestone_service.set_complete(m, complete == "1")
+    db.commit()
+    return _timeline_redirect(project_id)
+
+
+@router.post("/{project_id}/milestones/{milestone_id}/delete")
+async def delete_milestone(
+    project_id: int,
+    milestone_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    project = _get_project(db, project_id)
+    m = _get_milestone(db, project, milestone_id)
+    db.delete(m)
+    db.commit()
+    flash(request, "Milestone deleted.", "success")
+    return _timeline_redirect(project_id)
+
+
+@router.post("/{project_id}/milestones/{milestone_id}/move")
+async def move_milestone(
+    project_id: int,
+    milestone_id: int,
+    request: Request,
+    direction: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Swap a milestone with its neighbour to reorder the timeline."""
+    project = _get_project(db, project_id)
+    ordered = list(project.milestones)  # relationship is sort_order-ordered
+    idx = next((i for i, m in enumerate(ordered) if m.id == milestone_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Milestone not found.")
+    swap = idx - 1 if direction == "up" else idx + 1
+    if 0 <= swap < len(ordered):
+        a, b = ordered[idx], ordered[swap]
+        a.sort_order, b.sort_order = b.sort_order, a.sort_order
+        db.commit()
+    return _timeline_redirect(project_id)
+
+
+@router.post("/{project_id}/milestones/apply-defaults")
+async def apply_default_milestones(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Seed this project's timeline from the global standard milestone set.
+
+    Only acts when the project has no milestones yet, so it can't duplicate an
+    existing timeline.
+    """
+    project = _get_project(db, project_id)
+    added = milestone_service.seed_project_milestones(db, project)
+    db.commit()
+    if added:
+        flash(request, f"Added {added} standard milestone(s).", "success")
+    else:
+        flash(request, "This project already has milestones.", "error")
+    return _timeline_redirect(project_id)
 
 
 @router.post("/{project_id}/category-order")

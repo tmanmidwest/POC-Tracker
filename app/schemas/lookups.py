@@ -66,6 +66,38 @@ class CloseReasonUpdate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Milestone Default (the standard POC lifecycle)
+# ---------------------------------------------------------------------------
+
+
+class MilestoneDefaultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    target_offset_days: int | None
+    sort_order: int
+    is_active: bool
+    is_system: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class MilestoneDefaultCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    target_offset_days: int | None = None
+    sort_order: int = 100
+    is_active: bool = True
+
+
+class MilestoneDefaultUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=150)
+    target_offset_days: int | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+# ---------------------------------------------------------------------------
 # Project Status
 # ---------------------------------------------------------------------------
 

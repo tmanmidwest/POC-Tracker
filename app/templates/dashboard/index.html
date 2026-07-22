@@ -50,6 +50,11 @@
       <div class="kpi-card__value">{{ k.stalled }}</div>
       <div class="kpi-card__hint">no update in {{ insights.stalled_days }}+ days →</div>
     </a>
+    <a class="kpi-card {% if k.off_track %}kpi-card--danger{% endif %}" href="/ui/projects?filter=off_track&scope={{ scope }}">
+      <div class="kpi-card__label">Off track</div>
+      <div class="kpi-card__value">{{ k.off_track }}</div>
+      <div class="kpi-card__hint">milestone past target →</div>
+    </a>
   </div>
 
   <div class="chart-grid">

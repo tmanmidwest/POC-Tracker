@@ -19,6 +19,7 @@ from app.db import Base
 from app.models._mixins import TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.poc_template_milestone import PocTemplateMilestone
     from app.models.poc_template_task import PocTemplateTask
     from app.models.poc_template_use_case import PocTemplateUseCase
 
@@ -52,6 +53,12 @@ class PocTemplate(Base, TimestampMixin):
         back_populates="template",
         cascade="all, delete-orphan",
         order_by="PocTemplateTask.sort_order",
+    )
+    milestones: Mapped[list[PocTemplateMilestone]] = relationship(
+        "PocTemplateMilestone",
+        back_populates="template",
+        cascade="all, delete-orphan",
+        order_by="PocTemplateMilestone.sort_order",
     )
 
     def __repr__(self) -> str:

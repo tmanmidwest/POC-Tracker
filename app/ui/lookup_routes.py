@@ -21,6 +21,7 @@ from app.models import (
     CloseReason,
     ContactRole,
     FeatureType,
+    MilestoneDefault,
     ProjectStatus,
     ProjectType,
     TaskPriority,
@@ -48,6 +49,25 @@ LOOKUPS: dict[str, dict[str, Any]] = {
         "order_by": ContactRole.name,
         "fields": [
             {"name": "name", "label": "Name", "type": "text", "required": True},
+        ],
+    },
+    "milestone-defaults": {
+        "model": MilestoneDefault,
+        "title": "Default Milestones",
+        "subtitle": "The standard POC lifecycle new projects start with. Offsets are days from the project start date.",
+        "subsection": "milestone_defaults",
+        "event_noun": "milestone_default",
+        "order_by": MilestoneDefault.sort_order,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {
+                "name": "target_offset_days",
+                "label": "Target offset (days from start)",
+                "type": "number_opt",
+                "required": False,
+                "help": "Blank = no date. 0 = the start date itself.",
+            },
+            {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
         ],
     },
     "close-reasons": {
@@ -171,6 +191,15 @@ def _coerce(field: dict[str, Any], form: Any) -> Any:
             return int(raw) if raw not in (None, "") else 100
         except (ValueError, TypeError):
             return 100
+    if ftype == "number_opt":
+        # Nullable number — blank means "unset" (e.g. an undated milestone),
+        # not a default. Negative values are allowed (offsets before the start).
+        if raw in (None, ""):
+            return None
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
     if ftype == "select":
         # Constrain to the allowed option values; fall back to the field's
         # default (used e.g. for the non-null ``outcome`` column).

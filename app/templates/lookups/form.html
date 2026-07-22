@@ -30,9 +30,10 @@
     <div class="form-row">
       <label class="label" for="{{ f.name }}">{{ f.label }}{% if f.required %}<span class="label__required">*</span>{% endif %}</label>
       <input class="input" id="{{ f.name }}" name="{{ f.name }}"
-             type="{{ 'number' if f.type == 'number' else 'text' }}"
+             type="{{ 'number' if f.type in ('number', 'number_opt') else 'text' }}"
              value="{{ form[f.name] if form[f.name] is not none else '' }}"
              {% if f.required %}required{% endif %} />
+      {% if f.help %}<p class="form-hint" style="margin-top:var(--s-1); color:var(--text-muted); font-size:0.85em;">{{ f.help }}</p>{% endif %}
     </div>
     {% endif %}
     {% endfor %}
