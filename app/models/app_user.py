@@ -10,6 +10,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 from app.models._mixins import TimestampMixin
 
+# The four mutually-exclusive user roles, resolved by ``AppUser.role``. Stored
+# underneath as independent booleans; ``role`` is the canonical accessor.
+ROLE_ADMIN = "admin"
+ROLE_MANAGER = "manager"
+ROLE_STANDARD = "standard"
+ROLE_EXTERNAL = "external"
+# Order matters: ``role`` getter resolves the first matching flag, so more
+# privileged / more specific roles come first.
+VALID_ROLES = (ROLE_ADMIN, ROLE_MANAGER, ROLE_STANDARD, ROLE_EXTERNAL)
+
 
 class AppUser(Base, TimestampMixin):
     """Account that can log in to the web UI.
@@ -23,6 +33,16 @@ class AppUser(Base, TimestampMixin):
     `is_admin` puts the user in the Admin group (can do anything). Users without
     it are standard users: they can add/edit POC projects and use cases, but not
     the admin-only surfaces (lookups, users, library, auth providers, settings).
+
+    Roles are stored as independent booleans (`is_admin`, `is_external`,
+    `is_manager`) for backwards compatibility with existing queries and write
+    sites. The `role` property is the single read/write accessor that resolves
+    them into one of ``admin | manager | standard | external`` (see ``role``).
+    A **manager** is an internal, non-admin user who — unlike a standard SE —
+    can view and edit POCs across every region assigned to them (memberships live
+    in ``user_regions`` / the ``UserRegion`` model; resolved by
+    ``app.services.access.allowed_region_ids``). ``is_manager`` alone confers no
+    extra rights without region assignments.
     """
 
     __tablename__ = "app_users"
@@ -38,6 +58,12 @@ class AppUser(Base, TimestampMixin):
     # External viewer: read-only, and only sees projects explicitly shared with
     # them (see ProjectGrant). Internal users (admin or standard) ignore grants.
     is_external: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Manager: an internal, non-admin user who can view+edit POCs across all the
+    # regions assigned to them (a standard SE is hard-scoped to their own region).
+    # Only meaningful when not admin and not external. Set via the ``role`` setter.
+    is_manager: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -92,8 +118,46 @@ class AppUser(Base, TimestampMixin):
 
     @property
     def is_internal(self) -> bool:
-        """Internal users (admin or standard) see all projects and can edit."""
+        """Internal users (admin, manager, or standard) can edit; not read-only."""
         return not self.is_external
+
+    @property
+    def role(self) -> str:
+        """Canonical single role, resolved from the underlying boolean flags.
+
+        Returns one of ``admin | manager | standard | external`` (see
+        ``VALID_ROLES``). Admin wins over external wins over manager, so any
+        redundant flag combination still maps to exactly one sensible role.
+        """
+        if self.is_admin:
+            return ROLE_ADMIN
+        if self.is_external:
+            return ROLE_EXTERNAL
+        if self.is_manager:
+            return ROLE_MANAGER
+        return ROLE_STANDARD
+
+    @role.setter
+    def role(self, value: str) -> None:
+        """Set the role by name, mapping deterministically to the boolean flags.
+
+        Unambiguous: exactly one flag (at most) is set, the rest cleared. Raises
+        ValueError on an unknown role so a bad form value can't silently no-op.
+        """
+        if value not in VALID_ROLES:
+            raise ValueError(f"Unknown role {value!r}; expected one of {VALID_ROLES}")
+        self.is_admin = value == ROLE_ADMIN
+        self.is_external = value == ROLE_EXTERNAL
+        self.is_manager = value == ROLE_MANAGER
+
+    @property
+    def is_manager_role(self) -> bool:
+        """True only when the resolved role is exactly ``manager``.
+
+        Distinct from the raw ``is_manager`` flag, which an admin/external user
+        could also carry redundantly; this respects the ``role`` precedence.
+        """
+        return self.role == ROLE_MANAGER
 
     @property
     def expires_at_aware(self) -> datetime | None:

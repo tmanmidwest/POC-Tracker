@@ -40,6 +40,7 @@ from app.models.project_share_link import ProjectShareLink
 from app.models.project_status import ProjectStatus
 from app.models.project_type import ProjectType
 from app.models.project_use_case import ProjectUseCase
+from app.models.region import Region
 from app.models.screenshot import Screenshot
 from app.models.smtp_config import SmtpConfig
 from app.models.task import Task
@@ -52,6 +53,7 @@ from app.models.use_case_view_pref import UseCaseViewPref
 from app.models.user_google_credential import UserGoogleCredential
 from app.models.user_identity import UserIdentity
 from app.models.user_invite import UserInvite
+from app.models.user_region import UserRegion
 
 __all__ = [
     "AIProvider",
@@ -90,6 +92,7 @@ __all__ = [
     "ProjectStatus",
     "ProjectType",
     "ProjectUseCase",
+    "Region",
     "Screenshot",
     "SmtpConfig",
     "Task",
@@ -102,4 +105,5 @@ __all__ = [
     "UserGoogleCredential",
     "UserIdentity",
     "UserInvite",
+    "UserRegion",
 ]

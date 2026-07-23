@@ -15,6 +15,7 @@ from app.models.close_reason import CloseReason
 from app.models.customer import Customer
 from app.models.project_status import ProjectStatus
 from app.models.project_type import ProjectType
+from app.models.region import Region
 
 if TYPE_CHECKING:
     from app.models.project_category_order import ProjectCategoryOrder
@@ -58,6 +59,16 @@ class Project(Base, TimestampMixin):
     # Sales Engineer assigned to run the POC — an app user.
     sales_engineer_id: Mapped[int | None] = mapped_column(
         ForeignKey("app_users.id"), nullable=True, index=True
+    )
+
+    # Region this POC belongs to — the axis for region-based access control. A
+    # standard SE only sees POCs in their own region; a manager sees POCs across
+    # their assigned regions. Nullable during rollout (backfilled from the SE's
+    # region in Phase 4; orphans land in the "Unassigned" region). No DB-level FK
+    # on the projects table (SQLite can't add one without recreating it, which
+    # would drop the FTS si_project_* triggers) — the ORM relationship enforces it.
+    region_id: Mapped[int | None] = mapped_column(
+        ForeignKey("regions.id"), nullable=True, index=True
     )
 
     # Account Executive — tracked by reference only (no login in phase 1).
@@ -120,6 +131,7 @@ class Project(Base, TimestampMixin):
         "CloseReason", lazy="joined"
     )
     sales_engineer: Mapped[AppUser | None] = relationship("AppUser", lazy="joined")
+    region: Mapped[Region | None] = relationship("Region", lazy="joined")
     use_cases: Mapped[list[ProjectUseCase]] = relationship(
         "ProjectUseCase",
         back_populates="project",
