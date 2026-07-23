@@ -36,6 +36,34 @@
       <input class="input" type="email" id="email" name="email" value="{{ target_user.email or '' }}" maxlength="320" placeholder="e.g. robby@example.com" autocomplete="email" />
       <div class="form-hint">Optional. Used for notifications (e.g. external-user expiry warnings). Must be unique. Leave blank to clear it.</div>
     </div>
+    {% if target_user.role in ["standard", "manager"] %}
+    <div class="form-row">
+      <label class="label">Regions</label>
+      {# Marker so the POST reconciles memberships only when this selector was shown. #}
+      <input type="hidden" name="region_form" value="1" />
+      {% if regions %}
+      <div class="form-hint" style="margin-bottom: var(--s-2);">
+        {% if target_user.role == "manager" %}A manager can view &amp; edit POCs across every region checked here.
+        {% else %}A standard SE is scoped to their region — normally check exactly one. With none checked they see no POCs.{% endif %}
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        {% for r in regions %}
+        <label style="display:flex; align-items:center; gap:8px; font-weight:normal;">
+          <input type="checkbox" name="region_ids" value="{{ r.id }}" {% if r.id in assigned_region_ids %}checked{% endif %} />
+          <span>{{ r.name }}{% if r.description %} <span class="text-muted text-xs">— {{ r.description }}</span>{% endif %}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="form-hint">No regions defined yet. <a href="/ui/lookups/regions">Add regions</a> first, then assign them here.</div>
+      {% endif %}
+    </div>
+    {% elif target_user.role == "admin" %}
+    <div class="form-row">
+      <label class="label">Regions</label>
+      <div class="form-hint">Admins see POCs across all regions — no region assignment needed.</div>
+    </div>
+    {% endif %}
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
     <a href="/ui/settings/admin-users" class="btn btn--secondary">Cancel</a>

@@ -58,16 +58,13 @@ Enforcement funnels through the choke points that already exist:
 
 ## PHASE 1 — Role/region admin management
 
-- [ ] **1.1 — Regions CRUD in admin UI.**
-  Add `regions` to the lookups admin surface (`app/ui/lookup_routes.py` `LOOKUPS` dict + `app/api/v1/lookups.py`). Admin-only. Pure reuse of existing lookup machinery.
+- [x] **1.1 — Regions CRUD in admin UI.** ✅ Added `regions` to both lookup surfaces (`lookup_routes.py` `LOOKUPS` + `api/v1/lookups.py` `regions_router` + `schemas/lookups.py`). Added a `references`-based delete guard to the UI `delete_row` (blocks deleting a region still referenced by projects or `user_regions` — needed because `projects.region_id` has no DB FK and `user_regions` cascades). Verified in browser.
 
-- [ ] **1.2 — Role selector in the users admin UI.**
-  User management lives in `settings_routes.py` + `app/templates/settings/admin_users.html` (no dedicated user_routes file). Replace the admin/external checkboxes with a **role dropdown**.
+- [x] **1.2 — Role selector in the users admin UI.** ✅ Dropdown now offers Standard / Manager / Admin (list page + new-user form). `change_role` and create handlers use the `AppUser.role` setter; guards kept (min one admin, seeded stays admin, no self-change). Verified in browser.
 
-- [ ] **1.3 — Region assignment in the users UI.**
-  Multi-select of regions per user (writes `user_regions`). For a standard SE, constrain/validate to exactly one; for a manager, allow many. Admin-only.
+- [x] **1.3 — Region assignment in the users UI.** ✅ Region checkboxes on the user edit page (shown for standard/manager; admins get a "sees all" note, externals none). New `app/services/regions.py` (`get_user_region_ids` / `set_user_regions`) reconciles `user_regions`. A `region_form` marker means unrelated edits (admins/externals) never touch memberships. Verified in browser.
 
-- [ ] **1.4 — Bulk assign / CSV import (scale helper).**
+- [ ] **1.4 — Bulk assign / CSV import (scale helper).** *(optional — deferred; revisit before global onboarding)*
   Optional but recommended before global rollout: bulk-set region for many users at once. Can defer if initial user count is small.
 
 ---

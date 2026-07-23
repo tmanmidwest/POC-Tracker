@@ -24,9 +24,11 @@ from app.models import (
     OAuthClient,
     Project,
     ProjectGrant,
+    Region,
     UserIdentity,
 )
 from app.models.app_branding import BRANDING_ID
+from app.models.app_user import VALID_ROLES
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import DEFAULT_SCOPES
 from app.models.backup_run import BackupRun
@@ -46,6 +48,7 @@ from app.services.ai import PROVIDERS, get_provider_spec
 from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
+from app.services.regions import get_user_region_ids, set_user_regions
 from app.services.secret_box import encrypt_secret
 from app.services.tokens import (
     generate_api_key,
@@ -275,9 +278,10 @@ def create_admin(
         password_hash=hash_password(password),
         is_active=True,
         is_seeded=False,
-        is_admin=(role == "admin"),
-        is_external=(role == "external"),
     )
+    # Map the selected role to the underlying flags. Unknown/blank falls back to
+    # a standard SE. Region assignment happens after creation (see user regions).
+    new_user.role = role if role in VALID_ROLES else "standard"
     db.add(new_user)
     try:
         db.commit()
@@ -338,6 +342,10 @@ def show_edit_user(
         current_user=user,
         active_subsection="admin_users",
         target_user=target,
+        regions=db.query(Region).filter(Region.is_active.is_(True))
+        .order_by(Region.sort_order, Region.name)
+        .all(),
+        assigned_region_ids=get_user_region_ids(db, target.id),
     )
 
 
@@ -347,6 +355,8 @@ def update_user(
     request: Request,
     display_name: str = Form(""),
     email: str = Form(""),
+    region_ids: list[int] = Form(default=[]),
+    region_form: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -362,6 +372,10 @@ def update_user(
             current_user=user,
             active_subsection="admin_users",
             target_user=target,
+            regions=db.query(Region).filter(Region.is_active.is_(True))
+            .order_by(Region.sort_order, Region.name)
+            .all(),
+            assigned_region_ids=set(region_ids),
             error=message,
         )
 
@@ -378,6 +392,12 @@ def update_user(
 
     target.display_name = display_name.strip() or None
     target.email = email_norm
+    # Reconcile region memberships only when the region selector was actually
+    # part of the submitted form (region_form marker present). This is shown for
+    # region-scoped roles (standard/manager); admins/externals ignore regions, so
+    # their edits omit the marker and never touch memberships.
+    if region_form:
+        set_user_regions(db, target.id, region_ids)
     try:
         db.commit()
     except IntegrityError:
@@ -652,27 +672,33 @@ def change_role(
     target = db.get(AppUser, user_id)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found.")
-    make_admin = role == "admin"
     back = RedirectResponse(url="/ui/settings/admin-users", status_code=303)
+
+    # This page manages internal accounts only; "external" is set elsewhere (the
+    # invite / External users flow), so it isn't an accepted target here.
+    labels = {"standard": "a standard user", "manager": "a manager", "admin": "an admin"}
+    if role not in labels:
+        flash(request, "Invalid role.", "error")
+        return back
 
     if target.id == user.id:
         flash(request, "You can't change your own role.", "error")
         return back
-    if not make_admin and target.is_seeded:
+    if role != "admin" and target.is_seeded:
         flash(request, "The seeded admin must remain an admin.", "error")
         return back
-    if not make_admin and target.is_admin:
+    # Don't demote the last remaining admin (to manager or standard).
+    if role != "admin" and target.is_admin:
         admin_count = db.query(AppUser).filter(AppUser.is_admin.is_(True)).count()
         if admin_count <= 1:
             flash(request, "There must be at least one admin.", "error")
             return back
-    if target.is_admin == make_admin:
+    if target.role == role:
         return back  # no change
 
-    target.is_admin = make_admin
-    if make_admin:
-        # Admins are full internal users — never read-only external viewers.
-        target.is_external = False
+    # The setter maps the role name to the underlying flags (and clears
+    # is_external, so promoting a user here always lands an internal account).
+    target.role = role
     db.commit()
     _settings_event(
         request, user,
@@ -681,14 +707,10 @@ def change_role(
         target_type="app_user",
         target_id=target.id,
         target_label=target.username,
-        message=f"Changed role of '{target.username}' to {'admin' if make_admin else 'standard'}",
-        detail={"is_admin": make_admin},
+        message=f"Changed role of '{target.username}' to {role}",
+        detail={"role": role},
     )
-    flash(
-        request,
-        f"'{target.username}' is now {'an admin' if make_admin else 'a standard user'}.",
-        "success",
-    )
+    flash(request, f"'{target.username}' is now {labels[role]}.", "success")
     return back
 
 

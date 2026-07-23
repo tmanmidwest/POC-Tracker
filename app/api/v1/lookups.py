@@ -29,11 +29,13 @@ from app.models import (
     ProjectStatus,
     ProjectType,
     ProjectUseCase,
+    Region,
     Task,
     TaskPriority,
     TaskStatus,
     UseCaseLibrary,
     UseCaseStatus,
+    UserRegion,
 )
 from app.schemas.lookups import (
     CloseReasonCreate,
@@ -54,6 +56,9 @@ from app.schemas.lookups import (
     ProjectTypeCreate,
     ProjectTypeOut,
     ProjectTypeUpdate,
+    RegionCreate,
+    RegionOut,
+    RegionUpdate,
     TaskPriorityCreate,
     TaskPriorityOut,
     TaskPriorityUpdate,
@@ -265,6 +270,25 @@ project_types_router = _make_lookup_router(
     event_noun="project_type",
     order_by=ProjectType.name,
     references=lambda rid: [("projects", Project, Project.type_id, rid)],
+)
+
+regions_router = _make_lookup_router(
+    prefix="/regions",
+    model=Region,
+    out_schema=RegionOut,
+    create_schema=RegionCreate,
+    update_schema=RegionUpdate,
+    noun="Region",
+    event_noun="region",
+    order_by=Region.sort_order,
+    # Block deletion while any project OR user membership still points here.
+    # projects.region_id carries no DB-level FK, and user_regions.region_id
+    # cascades — so without this explicit check a delete would silently orphan
+    # projects and strip SE/manager memberships.
+    references=lambda rid: [
+        ("projects", Project, Project.region_id, rid),
+        ("user memberships", UserRegion, UserRegion.region_id, rid),
+    ],
 )
 
 feature_types_router = _make_lookup_router(

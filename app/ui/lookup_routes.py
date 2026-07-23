@@ -15,6 +15,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.v1._helpers import count_references
 from app.db import get_db
 from app.models import (
     AppUser,
@@ -23,11 +24,14 @@ from app.models import (
     FeatureType,
     FeedbackStatus,
     MilestoneDefault,
+    Project,
     ProjectStatus,
     ProjectType,
+    Region,
     TaskPriority,
     TaskStatus,
     UseCaseStatus,
+    UserRegion,
 )
 from app.services.audit import record_event
 from app.ui.dependencies import require_ui_user
@@ -118,6 +122,26 @@ LOOKUPS: dict[str, dict[str, Any]] = {
         "fields": [
             {"name": "name", "label": "Name", "type": "text", "required": True},
             {"name": "description", "label": "Description", "type": "text", "required": False},
+        ],
+    },
+    "regions": {
+        "model": Region,
+        "title": "Regions",
+        "subtitle": "Geographic regions for access scoping. SEs see only their region's POCs; managers span several.",
+        "subsection": "regions",
+        "event_noun": "region",
+        "order_by": Region.sort_order,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
+            {"name": "description", "label": "Description", "type": "text", "required": False},
+        ],
+        # Block deletion while any project or user membership still references the
+        # region: projects.region_id has no DB-level FK (would silently orphan)
+        # and user_regions cascades (would silently strip memberships).
+        "references": lambda rid: [
+            ("projects", Project, Project.region_id, rid),
+            ("user memberships", UserRegion, UserRegion.region_id, rid),
         ],
     },
     "feature-types": {
@@ -371,6 +395,25 @@ def delete_row(
     if getattr(row, "is_system", False):
         flash(request, f"'{row.name}' is a system default and can't be deleted.", "error")
         return RedirectResponse(url=f"/ui/lookups/{slug}", status_code=303)
+    # Explicit reference guard for lookups whose FKs don't raise IntegrityError
+    # (no DB-level FK, or a cascading one). Blocks the delete before it can
+    # silently orphan rows or strip cascaded links. See the "regions" cfg.
+    refs = cfg.get("references")
+    if refs is not None:
+        blockers = [
+            f"{count} {desc}"
+            for desc, model, fk_col, rid in refs(row_id)
+            if (count := count_references(db, model, fk_col, rid)) > 0
+        ]
+        if blockers:
+            flash(
+                request,
+                f"Can't delete '{row.name}': still referenced by "
+                + ", ".join(blockers)
+                + ". Reassign those first, or set it inactive instead.",
+                "error",
+            )
+            return RedirectResponse(url=f"/ui/lookups/{slug}", status_code=303)
     name = row.name
     try:
         db.delete(row)

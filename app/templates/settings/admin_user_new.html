@@ -40,11 +40,12 @@
     <div class="form-row">
       <label class="label" for="role">Role<span class="label__required">*</span></label>
       <select class="select" id="role" name="role">
-        <option value="standard" {% if form.role not in ['admin', 'external'] %}selected{% endif %}>Standard — add/edit projects &amp; use cases</option>
+        <option value="standard" {% if form.role not in ['admin', 'external', 'manager'] %}selected{% endif %}>Standard — SE, add/edit projects in their region</option>
+        <option value="manager" {% if form.role == 'manager' %}selected{% endif %}>Manager — view/edit projects across assigned regions</option>
         <option value="admin" {% if form.role == 'admin' %}selected{% endif %}>Admin — full access (lookups, library, settings)</option>
         <option value="external" {% if form.role == 'external' %}selected{% endif %}>External viewer — read-only, only shared projects</option>
       </select>
-      <div class="form-hint">External viewers see only projects explicitly shared with them and cannot edit anything.</div>
+      <div class="form-hint">Standard SEs and managers are scoped by region (assign regions after creating). External viewers see only projects explicitly shared with them and cannot edit anything.</div>
     </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
