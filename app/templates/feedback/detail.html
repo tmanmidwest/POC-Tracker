@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set page_title = "Feedback" %}
+{% block breadcrumb %}<a href="/ui/feedback">Feedback</a> <span class="topbar__breadcrumb-sep">/</span> <a href="/ui/feedback/manage">Manage</a> <span class="topbar__breadcrumb-sep">/</span> <span>#{{ item.id }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ item.title }}</h1>
+    <p class="page-header__subtitle">
+      {% if item.kind == 'bug' %}<span class="badge badge--warning">{{ kind_labels.get(item.kind, item.kind) }}</span>{% else %}<span class="badge badge--neutral">{{ kind_labels.get(item.kind, item.kind) }}</span>{% endif %}
+      · Submitted by {{ item.submitter_label }} on {{ item.created_at.strftime('%Y-%m-%d %H:%M') }}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/feedback/manage" class="btn btn--secondary">Back to board</a>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr; gap: var(--s-5); max-width: 720px;">
+
+  <div class="card">
+    <div class="card__header"><h2 class="card__title">Submission</h2></div>
+    <div class="card__body">
+      {% if item.body %}
+        <div style="white-space: pre-wrap;">{{ item.body }}</div>
+      {% else %}
+        <p class="text-muted">No additional details were provided.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="post" action="/ui/feedback/manage/{{ item.id }}" class="card">
+    <div class="card__header"><h2 class="card__title">Triage</h2></div>
+    <div class="card__body">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--s-4);">
+        <div class="form-row">
+          <label class="label" for="status_id">Status<span class="label__required">*</span></label>
+          <select class="select" id="status_id" name="status_id" required>
+            {% for s in statuses %}
+            <option value="{{ s.id }}" {% if item.status_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label class="label" for="priority">Priority</label>
+          <select class="select" id="priority" name="priority">
+            <option value="">— None —</option>
+            {% for p in priorities %}
+            <option value="{{ p }}" {% if item.priority == p %}selected{% endif %} style="text-transform:capitalize;">{{ p | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="label" for="admin_notes">Internal notes <span class="text-muted text-xs">— not shown to the submitter</span></label>
+        <textarea class="input" id="admin_notes" name="admin_notes" rows="4" placeholder="Triage notes, links to issues, decisions…">{{ item.admin_notes or '' }}</textarea>
+      </div>
+    </div>
+    <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+      <button type="submit" class="btn btn--primary">Save changes</button>
+    </div>
+  </form>
+
+  <div style="display:flex;">
+    <form method="post" action="/ui/feedback/manage/{{ item.id }}/delete" style="margin:0;"
+          onsubmit="return confirm('Delete this feedback? This cannot be undone.');">
+      <button type="submit" class="btn btn--ghost btn--sm" style="color:var(--danger);">Delete feedback</button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

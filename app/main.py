@@ -232,6 +232,7 @@ def create_app() -> FastAPI:
     from app.ui.auth_routes import router as ui_auth_router
     from app.ui.customer_routes import router as ui_customer_router
     from app.ui.dashboard_routes import router as ui_dashboard_router
+    from app.ui.feedback_routes import router as ui_feedback_router
     from app.ui.dependencies import (
         Forbidden,
         RedirectToLogin,
@@ -265,6 +266,8 @@ def create_app() -> FastAPI:
     app.include_router(ui_password_reset_router)  # public: reset while logged out
     app.include_router(ui_portal_public_router)  # public: no login — customer status pages
     app.include_router(ui_profile_router)  # self-service account page (any user)
+    # Feedback: any signed-in user may submit; the /manage board self-gates to admins.
+    app.include_router(ui_feedback_router)
     app.include_router(ui_dashboard_router)
     app.include_router(ui_project_router)
     app.include_router(ui_report_router)

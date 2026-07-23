@@ -18,6 +18,8 @@ from app.models.contact_role import ContactRole
 from app.models.customer import Customer
 from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
+from app.models.feedback import Feedback
+from app.models.feedback_status import FeedbackStatus
 from app.models.google_tasks_config import GoogleTasksConfig
 from app.models.library_set import LibrarySet
 from app.models.mcp_gateway_token import McpGatewayToken
@@ -66,6 +68,8 @@ __all__ = [
     "Customer",
     "DashboardPref",
     "FeatureType",
+    "Feedback",
+    "FeedbackStatus",
     "GoogleTasksConfig",
     "LibrarySet",
     "McpGatewayToken",

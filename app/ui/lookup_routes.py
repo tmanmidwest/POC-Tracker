@@ -21,6 +21,7 @@ from app.models import (
     CloseReason,
     ContactRole,
     FeatureType,
+    FeedbackStatus,
     MilestoneDefault,
     ProjectStatus,
     ProjectType,
@@ -155,6 +156,19 @@ LOOKUPS: dict[str, dict[str, Any]] = {
             {"name": "name", "label": "Name", "type": "text", "required": True},
             {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
             {"name": "is_terminal", "label": "Terminal (e.g. Done)", "type": "checkbox"},
+        ],
+    },
+    "feedback-statuses": {
+        "model": FeedbackStatus,
+        "title": "Feedback Statuses",
+        "subtitle": "Statuses a feedback item can be in. The feedback board groups by these.",
+        "subsection": "feedback_statuses",
+        "event_noun": "feedback_status",
+        "order_by": FeedbackStatus.sort_order,
+        "fields": [
+            {"name": "name", "label": "Name", "type": "text", "required": True},
+            {"name": "sort_order", "label": "Sort order", "type": "number", "required": False},
+            {"name": "is_terminal", "label": "Terminal (e.g. Done / Won't Do)", "type": "checkbox"},
         ],
     },
     "task-priorities": {

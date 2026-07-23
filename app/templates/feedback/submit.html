@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% set page_title = "Feedback" %}
+{% block breadcrumb %}<span>Feedback</span>{% endblock %}
+
+{% macro kind_badge(kind, labels) %}
+  {% if kind == 'bug' %}
+    <span class="badge badge--warning">{{ labels.get(kind, kind) }}</span>
+  {% else %}
+    <span class="badge badge--neutral">{{ labels.get(kind, kind) }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Feedback</h1>
+    <p class="page-header__subtitle">Report a bug or request a feature. We read every submission.</p>
+  </div>
+  {% if current_user and current_user.is_admin %}
+  <div class="page-header__actions">
+    <a href="/ui/feedback/manage" class="btn btn--secondary">Manage feedback</a>
+  </div>
+  {% endif %}
+</div>
+
+<form method="post" action="/ui/feedback" class="card" style="max-width: 720px;">
+  <div class="card__body">
+    <div class="form-row">
+      <label class="label" for="kind">Type<span class="label__required">*</span></label>
+      <select class="select" id="kind" name="kind" required>
+        <option value="bug" {% if form.kind == 'bug' %}selected{% endif %}>Bug — something isn't working</option>
+        <option value="feature_request" {% if form.kind == 'feature_request' %}selected{% endif %}>Feature request — an idea or improvement</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="title">Title<span class="label__required">*</span></label>
+      <input class="input" id="title" name="title" maxlength="300" required
+             placeholder="e.g. Export to CSV on the reports page" />
+    </div>
+
+    <div class="form-row">
+      <label class="label" for="body">Details</label>
+      <textarea class="input" id="body" name="body" rows="5"
+                placeholder="What happened, what you expected, or how the feature would help. Steps to reproduce are gold for bugs."></textarea>
+      <div class="form-hint">Optional, but more detail helps us act on it faster.</div>
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--primary">Submit feedback</button>
+  </div>
+</form>
+
+<div class="page-header" style="margin-top: var(--s-7);">
+  <div class="page-header__text">
+    <h2 class="page-header__title" style="font-size: var(--fs-lg, 1.1rem);">Your submissions</h2>
+  </div>
+</div>
+
+{% if not mine %}
+  <div class="empty-state">
+    <p class="empty-state__body">You haven't submitted any feedback yet.</p>
+  </div>
+{% else %}
+<div class="card card--flush">
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Submitted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in mine %}
+      <tr>
+        <td><strong>{{ item.title }}</strong>
+          {% if item.body %}<div class="text-muted text-xs" style="max-width: 46ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ item.body }}</div>{% endif %}
+        </td>
+        <td>{{ kind_badge(item.kind, kind_labels) }}</td>
+        <td>
+          {% if item.status.is_terminal %}
+            <span class="badge badge--success">{{ item.status.name }}</span>
+          {% else %}
+            <span class="badge badge--neutral">{{ item.status.name }}</span>
+          {% endif %}
+        </td>
+        <td class="mono text-muted">{{ item.created_at.strftime('%Y-%m-%d') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
