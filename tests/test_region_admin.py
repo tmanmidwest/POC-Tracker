@@ -13,12 +13,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db import get_session_factory
-from app.models import AppUser, Region, UserRegion
+from app.models import AppUser, Customer, Project, ProjectStatus, Region, UserRegion
 from app.services.passwords import hash_password
 from app.services.regions import (
+    backfill_project_regions,
     bulk_set_regions,
     get_user_region_ids,
     parse_region_csv,
+    resolve_se_region_id,
     set_user_regions,
 )
 
@@ -65,6 +67,26 @@ def _mk_region(name: str, sort_order: int = 100) -> int:
         db.add(r)
         db.commit()
         return r.id
+    finally:
+        db.close()
+
+
+def _mk_project(name: str, sales_engineer_id: int | None = None) -> int:
+    db = get_session_factory()()
+    try:
+        cust = Customer(name=f"Cust {name}")
+        db.add(cust)
+        db.flush()
+        status = db.query(ProjectStatus).first()
+        p = Project(
+            customer_id=cust.id,
+            name=name,
+            status_id=status.id,
+            sales_engineer_id=sales_engineer_id,
+        )
+        db.add(p)
+        db.commit()
+        return p.id
     finally:
         db.close()
 
@@ -244,5 +266,81 @@ def test_bulk_regions_grid_and_csv(admin_ui: TestClient):
     try:
         assert get_user_region_ids(db, se) == {e}
         assert get_user_region_ids(db, mgr) == {a, e}
+    finally:
+        db.close()
+
+
+# --- Phase 4: enforcement flag + backfill ----------------------------------
+
+
+def test_enforcement_flag_defaults_off_and_toggles(admin_ui: TestClient):
+    from app.services import system_config
+
+    assert system_config.region_enforcement_enabled() is False
+    # Enable via the System settings form.
+    admin_ui.post(
+        "/ui/settings/system",
+        data={"audit_retention_days": "30", "external_user_ttl_days": "60",
+              "tasks_enabled": "1", "region_enforcement_enabled": "1"},
+        follow_redirects=False,
+    )
+    assert system_config.region_enforcement_enabled() is True
+    # Unchecked box -> disabled again.
+    admin_ui.post(
+        "/ui/settings/system",
+        data={"audit_retention_days": "30", "external_user_ttl_days": "60",
+              "tasks_enabled": "1"},
+        follow_redirects=False,
+    )
+    assert system_config.region_enforcement_enabled() is False
+
+
+def test_resolve_se_region_only_when_unambiguous(client: TestClient):
+    with client:
+        a, e = _mk_region("AMER", 10), _mk_region("EMEA", 20)
+        se = _mk_user("se1", "standard")
+        mgr = _mk_user("mgr1", "manager")
+        db = get_session_factory()()
+        try:
+            set_user_regions(db, se, [a])
+            set_user_regions(db, mgr, [a, e])
+            db.commit()
+            assert resolve_se_region_id(db, se) == a       # one region
+            assert resolve_se_region_id(db, mgr) is None    # ambiguous
+            assert resolve_se_region_id(db, None) is None   # no SE
+        finally:
+            db.close()
+
+
+def test_backfill_derives_and_parks_orphans(admin_ui: TestClient):
+    a = _mk_region("AMER", 10)
+    e = _mk_region("EMEA", 20)
+    se = _mk_user("se1", "standard")
+    mgr = _mk_user("mgr1", "manager")
+    db = get_session_factory()()
+    try:
+        set_user_regions(db, se, [a])
+        set_user_regions(db, mgr, [a, e])  # ambiguous
+        db.commit()
+        unassigned = db.query(Region).filter_by(is_system=True).one().id
+    finally:
+        db.close()
+
+    p_se = _mk_project("P-SE", sales_engineer_id=se)
+    p_mgr = _mk_project("P-MGR", sales_engineer_id=mgr)
+    p_none = _mk_project("P-NONE", sales_engineer_id=None)
+
+    admin_ui.post("/ui/settings/system/backfill-regions", follow_redirects=False)
+
+    db = get_session_factory()()
+    try:
+        assert db.get(Project, p_se).region_id == a           # derived from SE
+        assert db.get(Project, p_mgr).region_id == unassigned  # ambiguous -> parked
+        assert db.get(Project, p_none).region_id == unassigned  # no SE -> parked
+        # idempotent
+        summary = backfill_project_regions(db)
+        db.commit()
+        assert summary["derived"] == 0  # nothing changes on a second run
+        assert db.get(Project, p_se).region_id == a
     finally:
         db.close()

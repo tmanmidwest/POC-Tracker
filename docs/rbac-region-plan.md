@@ -104,14 +104,11 @@ Enforcement funnels through the choke points that already exist:
 
 ## PHASE 4 — Backfill existing data
 
-- [ ] **4.1 — Derive project regions.**
-  Data migration: set each existing `Project.region_id` from its assigned SE's region. Orphans (no SE, or SE with no region) → the "Unassigned" region bucket.
+- [x] **4.1 — Derive project regions.** ✅ `backfill_project_regions(db)` in `app/services/regions.py` sets each `Project.region_id` from its SE's region (only when the SE has exactly one region); orphans (no SE, or ambiguous multi-region SE) → the system "Unassigned" bucket. Admin-triggered via **Settings → System → "Run backfill now"** (`POST /ui/settings/system/backfill-regions`), reports counts, idempotent, re-runnable after SE reassignment. *(Chose an admin action over a migration: SE regions are assigned at runtime, so a deploy-time migration would just park everything in Unassigned.)*
 
-- [ ] **4.2 — Assign regions to current users.**
-  One-time script/UI pass to give every existing internal user a region before hard boundaries flip on. **Critical:** any user without a region sees nothing (except admins).
+- [~] **4.2 — Assign regions to current users.** Runtime admin task, no code — done via **Users → Bulk assign regions** (grid or CSV, built in 1.4). Flagged in the System page + enforcement-toggle hint so an admin does it before flipping the switch.
 
-- [ ] **4.3 — Safety net.**
-  Consider a feature flag / config toggle to enable hard boundaries only after backfill is verified in prod, so enforcement doesn't blank out the app mid-rollout.
+- [x] **4.3 — Safety net (enforcement flag).** ✅ `AppConfig.region_enforcement_enabled` (default **False**, migration `0040`) — the master switch access.py/scope.py will read. Toggle on **Settings → System**; `system_config.region_enforcement_enabled()` accessor + `set_region_enforcement_enabled()`. Kept off until regions/backfill verified, so enabling can't blank out the app.
 
 ---
 

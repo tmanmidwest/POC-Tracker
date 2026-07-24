@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AppUser, Region, UserRegion
+from app.models import AppUser, Project, Region, UserRegion
 
 # Separators allowed *inside* a CSV region cell to list multiple regions, so the
 # comma stays free as the CSV column delimiter (e.g. "jane@x.com,AMER;EMEA").
@@ -59,6 +59,65 @@ def set_user_regions(db: Session, user_id: int, region_ids: Iterable[int]) -> No
             UserRegion.user_id == user_id,
             UserRegion.region_id.in_(to_remove),
         ).delete(synchronize_session=False)
+
+
+def unassigned_region_id(db: Session) -> int | None:
+    """Return the id of the seeded system 'Unassigned' region, if present."""
+    return db.scalar(
+        select(Region.id).where(Region.is_system.is_(True)).order_by(Region.id).limit(1)
+    )
+
+
+def resolve_se_region_id(db: Session, sales_engineer_id: int | None) -> int | None:
+    """The region a project inherits from its SE — only when unambiguous.
+
+    Returns the SE's region id when that SE belongs to exactly one region;
+    otherwise None (no SE, or a manager/SE spanning several — too ambiguous to
+    pick automatically). Callers fall back to the Unassigned bucket.
+    """
+    if not sales_engineer_id:
+        return None
+    ids = get_user_region_ids(db, sales_engineer_id)
+    return next(iter(ids)) if len(ids) == 1 else None
+
+
+def backfill_project_regions(
+    db: Session, *, fallback_to_unassigned: bool = True
+) -> dict[str, int]:
+    """Derive each project's region from its SE; orphans → Unassigned.
+
+    For every project, set ``region_id`` to the SE's region when that resolves
+    (see ``resolve_se_region_id``). Projects that don't resolve keep an existing
+    region if they have one; otherwise, when ``fallback_to_unassigned`` is set,
+    they're parked in the system 'Unassigned' region so enforcement never makes
+    them invisible to everyone. Re-runnable — run again after assigning SE
+    regions to pull projects into their real regions. Does not commit.
+
+    Returns counts: ``total``, ``derived`` (set from SE), ``unassigned``
+    (parked in the fallback), ``unchanged``.
+    """
+    fallback_id = unassigned_region_id(db) if fallback_to_unassigned else None
+    projects = db.query(Project).all()
+    derived = unassigned = unchanged = 0
+    for project in projects:
+        resolved = resolve_se_region_id(db, project.sales_engineer_id)
+        if resolved is not None:
+            if project.region_id != resolved:
+                project.region_id = resolved
+                derived += 1
+            else:
+                unchanged += 1
+        elif project.region_id is None and fallback_id is not None:
+            project.region_id = fallback_id
+            unassigned += 1
+        else:
+            unchanged += 1
+    return {
+        "total": len(projects),
+        "derived": derived,
+        "unassigned": unassigned,
+        "unchanged": unchanged,
+    }
 
 
 def parse_region_csv(text: str) -> list[tuple[str, list[str]]]:

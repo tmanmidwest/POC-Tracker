@@ -49,6 +49,7 @@ from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
 from app.services.regions import (
+    backfill_project_regions,
     bulk_set_regions,
     get_user_region_ids,
     parse_region_csv,
@@ -1858,6 +1859,7 @@ def show_system(
             "audit_retention_days": config.audit_retention_days,
             "tasks_enabled": config.tasks_enabled,
             "external_user_ttl_days": config.external_user_ttl_days,
+            "region_enforcement_enabled": config.region_enforcement_enabled,
         },
     )
 
@@ -1868,6 +1870,7 @@ def update_system(
     audit_retention_days: int = Form(...),
     external_user_ttl_days: int = Form(60),
     tasks_enabled: str | None = Form(None),
+    region_enforcement_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -1881,6 +1884,7 @@ def update_system(
                 "audit_retention_days": audit_retention_days,
                 "tasks_enabled": bool(tasks_enabled),
                 "external_user_ttl_days": external_user_ttl_days,
+                "region_enforcement_enabled": bool(region_enforcement_enabled),
             },
             error=message,
         )
@@ -1923,6 +1927,19 @@ def update_system(
             detail={"tasks_enabled": tasks_now},
         )
 
+    region_was = config.region_enforcement_enabled
+    region_now = bool(region_enforcement_enabled)
+    if region_now != region_was:
+        system_config.set_region_enforcement_enabled(db, region_now)
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="system.settings.updated",
+            target_type="app_config",
+            message=f"{'Enabled' if region_now else 'Disabled'} region-based access enforcement",
+            detail={"region_enforcement_enabled": region_now},
+        )
+
     # Apply the new window immediately so lowering it takes effect now rather
     # than waiting for the next daily sweep.
     pruned = prune_old_events(audit_retention_days)
@@ -1946,6 +1963,42 @@ def update_system(
     if pruned:
         msg += f" Removed {pruned} event(s) older than the new window."
     flash(request, msg, "success")
+    return RedirectResponse(url="/ui/settings/system", status_code=303)
+
+
+@router.post("/system/backfill-regions")
+def backfill_regions(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    """Derive every project's region from its SE; orphans → Unassigned.
+
+    Safe to run repeatedly. Intended flow: define regions → assign SE regions
+    (Users / Bulk Regions) → run this → verify → enable enforcement.
+    """
+    summary = backfill_project_regions(db)
+    db.commit()
+    _settings_event(
+        request, user,
+        category="system",
+        event_type="system.regions.backfilled",
+        target_type="project",
+        target_label=f"{summary['total']} projects",
+        message=(
+            f"Backfilled project regions: {summary['derived']} from SE, "
+            f"{summary['unassigned']} to Unassigned"
+        ),
+        detail=summary,
+    )
+    flash(
+        request,
+        f"Backfill complete: {summary['total']} projects — "
+        f"{summary['derived']} set from their SE's region, "
+        f"{summary['unassigned']} parked in Unassigned, "
+        f"{summary['unchanged']} unchanged.",
+        "success",
+    )
     return RedirectResponse(url="/ui/settings/system", status_code=303)
 
 

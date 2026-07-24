@@ -51,10 +51,40 @@
         Turning it off hides the Tasks nav item and pages; existing tasks are kept.
       </div>
     </div>
+
+    <div class="form-row">
+      <label class="label">Region-based access control</label>
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+        <input type="checkbox" name="region_enforcement_enabled" value="1" {% if form.region_enforcement_enabled %}checked{% endif %} />
+        Enforce region boundaries
+      </label>
+      <div class="form-hint">
+        When <strong>off</strong> (default), regions are recorded but every internal user still sees all POCs.
+        When <strong>on</strong>, standard SEs are limited to their own region and managers to their assigned regions.
+        <strong>Before enabling:</strong> define <a href="/ui/lookups/regions">regions</a>, assign them to users
+        (<a href="/ui/settings/bulk-regions">Bulk Regions</a>), then run the backfill below — otherwise unassigned
+        POCs land in “Unassigned” and are hidden from everyone but admins.
+      </div>
+    </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
     <a href="/ui/activity" class="btn btn--secondary">Cancel</a>
     <button type="submit" class="btn btn--primary">Save settings</button>
+  </div>
+</form>
+
+<form method="post" action="/ui/settings/system/backfill-regions" class="card" style="max-width: 520px; margin-top: var(--s-6);"
+      onsubmit="return confirm('Backfill every project’s region from its assigned SE? Orphans go to Unassigned. Safe to run again.');">
+  <div class="card__body">
+    <h2 style="margin-top:0;">Backfill project regions</h2>
+    <p class="text-muted">
+      Sets each POC’s region from its assigned SE’s region (SEs with exactly one region).
+      Projects with no SE — or an SE not yet scoped to a single region — go to <strong>Unassigned</strong>.
+      Run this after assigning SE regions, and re-run whenever you reassign SEs. Safe to run repeatedly.
+    </p>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--secondary">Run backfill now</button>
   </div>
 </form>
 {% endblock %}

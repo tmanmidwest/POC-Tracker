@@ -65,6 +65,7 @@ def _load() -> dict[str, Any]:
     retention = _default_retention_days()
     tasks_enabled = True
     external_ttl = _default_external_ttl_days()
+    region_enforcement = False
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
@@ -72,6 +73,7 @@ def _load() -> dict[str, Any]:
             retention = row.audit_retention_days
             tasks_enabled = row.tasks_enabled
             external_ttl = row.external_user_ttl_days
+            region_enforcement = row.region_enforcement_enabled
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
@@ -81,6 +83,7 @@ def _load() -> dict[str, Any]:
         "audit_retention_days": retention,
         "tasks_enabled": tasks_enabled,
         "external_user_ttl_days": external_ttl,
+        "region_enforcement_enabled": region_enforcement,
     }
 
 
@@ -108,6 +111,19 @@ def current_external_user_ttl_days() -> int:
     return int(_cache["external_user_ttl_days"])
 
 
+def region_enforcement_enabled() -> bool:
+    """Return whether region-based access control is enforced (cached).
+
+    When False (default), region data is stored but internal users still see all
+    projects — the safe pre-rollout state. Access/scope code calls this to decide
+    whether to apply hard region boundaries.
+    """
+    global _cache
+    if _cache is None:
+        _cache = _load()
+    return bool(_cache["region_enforcement_enabled"])
+
+
 def set_retention_days(db: Session, days: int) -> None:
     """Persist a new audit retention window and refresh the cache."""
     row = get_config(db)
@@ -128,5 +144,13 @@ def set_tasks_enabled(db: Session, enabled: bool) -> None:
     """Persist the Task Manager module toggle and refresh the cache."""
     row = get_config(db)
     row.tasks_enabled = enabled
+    db.commit()
+    invalidate()
+
+
+def set_region_enforcement_enabled(db: Session, enabled: bool) -> None:
+    """Persist the region-enforcement master switch and refresh the cache."""
+    row = get_config(db)
+    row.region_enforcement_enabled = enabled
     db.commit()
     invalidate()

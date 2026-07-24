@@ -42,6 +42,14 @@ class AppConfig(Base, TimestampMixin):
     external_user_ttl_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=60
     )
+    # Master switch for region-based access control. When OFF (default), region
+    # data is stored but NOT enforced — internal users still see every project
+    # (legacy behavior). When ON, standard SEs are hard-scoped to their region(s)
+    # and managers to their assigned regions. Kept off until regions/backfill are
+    # verified so enabling it can't blank out the app. Read in access.py/scope.py.
+    region_enforcement_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     def __repr__(self) -> str:
         return f"<AppConfig audit_retention_days={self.audit_retention_days}>"
