@@ -21,7 +21,9 @@ from app.models.app_user import AppUser
 DEFAULT_SCOPES = "openid email profile"
 
 # Tier assigned to users provisioned (JIT) through this provider. "standard" =
-# full internal user; "external" = read-only viewer scoped to granted projects.
+# internal user (an SE — full edit access, region-scoped when region enforcement
+# is on); "external" = read-only viewer scoped to granted projects. The manager
+# role isn't provisioned via SSO tier — an admin sets it in Settings → Users.
 TIER_STANDARD = "standard"
 TIER_EXTERNAL = "external"
 

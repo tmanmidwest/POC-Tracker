@@ -19,7 +19,7 @@ non-obvious decisions made along the way.
 |---|---|
 | Local authentication initially | Session login against `app_users` (bcrypt) |
 | Add an OAuth provider | OIDC SSO via Authlib; providers managed in **Settings → Identity Providers** |
-| Admin group (everything) + standard group (add/edit POC projects) | `app_users.is_admin`; admin-only surfaces gated by `require_admin_ui` |
+| Admin group (everything) + standard group (add/edit POC projects) + manager group (region-wide oversight) | `app_users` role flags (`is_admin` / `is_manager` / `is_external`, resolved by `AppUser.role`); admin-only surfaces gated by `require_admin_ui`; optional region scoping (see below) |
 | API keys separate from OAuth | **Settings → API Keys**; bearer `poct_…` tokens for the REST API & MCP |
 
 **Decision — Account Executives are not users (phase 1).** AEs are tracked as reference
@@ -74,10 +74,19 @@ library and may renumber to read cleanly, so the number lives on the project cop
 | Report of all POCs | `/ui/reports` (print-friendly) |
 | Report of a single POC with all info | `/ui/reports/projects/{id}` (and the MCP `project_report` tool) |
 
-**Decision — standard users have shared edit on all projects.** Requirement 10 grants
-standard users add/edit on POC projects with no ownership qualifier, and the SE/AE are
-already tracked per project, so there is no per-row ownership authz. Admin-only actions
-are limited to managing lookups, the library, users, identity providers, and settings.
+**Decision — shared edit by default, optional region scoping.** By default, standard users
+have add/edit on all projects with no ownership qualifier (the SE/AE are tracked per project,
+but there is no per-row ownership authz). Admin-only actions are limited to managing lookups,
+the library, users, identity providers, and settings.
+
+**Region-based access control (opt-in).** An admin can enable **region enforcement**
+(`app_config.region_enforcement_enabled`, toggled in Settings → System; off by default). When
+on, "shared edit on all projects" narrows to "shared edit within your region(s)": a standard SE
+is scoped to their own region, a **manager** to the regions assigned to them, and admins still
+see everything. A project's region is derived from its assigned SE; a one-click backfill
+region-tags existing projects. Enforcement lives in the same choke points as external-viewer
+scoping — `services/access` (`accessible_project_ids`, `can_view_project`, `can_edit_project`)
+and `services/scope` — so reads and writes are both covered.
 
 **Decision — screenshots stored on the data volume**, not as DB blobs, matching the
 named-volume model and keeping the DB/backups small.

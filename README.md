@@ -12,9 +12,13 @@ an MCP server so other tools and AI assistants can read and report on the data.
 - **Local authentication** out of the box, plus optional **OIDC single sign-on** (add any
   OAuth/OIDC provider — e.g. Okta, Authentik, or Google — in the UI). Each provider chooses
   whether new users land as full internal users or read-only **external viewers**.
-- **Three roles:** **Admins** can do anything; **standard users** add/edit POC projects and
-  use cases; **external viewers** are read-only and see only the projects explicitly shared
-  with them — ideal for giving a customer a login to their own POC.
+- **Four roles:** **Admins** can do anything; **standard users** (SEs) add/edit POC projects
+  and use cases; **managers** oversee POCs across the regions assigned to them; **external
+  viewers** are read-only and see only the projects explicitly shared with them — ideal for
+  giving a customer a login to their own POC.
+- **Optional region-based access control** — turn on **Settings → System → "Enforce region
+  boundaries"** to scope SEs to their own region and managers to their assigned regions. Off by
+  default (every internal user sees everything, as before), so it's opt-in and reversible.
 - **Per-project sharing** — an admin or a project's Sales Engineer can grant an external
   viewer read access to specific projects.
 - **AI assistant** — configure an AI provider in the UI (Anthropic Claude and Google Gemini;
@@ -224,13 +228,21 @@ needs no separate maintenance. Tune nothing to use it; it's built and populated 
 
 ## Roles & sharing
 
-There are **three roles**:
+There are **four roles**:
 
 | Role | Can do | Where it comes from |
 |---|---|---|
-| **Admin** | Everything, including settings, lookups, the library, and user management. | Created in **Settings → Users**, or seeded. |
-| **Standard user** | Add/edit projects, use cases, notes, customers — but not admin surfaces. | Created in **Settings → Users**, or provisioned by an internal SSO provider. |
-| **External viewer** | **Read-only**, and sees **only the projects shared with them** — use cases, notes, and (non-internal-only) tasks, plus their reports. No customers list, no editing. | Invited by email from a project's **Shared access** panel, created in **Settings → Users**, or auto-provisioned by an SSO provider configured for external users (e.g. Google). |
+| **Admin** | Everything, including settings, lookups, the library, and user management. Sees every project regardless of region. | Created in **Settings → Users**, or seeded. |
+| **Standard user** (SE) | Add/edit projects, use cases, notes, customers — but not admin surfaces. When region enforcement is on, scoped to the projects in their own region (plus any assigned directly to them). | Created in **Settings → Users**, or provisioned by an internal SSO provider. |
+| **Manager** | Same edit abilities as a standard user, but across **every region assigned to them** — view and edit POCs region-wide, and see per-region rollups in reports. | Set the role in **Settings → Users** and assign regions there or via **Bulk assign regions**. |
+| **External viewer** | **Read-only**, and sees **only the projects shared with them** — use cases, notes, and (non-internal-only) tasks, plus their reports. No customers list, no editing. Governed by per-project grants, not regions. | Invited by email from a project's **Shared access** panel, created in **Settings → Users**, or auto-provisioned by an SSO provider configured for external users (e.g. Google). |
+
+**Regions & enforcement.** Regions (e.g. AMER, EMEA, APAC) are an admin-managed lookup
+(**Settings → Lookups → Regions**). Each SE belongs to one region and each manager to several;
+a project inherits its region from its assigned SE. Region boundaries are **only enforced when
+an admin turns on "Enforce region boundaries" in Settings → System** — otherwise every internal
+user sees every project (the historical behavior). Before enabling it, assign users their
+regions and run the one-click **backfill** to region-tag existing projects.
 
 **Sharing a project.** On a project's page, an **admin** or that project's assigned **Sales
 Engineer** sees a **Shared access** panel to grant or revoke read access for external viewers.

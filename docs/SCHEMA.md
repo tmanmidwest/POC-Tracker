@@ -105,8 +105,25 @@ live data cannot be deleted either (deactivate it instead).
 - **project_grants** — grants one external viewer read access to one project:
   `project_id` → projects (`ON DELETE CASCADE`), `user_id` → app_users (`ON DELETE CASCADE`),
   `tier` (default `"viewer"`), `granted_by_user_id`. Unique on `(project_id, user_id)`.
-  Internal users (admins and standard users) see all projects and ignore grants; external
-  viewers see only the projects they're granted. Enforced in the web UI.
+  External viewers see only the projects they're granted. Admins always see every project and
+  ignore grants. Standard users (SEs) and managers ignore grants too, but their project
+  visibility depends on **region enforcement** (below): off = they see all projects; on = they
+  see only projects in their regions. Enforced in the web UI.
+- **regions** — admin-managed lookup of geographic regions (e.g. AMER, EMEA, APAC):
+  `name` (unique), `sort_order`, `description`, `is_active`, `is_system` (the seeded
+  "Unassigned" fallback bucket, undeletable). The axis for region-based access control.
+- **user_regions** — many-to-many membership linking app_users ↔ regions:
+  `user_id` → app_users (`ON DELETE CASCADE`), `region_id` → regions (`ON DELETE CASCADE`),
+  unique on `(user_id, region_id)`. A standard SE has one row (their home region); a manager
+  has several. Admins and external viewers ignore it.
+- **Region enforcement** is gated by `app_config.region_enforcement_enabled` (default **false**;
+  toggle in **Settings → System**). When off, every internal user sees all projects (historical
+  behavior). When on, a standard SE / manager is scoped to `projects.region_id ∈` their
+  `user_regions` (plus any project where they're the assigned SE); a project with no region is
+  visible to admins only. Each project's `region_id` is derived from its assigned SE's region;
+  the **backfill** action (Settings → System) region-tags existing projects. The single choke
+  points are `services/access.accessible_project_ids` / `can_view_project` / `can_edit_project`
+  and `services/scope.scoped_project_ids`.
 - **user_invites** — one external-user invitation: `user_id` → app_users (`ON DELETE CASCADE`),
   `project_id` → projects (`ON DELETE SET NULL`, the project it was about), `email` / `company` /
   `invited_name` (snapshots), `token_hash` (SHA-256 of the emailed single-use token — plaintext
@@ -129,7 +146,9 @@ live data cannot be deleted either (deactivate it instead).
 
 ## Platform tables (shared scaffold)
 
-`app_users` (with `is_admin`, `is_external`, and — for invited external users — a unique
-`email` used as their login id plus `company`), `api_keys`, `oauth_clients`,
-`auth_providers` (with `default_user_tier` — the tier given to users it provisions),
-`user_identities`, `app_branding`, `app_config`, `audit_events`.
+`app_users` (with `is_admin`, `is_external`, `is_manager` — the role flags, resolved by the
+`AppUser.role` property into `admin` / `manager` / `standard` / `external` — and, for invited
+external users, a unique `email` used as their login id plus `company`), `api_keys`,
+`oauth_clients`, `auth_providers` (with `default_user_tier` — the tier given to users it
+provisions), `user_identities`, `app_branding`, `app_config` (includes
+`region_enforcement_enabled`), `audit_events`.

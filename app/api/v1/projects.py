@@ -1,7 +1,11 @@
 """Project CRUD endpoints, plus nested project use cases.
 
-Standard users and admins can both manage projects and their use cases (shared
-edit model). Authentication is via API key or OAuth bearer token.
+Authentication is via API key or OAuth bearer token (a ``Principal``), not a
+region-scoped web-UI user — so these endpoints are governed by the key's access,
+not by region enforcement (which applies to interactive UI users; see
+``services/access``). In the web UI, admins/standard SEs/managers all manage
+projects under the shared-edit model, narrowed to their regions when enforcement
+is on.
 """
 
 from __future__ import annotations

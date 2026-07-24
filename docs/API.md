@@ -33,10 +33,13 @@ curl -X POST http://localhost:8010/oauth/token \
 ### Lookups
 - `GET|POST /contact-roles/`, `GET|PATCH|DELETE /contact-roles/{id}`
 - `GET|POST /project-statuses/`, `…/{id}`
+- `GET|POST /project-types/`, `…/{id}`
 - `GET|POST /feature-types/`, `…/{id}`
 - `GET|POST /use-case-statuses/`, `…/{id}`
 - `GET|POST /task-statuses/`, `…/{id}` — `name`, `sort_order`, `is_terminal`
 - `GET|POST /task-priorities/`, `…/{id}` — `name`, `sort_order`, `color`
+- `GET|POST /regions/`, `…/{id}` — `name`, `sort_order`, `description` — geographic regions for
+  access scoping. A region referenced by any project or user membership cannot be deleted (409).
 
 List accepts `is_active`. `is_system` rows and lookups still in use cannot be deleted (409).
 

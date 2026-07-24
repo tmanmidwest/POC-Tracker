@@ -1,8 +1,10 @@
 """Per-project access grant.
 
-A row gives one app user read access to one project. Internal users (admins and
-standard users) see every project and never need a grant; grants exist to scope
-what an *external viewer* can see. Revoking access simply deletes the row.
+A row gives one app user read access to one project. Grants exist to scope what
+an *external viewer* can see. Internal users (admins, managers, standard SEs)
+never need a grant: admins see every project, and standard/manager visibility is
+governed by regions instead (see ``services/access`` — all projects when region
+enforcement is off, their regions when it's on). Revoking access deletes the row.
 
 Both foreign keys cascade on delete so grants disappear automatically when the
 project or the user is removed.
