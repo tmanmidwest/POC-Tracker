@@ -142,3 +142,32 @@ def test_require_capability_allows_admin(admin_session):
     # ...while an admin (feedback.manage via legacy admin tier) gets through.
     resp = admin_session.get("/ui/feedback/manage")
     assert resp.status_code == 200, resp.text
+
+
+def test_system_settings_toggles_dynamic_rbac(admin_session):
+    # The System settings page exposes the master switch, and saving it flips
+    # system_config.rbac_dynamic_enabled().
+    page = admin_session.get("/ui/settings/system").text
+    assert 'name="rbac_dynamic_enabled"' in page
+
+    assert not system_config.rbac_dynamic_enabled()
+    resp = admin_session.post(
+        "/ui/settings/system",
+        data={
+            "audit_retention_days": "30",
+            "external_user_ttl_days": "60",
+            "tasks_enabled": "1",
+            "rbac_dynamic_enabled": "1",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert system_config.rbac_dynamic_enabled() is True
+
+    # Unchecking (field absent) turns it back off.
+    admin_session.post(
+        "/ui/settings/system",
+        data={"audit_retention_days": "30", "external_user_ttl_days": "60", "tasks_enabled": "1"},
+        follow_redirects=False,
+    )
+    assert system_config.rbac_dynamic_enabled() is False

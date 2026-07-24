@@ -1860,6 +1860,7 @@ def show_system(
             "tasks_enabled": config.tasks_enabled,
             "external_user_ttl_days": config.external_user_ttl_days,
             "region_enforcement_enabled": config.region_enforcement_enabled,
+            "rbac_dynamic_enabled": config.rbac_dynamic_enabled,
         },
     )
 
@@ -1871,6 +1872,7 @@ def update_system(
     external_user_ttl_days: int = Form(60),
     tasks_enabled: str | None = Form(None),
     region_enforcement_enabled: str | None = Form(None),
+    rbac_dynamic_enabled: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -1885,6 +1887,7 @@ def update_system(
                 "tasks_enabled": bool(tasks_enabled),
                 "external_user_ttl_days": external_user_ttl_days,
                 "region_enforcement_enabled": bool(region_enforcement_enabled),
+                "rbac_dynamic_enabled": bool(rbac_dynamic_enabled),
             },
             error=message,
         )
@@ -1938,6 +1941,19 @@ def update_system(
             target_type="app_config",
             message=f"{'Enabled' if region_now else 'Disabled'} region-based access enforcement",
             detail={"region_enforcement_enabled": region_now},
+        )
+
+    rbac_was = config.rbac_dynamic_enabled
+    rbac_now = bool(rbac_dynamic_enabled)
+    if rbac_now != rbac_was:
+        system_config.set_rbac_dynamic_enabled(db, rbac_now)
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="system.settings.updated",
+            target_type="app_config",
+            message=f"{'Enabled' if rbac_now else 'Disabled'} dynamic RBAC (role builder)",
+            detail={"rbac_dynamic_enabled": rbac_now},
         )
 
     # Apply the new window immediately so lowering it takes effect now rather

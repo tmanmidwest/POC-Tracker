@@ -66,6 +66,22 @@
         POCs land in “Unassigned” and are hidden from everyone but admins.
       </div>
     </div>
+
+    <div class="form-row">
+      <label class="label">Dynamic roles (RBAC)</label>
+      <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
+        <input type="checkbox" name="rbac_dynamic_enabled" value="1" {% if form.rbac_dynamic_enabled %}checked{% endif %} />
+        Enforce admin-defined roles
+      </label>
+      <div class="form-hint">
+        When <strong>off</strong> (default), access follows the four built-in roles exactly as before.
+        When <strong>on</strong>, each user's access is the union of the capabilities in their assigned
+        <a href="/ui/settings/roles">roles</a>. The seeded roles reproduce the built-in behavior, so enabling
+        this changes nothing until you customize roles or assignments.
+        <strong>Before enabling:</strong> review <a href="/ui/settings/roles">Roles</a> and confirm each user's
+        role assignments (a user with no roles gets no access once this is on).
+      </div>
+    </div>
   </div>
   <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
     <a href="/ui/activity" class="btn btn--secondary">Cancel</a>

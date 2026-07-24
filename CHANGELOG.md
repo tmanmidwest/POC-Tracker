@@ -5,6 +5,17 @@ All notable changes to Questlog are recorded here. The format follows
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [docs/RELEASING.md](docs/RELEASING.md) for how releases are cut.
 
+## [1.2.1] — 2026-07-24
+
+### Fixed
+
+- **Dynamic RBAC enable toggle.** 1.2.0 shipped the role builder and its
+  `rbac_dynamic_enabled` master switch, but without a UI control to flip it —
+  so the feature couldn't actually be turned on. Added the **"Enforce
+  admin-defined roles"** toggle to Settings → System (off by default, next to the
+  region-enforcement switch), with an audit event on change. No behavior change
+  until you enable it.
+
 ## [1.2.0] — 2026-07-24
 
 A backward-compatible feature release. The headline is a **dynamic RBAC role
@@ -81,6 +92,7 @@ Initial stable release — the app is marked stable/released at this version.
 Established GitHub-native documentation, automated Docker image publishing to
 GHCR, and general cleanup.
 
+[1.2.1]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.2.1
 [1.2.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.2.0
 [1.1.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.1.0
 [1.0.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.0.0
