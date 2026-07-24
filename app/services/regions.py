@@ -81,6 +81,19 @@ def resolve_se_region_id(db: Session, sales_engineer_id: int | None) -> int | No
     return next(iter(ids)) if len(ids) == 1 else None
 
 
+def sync_project_region(db: Session, project: Project) -> None:
+    """Set a project's region from its assigned SE, when that's unambiguous.
+
+    Called on create/edit so a project's region tracks its sales engineer. If the
+    SE resolves to exactly one region, adopt it; otherwise leave the region
+    untouched (a backfill or an admin can settle ambiguous/SE-less cases). Never
+    commits — the caller owns the transaction.
+    """
+    resolved = resolve_se_region_id(db, project.sales_engineer_id)
+    if resolved is not None:
+        project.region_id = resolved
+
+
 def backfill_project_regions(
     db: Session, *, fallback_to_unassigned: bool = True
 ) -> dict[str, int]:

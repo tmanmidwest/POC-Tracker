@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AppUser, Contact, ContactRole, Customer, Project
 from app.services import customer_logo
+from app.services.access import accessible_project_ids
 from app.services.audit import record_event
 from app.ui.dependencies import require_internal_ui
 from app.ui.flash import flash
@@ -139,12 +140,18 @@ def detail(
         .order_by(ContactRole.name)
         .all()
     )
-    projects = (
+    # Region enforcement: a region-scoped user only sees this customer's projects
+    # that fall in their regions (accessible_project_ids returns None = all when
+    # enforcement is off or the user is an admin).
+    projects_q = (
         db.query(Project)
         .filter(Project.customer_id == customer_id)
         .order_by(Project.id.desc())
-        .all()
     )
+    visible_ids = accessible_project_ids(db, user)
+    if visible_ids is not None:
+        projects_q = projects_q.filter(Project.id.in_(visible_ids))
+    projects = projects_q.all()
     return render(
         request, "customers/detail.html", current_user=user,
         active_section="customers", customer=customer, roles=roles, projects=projects,

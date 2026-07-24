@@ -34,6 +34,15 @@
           <option value="all" {% if view == 'all' %}selected{% endif %}>All</option>
         </select>
       </div>
+      {% if regions %}
+      <div class="form-row" style="margin:0;">
+        <label class="label" for="region_id">Region</label>
+        <select class="select" id="region_id" name="region_id" onchange="this.form.submit()">
+          <option value="">All regions</option>
+          {% for r in regions %}<option value="{{ r.id }}" {% if region_id == r.id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
       {% if current_user and current_user.is_internal %}
       {{ M.scope_filter(scope, scope_engineers) }}
       {% endif %}
@@ -68,7 +77,7 @@
 <div class="table-wrap">
 <table class="table">
   <thead>
-    <tr><th>Customer</th><th>Project</th><th>Status</th><th>Sales Engineer</th><th>Start</th><th>End</th></tr>
+    <tr><th>Customer</th><th>Project</th><th>Status</th>{% if regions %}<th>Region</th>{% endif %}<th>Sales Engineer</th><th>Start</th><th>End</th></tr>
   </thead>
   <tbody>
     {% for p in projects %}
@@ -76,6 +85,7 @@
       <td><strong>{{ p.customer.name }}</strong></td>
       <td>{{ p.name or "—" }}{% if p.is_archived %} <span class="badge badge--neutral">Archived</span>{% endif %}</td>
       <td><span class="badge badge--neutral">{{ p.status.name }}</span></td>
+      {% if regions %}<td class="text-muted">{{ p.region.name if p.region else "—" }}</td>{% endif %}
       <td class="text-muted">{{ p.sales_engineer.display_label if p.sales_engineer else "—" }}</td>
       <td class="mono text-muted">{{ p.start_date.isoformat() if p.start_date else "—" }}</td>
       <td class="mono text-muted">{{ p.end_date.isoformat() if p.end_date else "—" }}</td>

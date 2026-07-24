@@ -44,6 +44,27 @@
 
 <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:var(--s-6);">
 
+  {% if region_stats %}
+  <div class="card card--flush" style="grid-column:1/-1;">
+    <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">By Region</h2></div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Region</th><th>Total</th><th>Open</th><th>Won</th><th>Lost</th><th>Win rate</th></tr></thead>
+      <tbody>
+        {% for r in region_stats %}
+        <tr>
+          <td><strong>{{ r.region }}</strong></td>
+          <td>{{ r.stats.total }}</td>
+          <td>{{ r.stats.open }}</td>
+          <td>{{ r.stats.won }}</td>
+          <td>{{ r.stats.lost }}</td>
+          <td>{{ rate(r.stats.win_rate) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+
   <div class="card card--flush">
     <div class="card__header" style="padding:var(--s-4) var(--s-5);"><h2 style="margin:0; font-size:1rem;">By Sales Engineer</h2></div>
     <div class="table-wrap"><table class="table">

@@ -1,10 +1,16 @@
 """Per-user project view scope ("My Projects", "All Projects", a teammate, …).
 
-This is a *view default*, not access control. Internal users (admins + standard)
-may always view every project; this just controls what the dashboard, project
-list, and search show by default. New users default to "mine" — the projects
-where they are the assigned sales engineer — and can flip to other scopes. The
-choice is sticky, stored alongside the user's dashboard preferences.
+This is a *view default* layered on top of access control, not a replacement for
+it. It controls what the dashboard, project list, and search show by default. New
+users default to "mine" — the projects where they are the assigned sales engineer
+— and can flip to other scopes. The choice is sticky, stored alongside the user's
+dashboard preferences.
+
+Crucially, the chosen scope is always **intersected** with what the user is
+actually allowed to see (``access.accessible_project_ids``). So under region
+enforcement, picking "All Projects" shows every project *in the user's regions*,
+never truly everything — scope can narrow the visible set but never widen it past
+the access boundary.
 
 A scope is one of:
   - ``"mine"``        — projects where the current user is the sales engineer
@@ -105,21 +111,34 @@ def scoped_project_ids(db: Session, user: AppUser, scope: str) -> set[int] | Non
     """Project ids to show for this user at the given scope.
 
     Returns ``None`` to mean "no filter, show all". External viewers ignore
-    scope entirely and fall back to their granted projects.
+    scope entirely and fall back to their granted projects. For everyone else the
+    view-scope candidate set is intersected with ``accessible_project_ids`` so it
+    can never reveal a project the user isn't allowed to see (region enforcement).
     """
     if user.is_external:
         return accessible_project_ids(db, user)
-    if scope == SCOPE_ALL:
-        return None
 
-    q = db.query(Project.id)
-    if scope == SCOPE_UNASSIGNED:
-        q = q.filter(Project.sales_engineer_id.is_(None))
+    # The view-scope candidate set (None = "no scope filter / all projects").
+    if scope == SCOPE_ALL:
+        candidate: set[int] | None = None
     else:
-        m = _USER_SCOPE_RE.match(scope or "")
-        target_id = int(m.group(1)) if m else user.id  # default "mine"
-        q = q.filter(Project.sales_engineer_id == target_id)
-    return {pid for (pid,) in q.all()}
+        q = db.query(Project.id)
+        if scope == SCOPE_UNASSIGNED:
+            q = q.filter(Project.sales_engineer_id.is_(None))
+        else:
+            m = _USER_SCOPE_RE.match(scope or "")
+            target_id = int(m.group(1)) if m else user.id  # default "mine"
+            q = q.filter(Project.sales_engineer_id == target_id)
+        candidate = {pid for (pid,) in q.all()}
+
+    # Intersect with the hard access boundary. None (all) on either side means
+    # "no constraint from that side".
+    allowed = accessible_project_ids(db, user)
+    if allowed is None:
+        return candidate
+    if candidate is None:
+        return allowed
+    return candidate & allowed
 
 
 def selectable_engineers(db: Session, user: AppUser) -> list[AppUser]:

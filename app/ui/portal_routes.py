@@ -64,7 +64,7 @@ def _require_can_share(db: Session, project_id: int, user: AppUser) -> Project:
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    if not can_grant_project(user, project):
+    if not can_grant_project(db, user, project):
         raise HTTPException(status_code=403, detail="Not allowed to share this project.")
     return project
 

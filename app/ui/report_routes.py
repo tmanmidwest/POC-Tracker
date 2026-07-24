@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections import defaultdict
 from datetime import date
 from typing import Any
 
@@ -157,15 +158,34 @@ def win_loss_analytics(
     Aggregates over every project including archived ones, since closed (and
     often archived) deals are exactly what win-rate is about.
     """
-    projects = (
-        db.query(Project)
-        .options(selectinload(Project.use_cases))
-        .all()
-    )
+    # Region enforcement: aggregate only over projects this user may see, so a
+    # region-scoped user's win-rate reflects their regions (None = all: admins /
+    # enforcement off).
+    aq = db.query(Project).options(selectinload(Project.use_cases))
+    visible_ids = accessible_project_ids(db, user)
+    if visible_ids is not None:
+        aq = aq.filter(Project.id.in_(visible_ids))
+    projects = aq.all()
     stats = insights.portfolio_stats(projects)
+
+    # Per-region rollup: same win/loss math sliced by region, so a manager can
+    # compare their regions at a glance. Only shown when more than one region is
+    # actually represented (otherwise it just restates the overall numbers).
+    region_groups: dict[str, list[Project]] = defaultdict(list)
+    for p in projects:
+        region_groups[p.region.name if p.region else "Unassigned"].append(p)
+    region_stats = []
+    if len(region_groups) > 1:
+        # Real regions first (alphabetical), the Unassigned bucket last.
+        for name in sorted(region_groups, key=lambda n: (n == "Unassigned", n.lower())):
+            region_stats.append(
+                {"region": name, "stats": insights.portfolio_stats(region_groups[name])}
+            )
+
     return render(
         request, "reports/analytics.html", current_user=user,
-        active_section="reports", stats=stats, generated_for=user.username,
+        active_section="reports", stats=stats, region_stats=region_stats,
+        generated_for=user.username,
     )
 
 

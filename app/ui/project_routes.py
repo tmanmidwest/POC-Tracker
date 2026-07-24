@@ -45,6 +45,7 @@ from app.models import (
     ProjectStatus,
     ProjectType,
     ProjectUseCase,
+    Region,
     Screenshot,
     Task,
     TaskStatus,
@@ -60,10 +61,15 @@ from app.services import screenshots as screenshot_store
 from app.services import system_config
 from app.services.tasks import visible_project_tasks
 from app.services.access import (
+    allowed_region_ids,
+    can_edit_project,
     can_grant_project,
+    can_use_region,
     can_view_project,
+    region_scoped,
     visible_project_notes,
 )
+from app.services.regions import sync_project_region
 from app.services.ai.base import GenerationError
 from app.services.ai.extraction import extract_use_cases
 from app.services.ai.registry import get_provider_spec
@@ -302,7 +308,8 @@ def _filter_use_cases(
     return use_cases
 
 
-def _get_project(db: Session, project_id: int) -> Project:
+def _load_project(db: Session, project_id: int) -> Project:
+    """Load a project by id (existence only, no access check)."""
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -315,17 +322,72 @@ def _get_viewable_project(db: Session, project_id: int, user: AppUser) -> Projec
     External viewers without a grant get a 404 (not 403) so they can't probe
     which project ids exist.
     """
-    project = _get_project(db, project_id)
+    project = _load_project(db, project_id)
     if not can_view_project(db, user, project):
         raise HTTPException(status_code=404, detail="Project not found.")
     return project
 
 
-def _get_use_case(db: Session, use_case_id: int) -> ProjectUseCase:
+def _get_project(db: Session, project_id: int, user: AppUser) -> Project:
+    """Load a project the user is allowed to **edit**, else 404.
+
+    The default loader for every mutating route: under region enforcement a
+    standard SE / manager can only touch projects in their regions (or their own
+    assignments); admins and non-enforced internal users can edit any. 404 (not
+    403) so ids outside a user's scope stay unprobeable.
+    """
+    project = _load_project(db, project_id)
+    if not can_edit_project(db, user, project):
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return project
+
+
+def _apply_region_and_check(db: Session, user: AppUser, project: Project) -> bool:
+    """Derive the project's region from its SE and confirm the actor may use it.
+
+    Keeps ``project.region_id`` tracking the assigned SE, then — for a
+    region-scoped creator/editor — defaults a still-empty region to their sole
+    region and verifies the result falls inside their regions. Returns True when
+    the project may be saved, False to reject (the caller renders the error).
+    Admins and non-enforced users always pass.
+    """
+    sync_project_region(db, project)
+    if region_scoped(user) and project.region_id is None:
+        mine = allowed_region_ids(db, user)
+        if mine and len(mine) == 1:
+            project.region_id = next(iter(mine))
+    return can_use_region(db, user, project.region_id)
+
+
+def _get_use_case(db: Session, use_case_id: int, user: AppUser) -> ProjectUseCase:
+    """Load a use case whose parent project the user may edit, else 404.
+
+    Several use-case routes are addressed by use-case id alone (no project id in
+    the path), so the region check has to happen here — otherwise a region-scoped
+    user could mutate a use case on an out-of-region project.
+    """
     uc = db.get(ProjectUseCase, use_case_id)
     if uc is None:
         raise HTTPException(status_code=404, detail="Use case not found.")
+    project = db.get(Project, uc.project_id)
+    if project is None or not can_edit_project(db, user, project):
+        raise HTTPException(status_code=404, detail="Use case not found.")
     return uc
+
+
+def _get_note(db: Session, note_id: int, user: AppUser) -> ProjectNote:
+    """Load a note whose parent project the user may edit, else 404.
+
+    Note routes are addressed by note id alone, so — like ``_get_use_case`` — the
+    region check happens here to stop cross-region note edits/deletes.
+    """
+    note = db.get(ProjectNote, note_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Note not found.")
+    project = db.get(Project, note.project_id)
+    if project is None or not can_edit_project(db, user, project):
+        raise HTTPException(status_code=404, detail="Note not found.")
+    return note
 
 
 def _safe_back(url: str | None, fallback: str) -> str:
@@ -385,12 +447,14 @@ def list_projects(
     status_id: str | None = None,
     view: str = "active",
     scope: str | None = None,
+    region_id: str | None = None,
     # Computed-signal filter, e.g. the dashboard's "At risk" / "Stalled" cards.
     filter_: str | None = Query(None, alias="filter"),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
     sid = int(status_id) if status_id and status_id.lstrip("-").isdigit() else None
+    rid = int(region_id) if region_id and region_id.lstrip("-").isdigit() else None
     query = db.query(Project)
     if view == "archived":
         query = query.filter(Project.is_archived.is_(True))
@@ -398,6 +462,8 @@ def list_projects(
         query = query.filter(Project.is_archived.is_(False))
     if sid:
         query = query.filter(Project.status_id == sid)
+    if rid:
+        query = query.filter(Project.region_id == rid)
     # Project scope: mine (default) / all / unassigned / a specific engineer.
     # External viewers ignore scope and only ever see projects shared with them.
     scope = resolve_scope(db, user, scope)
@@ -418,10 +484,22 @@ def list_projects(
         projects = [p for p in projects if predicate(p)]
 
     statuses = db.query(ProjectStatus).order_by(ProjectStatus.sort_order).all()
+    # Region filter options — the regions this user can actually see projects in
+    # (all of them for admins / when enforcement is off; their own set otherwise).
+    allowed = allowed_region_ids(db, user)
+    regions = [
+        r
+        for r in db.query(Region)
+        .filter(Region.is_active.is_(True))
+        .order_by(Region.sort_order, Region.name)
+        .all()
+        if allowed is None or r.id in allowed
+    ]
     return render(
         request, "projects/list.html", current_user=user, active_section="projects",
         projects=projects, statuses=statuses, view=view, status_id=sid,
         scope=scope, scope_engineers=selectable_engineers(db, user),
+        regions=regions, region_id=rid,
         signal_filter=filter_ if signal else None,
         signal_label=signal[1] if signal else None,
     )
@@ -522,6 +600,20 @@ async def create_project(
         notes_html=data["notes_html"],
     )
     _apply_close_details(project, data, db)
+    # Region enforcement: derive the region from the SE and block a region-scoped
+    # creator from landing a POC outside their regions.
+    if not _apply_region_and_check(db, user, project):
+        flash(
+            request,
+            "You can only create POCs in your region — assign a sales engineer "
+            "in one of your regions.",
+            "error",
+        )
+        return render(
+            request, "projects/form.html", current_user=user, active_section="projects",
+            project=None, form=data, form_action="/ui/projects/new",
+            error="Outside your region.", **_form_dropdowns(db),
+        )
     db.add(project)
     # Lay out the standard lifecycle so the new POC starts with a timeline.
     milestone_service.seed_project_milestones(db, project)
@@ -706,6 +798,12 @@ async def wizard_create(
 
     try:
         proj = create_poc_from_wizard(db, user, data)
+        # Region enforcement: keep a region-scoped SE from creating out of region.
+        if not _apply_region_and_check(db, user, proj):
+            raise WizardError(
+                "You can only create POCs in your region — assign a sales "
+                "engineer in one of your regions."
+            )
         db.commit()
     except WizardError as exc:
         db.rollback()
@@ -755,7 +853,7 @@ async def save_as_template(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = await request.form()
     name = _clean(form.get("name"))  # type: ignore[arg-type]
     description = _clean(form.get("description"))  # type: ignore[arg-type]
@@ -790,7 +888,7 @@ def edit_form(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = {
         "customer_id": project.customer_id,
         "name": project.name,
@@ -824,7 +922,7 @@ async def update_project(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     data = await _read_project_form(request)
     if not data["customer_id"]:
         flash(request, "Customer is required.", "error")
@@ -847,6 +945,16 @@ async def update_project(
     project.notes = data["notes"]
     project.notes_html = data["notes_html"]
     _apply_close_details(project, data, db)
+    # Region enforcement: re-derive from the (possibly reassigned) SE and block a
+    # region-scoped user from moving the POC out of their regions.
+    if not _apply_region_and_check(db, user, project):
+        db.rollback()
+        flash(
+            request,
+            "That sales-engineer change would move the POC out of your region.",
+            "error",
+        )
+        return RedirectResponse(url=f"/ui/projects/{project_id}/edit", status_code=303)
     db.commit()
     record_event(
         category="project", event_type="project.updated", actor_type="user",
@@ -866,7 +974,7 @@ def archive_project(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     project.is_archived = True
     project.archived_at = datetime.now(UTC)
     db.commit()
@@ -881,7 +989,7 @@ def restore_project(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     project.is_archived = False
     project.archived_at = None
     db.commit()
@@ -896,7 +1004,7 @@ def delete_project(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     label = project.display_name
     for uc in project.use_cases:
         for shot in uc.screenshots:
@@ -975,7 +1083,7 @@ def detail(
 
     # "Share" panel — only for users who can grant on this project (admin or the
     # project's SE). Loads current grantees + the external users available to add.
-    can_share = can_grant_project(user, project)
+    can_share = can_grant_project(db, user, project)
     grants: list[ProjectGrant] = []
     grantable_users: list[AppUser] = []
     share_link = None
@@ -1053,7 +1161,7 @@ def generate_exec_summary(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     try:
         result = generate_project_summary(db, project)
     except GenerationError as exc:
@@ -1096,7 +1204,7 @@ def stream_exec_summary(
     Returns 400 if no provider is configured so the client can fall back to the
     plain (non-streaming) generate route, which surfaces a friendly flash.
     """
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     provider = default_provider(db)
     spec = get_provider_spec(provider.provider) if provider else None
     if provider is None or spec is None or not spec.implemented or not provider.has_key:
@@ -1120,7 +1228,7 @@ def stream_salesforce_update_route(
     Nothing is persisted — the update is meant to be copied into Salesforce. On a
     non-200 the client shows the returned text in the modal (no page reload).
     """
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     provider = default_provider(db)
     spec = get_provider_spec(provider.provider) if provider else None
     if provider is None or spec is None or not spec.implemented or not provider.has_key:
@@ -1151,7 +1259,7 @@ def save_exec_summary(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     html = sanitize_note_html(body)
     text = html_to_text(html)
     project.exec_summary_html = html or None
@@ -1168,7 +1276,7 @@ def delete_exec_summary(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     project.exec_summary = None
     project.exec_summary_html = None
     project.exec_summary_generated_at = None
@@ -1190,7 +1298,7 @@ def import_form(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     return render(
         request, "projects/import.html", current_user=user, active_section="projects",
         project=project, ai_configured=default_provider(db) is not None,
@@ -1206,7 +1314,7 @@ async def import_extract(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
 
     combined = text or ""
     documents: list[dict] = []
@@ -1272,7 +1380,7 @@ async def import_create(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = await request.form()
     selected = form.getlist("select")  # type: ignore[attr-defined]
     status_id = default_use_case_status_id(db)
@@ -1355,7 +1463,7 @@ def export_use_cases(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     return _xlsx_response(
         build_export_xlsx(project), _dated(f"{project.display_name}-use-cases", "xlsx")
     )
@@ -1367,7 +1475,7 @@ def use_case_template(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    _get_project(db, project_id)
+    _get_project(db, project_id, user)
     return _xlsx_response(build_template_xlsx(db), "use-case-import-template.xlsx")
 
 
@@ -1378,7 +1486,7 @@ def spreadsheet_hub(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     resp = render(
         request, "projects/spreadsheet.html", current_user=user,
         active_section="projects", project=project,
@@ -1397,7 +1505,7 @@ async def spreadsheet_preview(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     if not file or not file.filename:
         flash(request, "Choose a spreadsheet to import.", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}/use-cases/spreadsheet", status_code=303)
@@ -1426,7 +1534,7 @@ async def spreadsheet_apply(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = await request.form()
     selected = form.getlist("select")  # type: ignore[attr-defined]
     default_status = default_use_case_status_id(db)
@@ -1527,7 +1635,7 @@ async def add_milestone(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     clean_name = _clean(name)
     if not clean_name:
         flash(request, "Milestone name is required.", "error")
@@ -1563,7 +1671,7 @@ async def edit_milestone(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     m = _get_milestone(db, project, milestone_id)
     clean_name = _clean(name)
     if not clean_name:
@@ -1586,7 +1694,7 @@ async def toggle_milestone(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     m = _get_milestone(db, project, milestone_id)
     milestone_service.set_complete(m, complete == "1")
     db.commit()
@@ -1601,7 +1709,7 @@ async def delete_milestone(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     m = _get_milestone(db, project, milestone_id)
     db.delete(m)
     db.commit()
@@ -1619,7 +1727,7 @@ async def move_milestone(
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     """Swap a milestone with its neighbour to reorder the timeline."""
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     ordered = list(project.milestones)  # relationship is sort_order-ordered
     idx = next((i for i, m in enumerate(ordered) if m.id == milestone_id), None)
     if idx is None:
@@ -1644,7 +1752,7 @@ async def apply_default_milestones(
     Only acts when the project has no milestones yet, so it can't duplicate an
     existing timeline.
     """
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     added = milestone_service.seed_project_milestones(db, project)
     db.commit()
     if added:
@@ -1668,7 +1776,7 @@ async def set_category_order(
     A blank number removes the override, returning the category to alphabetical
     order. One row per (project, category).
     """
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     cat = _clean(category)
     if not cat:
         flash(request, "Category is required.", "error")
@@ -1750,7 +1858,7 @@ async def add_project_note(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     body_html = sanitize_note_html(body)
     text = html_to_text(body_html)
     if not text:
@@ -1787,9 +1895,7 @@ async def upload_note_attachments(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    note = db.get(ProjectNote, note_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="Note not found.")
+    note = _get_note(db, note_id, user)
     saved = await _store_note_attachments(db, note, files, request)
     db.commit()
     if saved:
@@ -1860,9 +1966,7 @@ def edit_project_note(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    note = db.get(ProjectNote, note_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="Note not found.")
+    note = _get_note(db, note_id, user)
     body_html = sanitize_note_html(body)
     text = html_to_text(body_html)
     if not text:
@@ -1891,9 +1995,7 @@ def delete_project_note(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    note = db.get(ProjectNote, note_id)
-    if note is None:
-        raise HTTPException(status_code=404, detail="Note not found.")
+    note = _get_note(db, note_id, user)
     project = note.project
     db.delete(note)
     db.commit()
@@ -1920,7 +2022,7 @@ async def add_from_library(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = await request.form()
     raw_ids = form.getlist("library_ids")  # type: ignore[attr-defined]
     library_ids = [int(x) for x in raw_ids if str(x).isdigit()]
@@ -1950,7 +2052,7 @@ def add_custom_use_case(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     if not _clean(category) or not _clean(name):
         flash(request, "Category and name are required for a use case.", "error")
         return RedirectResponse(url=f"/ui/projects/{project_id}#use-cases", status_code=303)
@@ -1988,7 +2090,7 @@ def use_case_detail(
 ) -> Response:
     """Focused, full-page view of a single use case — roomier than the modal."""
     project = _get_viewable_project(db, project_id, user)
-    uc = _get_use_case(db, use_case_id)
+    uc = _get_use_case(db, use_case_id, user)
     if uc.project_id != project.id:
         raise HTTPException(status_code=404, detail="Use case not found.")
     uc_statuses = (
@@ -2027,7 +2129,7 @@ def update_use_case(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    uc = _get_use_case(db, use_case_id)
+    uc = _get_use_case(db, use_case_id, user)
     uc.reference_number = _clean(reference_number)
     uc.category = _clean(category) or uc.category
     uc.name = _clean(name) or uc.name
@@ -2060,7 +2162,7 @@ def quick_set_status(
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     """Inline status change from the use-case list."""
-    uc = _get_use_case(db, use_case_id)
+    uc = _get_use_case(db, use_case_id, user)
     uc.status_id = status_id
     db.commit()
     record_event(
@@ -2081,7 +2183,7 @@ async def bulk_use_cases(
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
     """Apply one change to many selected use cases at once."""
-    project = _get_project(db, project_id)
+    project = _get_project(db, project_id, user)
     form = await request.form()
     action = form.get("action")
     ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]  # type: ignore[attr-defined]
@@ -2168,7 +2270,7 @@ def delete_use_case(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    uc = _get_use_case(db, use_case_id)
+    uc = _get_use_case(db, use_case_id, user)
     project_id = uc.project_id
     name = uc.name
     for shot in uc.screenshots:
@@ -2200,7 +2302,7 @@ async def upload_screenshot(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
-    uc = _get_use_case(db, use_case_id)
+    uc = _get_use_case(db, use_case_id, user)
     back = _safe_back(return_to, f"/ui/projects/{uc.project_id}#use-cases")
     content = await file.read()
     if not content:

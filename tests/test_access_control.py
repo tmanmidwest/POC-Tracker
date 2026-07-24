@@ -176,10 +176,10 @@ def test_can_grant_authority(client: TestClient) -> None:
     db = get_session_factory()()
     try:
         project = db.get(Project, pid)
-        assert can_grant_project(db.get(AppUser, se_id), project) is True
-        assert can_grant_project(db.get(AppUser, admin_id), project) is True
-        assert can_grant_project(db.get(AppUser, other_id), project) is False
-        assert can_grant_project(db.get(AppUser, ext_id), project) is False
+        assert can_grant_project(db, db.get(AppUser, se_id), project) is True
+        assert can_grant_project(db, db.get(AppUser, admin_id), project) is True
+        assert can_grant_project(db, db.get(AppUser, other_id), project) is False
+        assert can_grant_project(db, db.get(AppUser, ext_id), project) is False
     finally:
         db.close()
 

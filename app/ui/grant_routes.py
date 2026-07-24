@@ -39,7 +39,7 @@ def _project_or_404(db: Session, project_id: int) -> Project:
 
 def _require_can_grant(db: Session, project_id: int, user: AppUser) -> Project:
     project = _project_or_404(db, project_id)
-    if not can_grant_project(user, project):
+    if not can_grant_project(db, user, project):
         raise HTTPException(status_code=403, detail="Not allowed to share this project.")
     return project
 

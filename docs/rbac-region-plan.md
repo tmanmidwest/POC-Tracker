@@ -70,17 +70,13 @@ Enforcement funnels through the choke points that already exist:
 
 ## PHASE 2 — Read enforcement
 
-- [ ] **2.1 — `allowed_region_ids(user)` helper.**
-  New single source of truth (put in `access.py`): returns `None` for admin, the `user_regions` set for manager/standard, and signals "use grants" for external.
+- [x] **2.1 — helper + flag gate.** ✅ `region_scoped(user)` (internal, non-admin, enforcement on) and `allowed_region_ids(db, user)` in `access.py`. Everything gates on `system_config.region_enforcement_enabled()` — off = legacy (internal users see all).
 
-- [ ] **2.2 — Wire into `access.py`.**
-  `accessible_project_ids` and `can_view_project` return the region-filtered project set for non-admins instead of `None`. External path unchanged.
+- [x] **2.2 — Wire into `access.py`.** ✅ `accessible_project_ids` returns the region-filtered set (projects in the user's regions ∪ their own assignments) for region-scoped users; `None` (all) for admins / enforcement-off; grants for external. `can_view_project` mirrors it (own assignment always visible; region-less projects hidden from non-admins).
 
-- [ ] **2.3 — Wire into `scope.py`.**
-  `scoped_project_ids`: the `"all"` scope for a standard/manager user must intersect with `allowed_region_ids` (no more true global view). `"mine"` still narrows to their own assignments. Managers get a region rollup here.
+- [x] **2.3 — Wire into `scope.py`.** ✅ `scoped_project_ids` now computes the view-scope candidate then **intersects** it with `accessible_project_ids`, so `"all"` can never widen past the region boundary. Proven in the browser: an AMER SE on "All Projects" sees only the AMER POC.
 
-- [ ] **2.4 — Search & dashboard & reports.**
-  Verify `search_routes.py`, `dashboard_routes.py`, `report_routes.py` all flow through `access.py`/`scope.py` (they should) so no surface leaks cross-region rows. Audit each list query.
+- [x] **2.4 — Audit read surfaces.** ✅ Confirmed dashboard, search (honors `visible_project_ids`), reports, tasks, project list/detail all funnel through the helpers. **Found & fixed two leaks:** customer-detail project list (`customer_routes.py`) and win/loss analytics aggregate (`report_routes.py`) both now filter by `accessible_project_ids`.
 
 ---
 
@@ -88,17 +84,15 @@ Enforcement funnels through the choke points that already exist:
 
 > Today standard users are trusted to write globally. Hard boundaries mean **writes need guarding too**, not just reads.
 
-- [ ] **3.1 — Guard project create.**
-  `create_project` (`project_routes.py:494`): the new project's `region_id` must be in the creator's `allowed_region_ids` (or forced to the SE's own region). Reject/redirect otherwise.
+- [x] **3.1 — Guard project create.** ✅ `create_project` + the New POC **wizard** both call `_apply_region_and_check`: region auto-derives from the assigned SE (`regions.sync_project_region`), defaults to a region-scoped creator's sole region, and is rejected if it falls outside their regions (`access.can_use_region`).
 
-- [ ] **3.2 — Guard project update / reassign.**
-  `update_project` (`project_routes.py:821`): block edits to projects outside `allowed_region_ids`; validate any region change and SE reassignment stays within the actor's allowed set (managers can move within their regions; SEs cannot move a POC out of their region).
+- [x] **3.2 — Guard project update / reassign.** ✅ Every mutating route now loads via an **edit-guarded** `_get_project(db, id, user)` (was existence-only `_get_project` → renamed `_load_project`), so out-of-region projects 404. `update_project` re-runs `_apply_region_and_check` after SE reassignment, so a user can't move their own POC out of their regions.
 
-- [ ] **3.3 — Guard grants & sub-resources.**
-  `can_grant_project` (`access.py:80`) and write paths for tasks/notes/use-cases must respect region boundaries, not just `is_admin or sales_engineer_id == user.id`.
+- [x] **3.3 — Guard grants & sub-resources.** ✅ `can_grant_project(db, user, project)` is region-aware (managers/SEs can grant in-region). Sub-resources addressed by their own id — `_get_use_case` and `_get_note` — now enforce parent-project edit access (closed two real holes: top-level `/use-cases/{id}/status` and `/notes/{id}/edit|delete`). Tasks already region-guard project links via `_validate_project`.
 
-- [ ] **3.4 — Enum refactor cleanup.**
-  Replace direct `is_admin` / `is_external` checks with `role`-based checks across the ~10 python files + 11 templates. Mechanical but touch-everything; do it as one focused pass with the shims still in place as a safety net.
+- [~] **3.4 — Enum cleanup.** *Intentionally minimal.* The `role` property/setter (Phase 0.2) already unify `is_admin`/`is_external`/`is_manager`; there are no property "shims" to retire. A mechanical sweep of scattered `is_admin` reads is cosmetic, zero-behavior-change, and risky — deferred. New code uses `user.role`.
+
+**Design boundary:** region RBAC governs interactive **UI users**. The REST API / MCP surfaces authenticate as API-key/OAuth **principals** (not region-scoped `AppUser`s) and keep their existing key-based scoping — enforcement is not applied there by design.
 
 ---
 
@@ -114,10 +108,8 @@ Enforcement funnels through the choke points that already exist:
 
 ## PHASE 5 — Manager experience
 
-- [ ] **5.1 — Manager reporting rollups.**
-  Region-level views/reports aggregating across a manager's regions (win/loss, milestones — reuse existing report machinery, scoped to `allowed_region_ids`).
-- [ ] **5.2 — Region column/filter in project list & search.**
-  Surface region as a visible, filterable dimension now that data carries it.
+- [x] **5.1 — Manager reporting rollups.** ✅ Win/Loss Analytics (`report_routes.py`) now computes a **By Region** breakdown — the same win/loss math sliced by region (total / open / won / lost / win-rate), scoped to the viewer's accessible projects, Unassigned bucket last. Shown only when >1 region is represented. Rendered as a full-width table in `reports/analytics.html`.
+- [x] **5.2 — Region column/filter in project list.** ✅ Project list (`project_routes.list_projects` + `projects/list.html`) gains a **Region column** and a **Region filter** dropdown, both shown only when regions exist. The dropdown offers the regions the viewer can see (all for admins; their own set otherwise). Search already region-scopes results (Phase 2); a visible region badge there is a nice-to-have, not done.
 
 ---
 
