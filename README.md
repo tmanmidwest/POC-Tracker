@@ -19,6 +19,10 @@ an MCP server so other tools and AI assistants can read and report on the data.
 - **Optional region-based access control** — turn on **Settings → System → "Enforce region
   boundaries"** to scope SEs to their own region and managers to their assigned regions. Off by
   default (every internal user sees everything, as before), so it's opt-in and reversible.
+- **Optional dynamic roles (role builder)** — build custom roles from fine-grained
+  capabilities in **Settings → Roles** and assign one or more to each user. Enabled with
+  **Settings → System → "Enforce admin-defined roles"**; off by default, and the seeded roles
+  reproduce the four built-in roles exactly, so turning it on changes nothing until you customize.
 - **Per-project sharing** — an admin or a project's Sales Engineer can grant an external
   viewer read access to specific projects.
 - **AI assistant** — configure an AI provider in the UI (Anthropic Claude and Google Gemini;
@@ -243,6 +247,15 @@ a project inherits its region from its assigned SE. Region boundaries are **only
 an admin turns on "Enforce region boundaries" in Settings → System** — otherwise every internal
 user sees every project (the historical behavior). Before enabling it, assign users their
 regions and run the one-click **backfill** to region-tag existing projects.
+
+**Dynamic roles (optional).** The four roles above are the default. For finer control you can
+build **custom roles** from a catalog of per-action **capabilities** (e.g. edit projects, view
+internal notes, manage settings) under **Settings → Roles**, and assign one or more roles to a
+user — their access is the union of those capabilities. This layer is dormant until an admin
+turns on **"Enforce admin-defined roles"** in **Settings → System**; the seeded Admin / Manager /
+SE / External Viewer roles reproduce the built-in behavior exactly, so enabling it changes nothing
+until you customize. Capabilities answer *what actions* a user may take; region enforcement (above)
+independently answers *which projects*. See [docs/rbac-role-builder-plan.md](docs/rbac-role-builder-plan.md).
 
 **Sharing a project.** On a project's page, an **admin** or that project's assigned **Sales
 Engineer** sees a **Shared access** panel to grant or revoke read access for external viewers.

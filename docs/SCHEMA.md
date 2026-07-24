@@ -124,6 +124,26 @@ live data cannot be deleted either (deactivate it instead).
   the **backfill** action (Settings → System) region-tags existing projects. The single choke
   points are `services/access.accessible_project_ids` / `can_view_project` / `can_edit_project`
   and `services/scope.scoped_project_ids`.
+- **Dynamic RBAC (role builder).** An additive capability layer that can replace the four
+  hardcoded roles, gated by `app_config.rbac_dynamic_enabled` (default **false**; toggle in
+  **Settings → System**). Off = authorization follows the built-in roles exactly (a legacy
+  fallback); on = a user's access is the union of the capabilities across their assigned roles.
+  The single choke point is `AppUser.can("capability")`, orthogonal to region scope (capabilities
+  answer *what actions*; regions answer *which projects*). See
+  [rbac-role-builder-plan.md](rbac-role-builder-plan.md).
+  - **capabilities** — reference mirror of the code-defined capability registry
+    (`services/rbac/capabilities`), reconciled into the table at startup. Primary key is the
+    `resource.action` slug (e.g. `project.edit`); carries `area` / `label` / `description` /
+    `sort_order` for the admin matrix. The source of truth is code, not this table.
+  - **roles** — admin-configurable capability bundles: `key` (unique slug), `name`, `description`,
+    `is_system` (the four seeded defaults, undeletable), `is_superuser` (implicitly holds every
+    capability), `is_external` (the read-only viewer identity bundle), `is_active`, `sort_order`.
+  - **role_capabilities** — role → capability grant: composite PK `(role_id, capability_key)`,
+    both FKs `ON DELETE CASCADE`.
+  - **user_roles** — user → role assignment (a user may hold several): composite PK
+    `(user_id, role_id)`, both FKs `ON DELETE CASCADE`.
+  - Four **seeded system roles** — Admin (superuser), Manager, SE, External Viewer — reproduce the
+    legacy behavior, so flipping the switch is a no-op until roles/assignments are customized.
 - **user_invites** — one external-user invitation: `user_id` → app_users (`ON DELETE CASCADE`),
   `project_id` → projects (`ON DELETE SET NULL`, the project it was about), `email` / `company` /
   `invited_name` (snapshots), `token_hash` (SHA-256 of the emailed single-use token — plaintext
@@ -151,4 +171,5 @@ live data cannot be deleted either (deactivate it instead).
 external users, a unique `email` used as their login id plus `company`), `api_keys`,
 `oauth_clients`, `auth_providers` (with `default_user_tier` — the tier given to users it
 provisions), `user_identities`, `app_branding`, `app_config` (includes
-`region_enforcement_enabled`), `audit_events`.
+`region_enforcement_enabled` and `rbac_dynamic_enabled`), `audit_events`, and the dynamic-RBAC
+tables `capabilities` / `roles` / `role_capabilities` / `user_roles` (see **Access control**).
