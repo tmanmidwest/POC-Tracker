@@ -5,6 +5,38 @@ All notable changes to Questlog are recorded here. The format follows
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [docs/RELEASING.md](docs/RELEASING.md) for how releases are cut.
 
+## [1.2.0] — 2026-07-24
+
+A backward-compatible feature release. The headline is a **dynamic RBAC role
+builder** — admin-defined roles assembled from fine-grained capabilities, meant
+to replace the four hardcoded roles. Like region RBAC, it ships **disabled by
+default**: a master switch keeps the existing role behavior in force until you
+turn it on, so upgrading changes nothing until you choose to flip it.
+
+### Added
+
+- **Dynamic RBAC role builder.**
+  - A **capability catalog** of 44 fine-grained, per-action permissions
+    (e.g. `project.edit`, `note.view_internal`, `settings.manage`), grouped by area.
+  - **Admin-defined roles** built in Settings → Roles: create, edit, and delete
+    roles from a capability matrix (with per-area "select all"), and assign
+    **multiple roles per user** (effective permissions are the union).
+  - Four **seeded system roles** (Admin, Manager, SE, External Viewer) that
+    reproduce today's behavior exactly, so existing users are unchanged on upgrade.
+  - A single enforcement helper, **`user.can("capability")`**, behind a master
+    **`rbac_dynamic_enabled` switch (off by default)**. While off, authorization
+    resolves through the legacy admin/internal/external gates — identical to 1.1.0.
+  - Guard rails: no self-role-change, the seeded admin always keeps a superuser
+    role, the system can never be left with zero superusers, system roles can't be
+    deleted, and a non-superuser can't grant capabilities they don't hold.
+
+### Changed
+
+- Authorization now funnels through the capability layer at its core choke points
+  (project edit/grant, plus the library, lookups, and feedback surfaces). With the
+  new switch off, behavior is unchanged; the remaining call sites are migrated in
+  later waves.
+
 ## [1.1.0] — 2026-07-24
 
 A large, fully backward-compatible feature release. Region-based access control
@@ -49,5 +81,6 @@ Initial stable release — the app is marked stable/released at this version.
 Established GitHub-native documentation, automated Docker image publishing to
 GHCR, and general cleanup.
 
+[1.2.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.2.0
 [1.1.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.1.0
 [1.0.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.0.0

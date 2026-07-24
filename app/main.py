@@ -241,6 +241,7 @@ def create_app() -> FastAPI:
         forbidden_handler,
         redirect_to_login_handler,
         require_admin_ui,
+        require_capability,
         require_internal_ui,
     )
     from app.ui.google_routes import router as ui_google_router
@@ -255,6 +256,7 @@ def create_app() -> FastAPI:
     from app.ui.portal_routes import public_router as ui_portal_public_router
     from app.ui.project_routes import router as ui_project_router
     from app.ui.report_routes import router as ui_report_router
+    from app.ui.role_routes import router as ui_role_router
     from app.ui.search_routes import router as ui_search_router
     from app.ui.settings_routes import router as ui_settings_router
     from app.ui.task_routes import router as ui_task_router
@@ -285,11 +287,22 @@ def create_app() -> FastAPI:
     app.include_router(ui_grant_router)  # routes self-check can_grant_project
     app.include_router(ui_portal_manage_router)  # routes self-check can_grant_project
 
-    # Admin-only surfaces — gated at the router level.
+    # Admin-only surfaces. Library and lookups are single-purpose, so they gate on
+    # their specific capability (identical to require_admin_ui while the dynamic
+    # switch is off). The settings router bundles many admin concerns (users, auth
+    # providers, keys, system, region admin, role builder), so it stays on the
+    # broad admin gate at the router level; individual routes add finer
+    # require_capability checks (e.g. the role builder's role.manage).
     admin_only = [Depends(require_admin_ui)]
-    app.include_router(ui_library_router, dependencies=admin_only)
-    app.include_router(ui_lookup_router, dependencies=admin_only)
+    app.include_router(
+        ui_library_router, dependencies=[Depends(require_capability("library.manage"))]
+    )
+    app.include_router(
+        ui_lookup_router, dependencies=[Depends(require_capability("lookups.manage"))]
+    )
     app.include_router(ui_settings_router, dependencies=admin_only)
+    # Role builder: each route self-gates on the role.manage capability.
+    app.include_router(ui_role_router)
 
     # Handler that turns the UI's "you need to log in" exception into a 303
     # redirect to the login page with ?next=<original-url>.

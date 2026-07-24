@@ -11,6 +11,7 @@ bounced to the dashboard with a flash rather than seeing admin-only surfaces
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from urllib.parse import quote
 
 from fastapi import Depends, Request
@@ -51,18 +52,14 @@ def require_ui_user(request: Request, db: Session = Depends(get_db)) -> AppUser:
     return user
 
 
-def require_admin_ui(
-    request: Request, user: AppUser = Depends(require_ui_user)
-) -> AppUser:
+def require_admin_ui(request: Request, user: AppUser = Depends(require_ui_user)) -> AppUser:
     """Like require_ui_user but also requires the Admin group."""
     if not user.is_admin:
         raise _Forbidden()
     return user
 
 
-def require_internal_ui(
-    request: Request, user: AppUser = Depends(require_ui_user)
-) -> AppUser:
+def require_internal_ui(request: Request, user: AppUser = Depends(require_ui_user)) -> AppUser:
     """Like require_ui_user but rejects external (read-only) viewers.
 
     Gates every mutating UI route so external viewers cannot create, edit, or
@@ -73,9 +70,25 @@ def require_internal_ui(
     return user
 
 
-def redirect_to_login_handler(
-    _request: Request, exc: _RedirectToLogin
-) -> RedirectResponse:
+def require_capability(capability: str) -> Callable[..., AppUser]:
+    """Build a dependency that requires the logged-in user to hold ``capability``.
+
+    The capability-driven replacement for ``require_admin_ui`` (and, where a route
+    gates a specific action rather than just "not a viewer", ``require_internal_ui``).
+    Behavior tracks ``AppUser.can``: with the dynamic-RBAC switch OFF it resolves
+    via the legacy gates, so swapping a route from ``require_admin_ui`` to
+    ``require_capability("settings.manage")`` is a no-op until the switch is flipped.
+    """
+
+    def _dep(request: Request, user: AppUser = Depends(require_ui_user)) -> AppUser:
+        if not user.can(capability):
+            raise _Forbidden()
+        return user
+
+    return _dep
+
+
+def redirect_to_login_handler(_request: Request, exc: _RedirectToLogin) -> RedirectResponse:
     next_param = quote(exc.next_url, safe="/")
     return RedirectResponse(url=f"/ui/login?next={next_param}", status_code=303)
 

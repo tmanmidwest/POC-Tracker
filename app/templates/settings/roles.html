@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set page_title = "Roles" %}
+{% block breadcrumb %}<span>Settings</span> <span class="topbar__breadcrumb-sep">/</span> <span>Roles</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Roles</h1>
+    <p class="page-header__subtitle">Admin-defined roles and the capabilities they grant.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/roles/new" class="btn btn--primary">+ New Role</a>
+  </div>
+</div>
+
+{% if not dynamic_enabled %}
+<div class="form-hint" style="margin-bottom: var(--s-4); padding: var(--s-3); border: 1px solid var(--border); border-radius: var(--radius);">
+  Dynamic RBAC is currently <strong>off</strong>. Roles and assignments are fully
+  configurable now, but only take effect once an admin enables it in
+  <a href="/ui/settings/system">System settings</a>. Until then, access follows the
+  legacy roles.
+</div>
+{% endif %}
+
+<div class="card card--flush">
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>Role</th>
+      <th>Key</th>
+      <th>Capabilities</th>
+      <th>Users</th>
+      <th style="text-align:right;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set r = row.role %}
+    <tr>
+      <td>
+        <strong>{{ r.name }}</strong>
+        {% if r.is_system %}<span class="badge badge--neutral text-xs">System</span>{% endif %}
+        {% if r.is_superuser %}<span class="badge badge--warning text-xs">Superuser</span>{% endif %}
+        {% if r.is_external %}<span class="badge badge--neutral text-xs">External</span>{% endif %}
+        {% if r.description %}<br><span class="text-muted text-xs">{{ r.description }}</span>{% endif %}
+      </td>
+      <td class="mono text-xs">{{ r.key }}</td>
+      <td>{% if r.is_superuser %}<span class="text-muted">All</span>{% else %}{{ row.capability_count }}{% endif %}</td>
+      <td>{{ row.user_count }}</td>
+      <td style="text-align:right; white-space:nowrap;">
+        <a href="/ui/settings/roles/{{ r.id }}/edit" class="btn btn--ghost">Edit</a>
+        {% if not r.is_system %}
+        <form action="/ui/settings/roles/{{ r.id }}/delete" method="post" style="display:inline; margin:0;"
+              onsubmit="return confirm('Delete role “{{ r.name }}”? This cannot be undone.');">
+          <button class="btn btn--ghost" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+{% endblock %}

@@ -18,6 +18,9 @@
     </p>
   </div>
   <div class="page-header__actions">
+    {% if not target_user.is_external %}
+    <a href="/ui/settings/roles/assign/{{ target_user.id }}" class="btn btn--ghost">Manage roles</a>
+    {% endif %}
     <a href="/ui/settings/admin-users" class="btn btn--ghost">← Back</a>
   </div>
 </div>

@@ -50,6 +50,16 @@ class AppConfig(Base, TimestampMixin):
     region_enforcement_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    # Master switch for the dynamic-RBAC role builder. When OFF (default),
+    # ``AppUser.can()`` resolves capabilities via the legacy gates (admin /
+    # internal / open) so behavior is identical to the four hardcoded roles. When
+    # ON, ``can()`` reads the union of capabilities across the user's assigned
+    # roles. Seeded roles reproduce legacy behavior, so flipping this is a no-op
+    # for existing users. Kept off until call sites are cut over. See
+    # app.services.rbac and docs/rbac-role-builder-plan.md.
+    rbac_dynamic_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     def __repr__(self) -> str:
         return f"<AppConfig audit_retention_days={self.audit_retention_days}>"

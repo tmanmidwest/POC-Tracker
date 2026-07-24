@@ -58,11 +58,15 @@ def notes_for_report(
 def region_scoped(user: AppUser) -> bool:
     """Whether hard region boundaries apply to this user right now.
 
-    True only for internal, non-admin users (SEs + managers) while the
-    region-enforcement master switch is on. Admins bypass regions (see all), and
-    external viewers are governed by grants, not regions.
+    True only for internal, non-superuser users (SEs + managers) while the
+    region-enforcement master switch is on. Superusers bypass regions (see all),
+    and external viewers are governed by grants, not regions.
+
+    Keys off ``is_superuser`` rather than ``is_admin`` so a custom superuser role
+    (dynamic RBAC on) bypasses regions exactly as the built-in admin does; while
+    the dynamic switch is off, ``is_superuser`` is equivalent to ``is_admin``.
     """
-    if user.is_external or user.is_admin:
+    if user.is_external or user.is_superuser:
         return False
     return system_config.region_enforcement_enabled()
 
@@ -141,8 +145,13 @@ def can_edit_project(db: Session, user: AppUser, project: Project) -> bool:
     enforcement is off) may edit any project. Region-scoped SEs/managers may edit
     exactly the projects they can see — those in their regions, plus their own
     assignments — so visibility and edit rights stay in lock-step.
+
+    The global ``project.edit`` capability is the first gate (a no-op for internal
+    users while the dynamic-RBAC switch is off); the region check composes on top.
     """
     if user.is_external:
+        return False
+    if not user.can("project.edit"):
         return False
     if not region_scoped(user):
         return True
@@ -169,10 +178,16 @@ def can_grant_project(db: Session, user: AppUser, project: Project) -> bool:
     Admins can share any project; a project's own SE can always share it. Under
     region enforcement, a manager/SE can also share any project they can edit
     within their regions. External viewers never can.
+
+    The global ``grant.manage`` capability is the first gate (a no-op for internal
+    users while the dynamic-RBAC switch is off); the own-SE / region logic below
+    is unchanged.
     """
     if user.is_external:
         return False
-    if user.is_admin or project.sales_engineer_id == user.id:
+    if not user.can("grant.manage"):
+        return False
+    if user.is_superuser or project.sales_engineer_id == user.id:
         return True
     if region_scoped(user):
         return can_edit_project(db, user, project)

@@ -12,6 +12,7 @@ from app.models.app_user import AppUser
 from app.models.audit_event import AuditEvent
 from app.models.auth_provider import AuthProvider
 from app.models.backup_run import BackupRun
+from app.models.capability import Capability
 from app.models.close_reason import CloseReason
 from app.models.contact import Contact
 from app.models.contact_role import ContactRole
@@ -41,6 +42,8 @@ from app.models.project_status import ProjectStatus
 from app.models.project_type import ProjectType
 from app.models.project_use_case import ProjectUseCase
 from app.models.region import Region
+from app.models.role import Role
+from app.models.role_capability import RoleCapability
 from app.models.screenshot import Screenshot
 from app.models.smtp_config import SmtpConfig
 from app.models.task import Task
@@ -54,6 +57,7 @@ from app.models.user_google_credential import UserGoogleCredential
 from app.models.user_identity import UserIdentity
 from app.models.user_invite import UserInvite
 from app.models.user_region import UserRegion
+from app.models.user_role import UserRole
 
 __all__ = [
     "AIProvider",
@@ -64,6 +68,7 @@ __all__ = [
     "AuditEvent",
     "AuthProvider",
     "BackupRun",
+    "Capability",
     "CloseReason",
     "Contact",
     "ContactRole",
@@ -93,6 +98,8 @@ __all__ = [
     "ProjectType",
     "ProjectUseCase",
     "Region",
+    "Role",
+    "RoleCapability",
     "Screenshot",
     "SmtpConfig",
     "Task",
@@ -106,4 +113,5 @@ __all__ = [
     "UserIdentity",
     "UserInvite",
     "UserRegion",
+    "UserRole",
 ]

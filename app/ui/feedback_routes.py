@@ -30,13 +30,17 @@ from app.models.feedback import (
     FEEDBACK_PRIORITIES,
 )
 from app.services.audit import record_event
-from app.ui.dependencies import require_admin_ui, require_ui_user
+from app.ui.dependencies import require_capability, require_ui_user
 from app.ui.flash import flash
 from app.ui.templating import render
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ui/feedback", tags=["ui"], include_in_schema=False)
+
+# The feedback board (/manage) requires the feedback.manage capability. While the
+# dynamic-RBAC switch is off this is identical to the old admins-only gate.
+require_feedback_manage = require_capability("feedback.manage")
 
 
 def _feedback_event(
@@ -148,7 +152,7 @@ def manage_board(
     request: Request,
     kind: str | None = None,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_admin_ui),
+    user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
     """Kanban board of all feedback, grouped by status (columns in sort order)."""
     statuses = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).all()
@@ -190,7 +194,7 @@ def manage_detail(
     fid: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_admin_ui),
+    user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
     item = _get_item(db, fid)
     statuses = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).all()
@@ -214,7 +218,7 @@ async def update_feedback(
     priority: str = Form(""),
     admin_notes: str = Form(""),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_admin_ui),
+    user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
     item = _get_item(db, fid)
     if db.get(FeedbackStatus, status_id) is None:
@@ -236,7 +240,7 @@ def set_feedback_status(
     request: Request,
     status_id: int = Form(...),
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_admin_ui),
+    user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
     """Quick status change — used by the board's drag-and-drop."""
     item = _get_item(db, fid)
@@ -253,7 +257,7 @@ def delete_feedback(
     fid: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: AppUser = Depends(require_admin_ui),
+    user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
     item = _get_item(db, fid)
     title = item.title

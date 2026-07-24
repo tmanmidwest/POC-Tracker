@@ -239,6 +239,21 @@ def seed_database(db: Session, settings: Settings | None = None) -> None:
     seed_admin_user(db, settings)
     seed_sample_data(db)
 
+    # Dynamic RBAC (role builder): keep the capability table in sync with the
+    # code registry, seed the four system roles, and give existing/new users
+    # their legacy-mapped role. All idempotent; enforcement stays behind the
+    # (default-OFF) rbac_dynamic_enabled switch until cutover.
+    from app.services.rbac.registry import (
+        backfill_user_roles,
+        reconcile_capabilities,
+        seed_system_roles,
+    )
+
+    reconcile_capabilities(db)
+    seed_system_roles(db)
+    db.flush()
+    backfill_user_roles(db)
+
     db.commit()
 
     from app.models import ApiKey, OAuthClient

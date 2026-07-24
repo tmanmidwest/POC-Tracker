@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models._mixins import TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.role import Role
 
 # The four mutually-exclusive user roles, resolved by ``AppUser.role``. Stored
 # underneath as independent booleans; ``role`` is the canonical accessor.
@@ -106,6 +110,18 @@ class AppUser(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    # Dynamic-RBAC role assignments (union of capabilities drives ``can()`` in
+    # Phase 3). Read-only view over ``user_roles``; assignment writes go through
+    # explicit UserRole rows in the service layer, so this stays viewonly to
+    # avoid double-managing the association. Independent of ``user_regions``.
+    roles: Mapped[list[Role]] = relationship(
+        "Role",
+        secondary="user_roles",
+        viewonly=True,
+        lazy="selectin",
+        order_by="Role.sort_order",
+    )
+
     @property
     def is_locked(self) -> bool:
         """True if the account is locked out of local password sign-in."""
@@ -120,6 +136,54 @@ class AppUser(Base, TimestampMixin):
     def is_internal(self) -> bool:
         """Internal users (admin, manager, or SE) can edit; not read-only."""
         return not self.is_external
+
+    @property
+    def is_superuser(self) -> bool:
+        """True if the user implicitly holds every capability (god-mode).
+
+        Legacy admins are always superusers. When dynamic RBAC is enabled, any
+        assigned role flagged ``is_superuser`` also confers it. Region
+        enforcement and :meth:`can` both key off this, so a custom superuser role
+        bypasses region scope exactly as an admin does.
+        """
+        if self.is_admin:
+            return True
+        from app.services.system_config import rbac_dynamic_enabled
+
+        if rbac_dynamic_enabled():
+            return any(r.is_superuser for r in self.roles)
+        return False
+
+    def effective_capabilities(self) -> set[str]:
+        """Union of capability keys across this user's assigned roles.
+
+        Only meaningful when dynamic RBAC is enabled; superusers short-circuit
+        before this is consulted (see :meth:`can`).
+        """
+        caps: set[str] = set()
+        for role in self.roles:
+            caps.update(cap.key for cap in role.capabilities)
+        return caps
+
+    def can(self, capability: str) -> bool:
+        """Whether the user holds ``capability`` (the single authorization check).
+
+        With the dynamic-RBAC master switch OFF (default), this resolves via the
+        legacy gates so behavior matches the four hardcoded roles exactly. With it
+        ON, a superuser passes everything and everyone else must have the
+        capability in the union of their roles. This is the *global* "may they do
+        this action at all" check; per-project region scope is enforced
+        separately (see ``app.services.access``).
+        """
+        from app.services.system_config import rbac_dynamic_enabled
+
+        if not rbac_dynamic_enabled():
+            from app.services.rbac.defaults import legacy_can
+
+            return legacy_can(self, capability)
+        if self.is_superuser:
+            return True
+        return capability in self.effective_capabilities()
 
     @property
     def role(self) -> str:

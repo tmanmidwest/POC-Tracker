@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% set page_title = "Assign Roles" %}
+{% block breadcrumb %}
+<a href="/ui/settings/admin-users">Users</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>{{ target_user.username }}</span>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>Roles</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Assign Roles</h1>
+    <p class="page-header__subtitle">
+      <strong>{{ target_user.display_label }}</strong>
+      {% if target_user.id == current_user.id %}<span class="badge badge--neutral text-xs">You</span>{% endif %}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/admin-users" class="btn btn--ghost">← Back</a>
+  </div>
+</div>
+
+{% if is_self %}
+<div class="inline-error">You can't change your own roles.</div>
+{% endif %}
+
+{% if not dynamic_enabled %}
+<div class="form-hint" style="margin-bottom: var(--s-4); padding: var(--s-3); border: 1px solid var(--border); border-radius: var(--radius);">
+  Dynamic RBAC is currently <strong>off</strong>, so these assignments don't change
+  access yet — they take effect once it's enabled in
+  <a href="/ui/settings/system">System settings</a>. A user can hold several roles;
+  their effective permissions are the union.
+</div>
+{% endif %}
+
+<form method="post" action="/ui/settings/roles/assign/{{ target_user.id }}" class="card" style="max-width: 560px;">
+  <div class="card__body">
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      {% for r in roles %}
+      <label style="display:flex; align-items:flex-start; gap:8px; font-weight:normal;">
+        <input type="checkbox" name="role_ids" value="{{ r.id }}"
+               {% if r.id in assigned %}checked{% endif %} {% if is_self %}disabled{% endif %} />
+        <span>
+          <strong>{{ r.name }}</strong>
+          {% if r.is_superuser %}<span class="badge badge--warning text-xs">Superuser</span>{% endif %}
+          {% if r.is_system %}<span class="badge badge--neutral text-xs">System</span>{% endif %}
+          {% if r.description %}<br><span class="text-muted text-xs">{{ r.description }}</span>{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <a href="/ui/settings/admin-users" class="btn btn--secondary">Cancel</a>
+    {% if not is_self %}<button type="submit" class="btn btn--primary">Save roles</button>{% endif %}
+  </div>
+</form>
+{% endblock %}

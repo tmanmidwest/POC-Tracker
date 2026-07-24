@@ -66,6 +66,7 @@ def _load() -> dict[str, Any]:
     tasks_enabled = True
     external_ttl = _default_external_ttl_days()
     region_enforcement = False
+    rbac_dynamic = False
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
@@ -74,6 +75,7 @@ def _load() -> dict[str, Any]:
             tasks_enabled = row.tasks_enabled
             external_ttl = row.external_user_ttl_days
             region_enforcement = row.region_enforcement_enabled
+            rbac_dynamic = row.rbac_dynamic_enabled
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
@@ -84,6 +86,7 @@ def _load() -> dict[str, Any]:
         "tasks_enabled": tasks_enabled,
         "external_user_ttl_days": external_ttl,
         "region_enforcement_enabled": region_enforcement,
+        "rbac_dynamic_enabled": rbac_dynamic,
     }
 
 
@@ -152,5 +155,26 @@ def set_region_enforcement_enabled(db: Session, enabled: bool) -> None:
     """Persist the region-enforcement master switch and refresh the cache."""
     row = get_config(db)
     row.region_enforcement_enabled = enabled
+    db.commit()
+    invalidate()
+
+
+def rbac_dynamic_enabled() -> bool:
+    """Return whether the dynamic-RBAC role builder is enforced (cached).
+
+    When False (default), ``AppUser.can()`` resolves capabilities via the legacy
+    gates so behavior matches the four hardcoded roles. When True, ``can()`` reads
+    the union of the user's assigned roles' capabilities.
+    """
+    global _cache
+    if _cache is None:
+        _cache = _load()
+    return bool(_cache["rbac_dynamic_enabled"])
+
+
+def set_rbac_dynamic_enabled(db: Session, enabled: bool) -> None:
+    """Persist the dynamic-RBAC master switch and refresh the cache."""
+    row = get_config(db)
+    row.rbac_dynamic_enabled = enabled
     db.commit()
     invalidate()
