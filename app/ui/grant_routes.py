@@ -2,7 +2,7 @@
 
 Admins can share any project; a project's assigned sales engineer can share
 their own. Both routes self-check :func:`can_grant_project` rather than relying
-on a router-level dependency, so a standard user who is *not* the SE of a given
+on a router-level dependency, so a non-admin user who is *not* the assigned SE of a given
 project cannot grant on it.
 """
 

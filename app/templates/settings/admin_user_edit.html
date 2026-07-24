@@ -44,7 +44,7 @@
       {% if regions %}
       <div class="form-hint" style="margin-bottom: var(--s-2);">
         {% if target_user.role == "manager" %}A manager can view &amp; edit POCs across every region checked here.
-        {% else %}A standard SE is scoped to their region — normally check exactly one. With none checked they see no POCs.{% endif %}
+        {% else %}An SE is scoped to their region — normally check exactly one. With none checked they see no POCs.{% endif %}
       </div>
       <div style="display:flex; flex-direction:column; gap:6px;">
         {% for r in regions %}

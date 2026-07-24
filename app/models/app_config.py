@@ -44,7 +44,7 @@ class AppConfig(Base, TimestampMixin):
     )
     # Master switch for region-based access control. When OFF (default), region
     # data is stored but NOT enforced — internal users still see every project
-    # (legacy behavior). When ON, standard SEs are hard-scoped to their region(s)
+    # (legacy behavior). When ON, SEs are hard-scoped to their region(s)
     # and managers to their assigned regions. Kept off until regions/backfill are
     # verified so enabling it can't blank out the app. Read in access.py/scope.py.
     region_enforcement_enabled: Mapped[bool] = mapped_column(

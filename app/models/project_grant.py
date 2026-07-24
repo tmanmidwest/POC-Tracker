@@ -1,8 +1,8 @@
 """Per-project access grant.
 
 A row gives one app user read access to one project. Grants exist to scope what
-an *external viewer* can see. Internal users (admins, managers, standard SEs)
-never need a grant: admins see every project, and standard/manager visibility is
+an *external viewer* can see. Internal users (admins, managers, SEs)
+never need a grant: admins see every project, and SE/manager visibility is
 governed by regions instead (see ``services/access`` — all projects when region
 enforcement is off, their regions when it's on). Revoking access deletes the row.
 

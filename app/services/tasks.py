@@ -37,7 +37,7 @@ def base_task_query(db: Session, user: AppUser, owner: str = OWNER_MINE) -> Quer
 def visible_project_tasks(db: Session, project: Project, user: AppUser) -> list[Task]:
     """Non-archived tasks assigned to ``project`` that ``user`` may see.
 
-    - Internal standard user: their own tasks on the project.
+    - Internal non-admin user: their own tasks on the project.
     - Internal admin: every user's tasks on the project.
     - External viewer: every task on the project that is **not** marked
       ``is_internal_only``, regardless of owner (read-only). This is the task
@@ -62,7 +62,7 @@ def tasks_for_report(
     """Non-archived tasks to render in a report of ``project``.
 
     A report covers the whole POC, so — unlike :func:`visible_project_tasks`,
-    which scopes a standard user to *their own* tasks in the Task Manager — this
+    which scopes a non-admin user to *their own* tasks in the Task Manager — this
     returns every owner's tasks on the project. ``include_internal`` follows the
     report's audience: a client-facing report excludes internal-only tasks even
     for an internal author, while an internal report includes them. The flag is

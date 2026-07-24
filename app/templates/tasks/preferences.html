@@ -19,7 +19,7 @@
         <option value="mine" {% if prefs.owner == 'mine' %}selected{% endif %}>My tasks</option>
         <option value="all" {% if prefs.owner == 'all' %}selected{% endif %}>All users' tasks</option>
       </select>
-      <div class="form-hint">Admins can review everyone's tasks. Standard users only ever see their own.</div>
+      <div class="form-hint">Admins can review everyone's tasks. Everyone else only ever sees their own.</div>
     </div>
     {% endif %}
 

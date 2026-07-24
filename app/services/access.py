@@ -7,7 +7,7 @@ so the rules live in one place.
 Visibility, in order:
   - **External viewers** — only projects explicitly granted via ``ProjectGrant``.
   - **Admins** — every project, always.
-  - **Standard SEs / managers** — every project when region enforcement is OFF
+  - **SEs / managers** — every project when region enforcement is OFF
     (the master switch ``system_config.region_enforcement_enabled``); when ON,
     only projects in their assigned regions (see ``user_regions``), plus any
     project directly assigned to them as the sales engineer (so you never lose
@@ -58,7 +58,7 @@ def notes_for_report(
 def region_scoped(user: AppUser) -> bool:
     """Whether hard region boundaries apply to this user right now.
 
-    True only for internal, non-admin users (standard SEs + managers) while the
+    True only for internal, non-admin users (SEs + managers) while the
     region-enforcement master switch is on. Admins bypass regions (see all), and
     external viewers are governed by grants, not regions.
     """

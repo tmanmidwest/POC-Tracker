@@ -260,7 +260,7 @@ def create_app() -> FastAPI:
     from app.ui.task_routes import router as ui_task_router
     from app.ui.template_routes import router as ui_template_router
 
-    # Open to any logged-in user (standard, admin, or external viewer). The
+    # Open to any logged-in user (SE, admin, or external viewer). The
     # routes themselves scope what an external viewer can see.
     app.include_router(ui_auth_router)
     app.include_router(ui_oidc_router)
@@ -275,7 +275,7 @@ def create_app() -> FastAPI:
     app.include_router(ui_report_router)
     app.include_router(ui_search_router)
 
-    # Open to internal users only (standard or admin) — hidden from external viewers.
+    # Open to internal users only (SE or admin) — hidden from external viewers.
     internal_only = [Depends(require_internal_ui)]
     app.include_router(ui_customer_router, dependencies=internal_only)
     app.include_router(ui_task_router, dependencies=internal_only)

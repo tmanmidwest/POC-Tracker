@@ -331,8 +331,8 @@ def _get_viewable_project(db: Session, project_id: int, user: AppUser) -> Projec
 def _get_project(db: Session, project_id: int, user: AppUser) -> Project:
     """Load a project the user is allowed to **edit**, else 404.
 
-    The default loader for every mutating route: under region enforcement a
-    standard SE / manager can only touch projects in their regions (or their own
+    The default loader for every mutating route: under region enforcement an
+    SE / manager can only touch projects in their regions (or their own
     assignments); admins and non-enforced internal users can edit any. 404 (not
     403) so ids outside a user's scope stay unprobeable.
     """

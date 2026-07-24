@@ -1,6 +1,6 @@
 """User ↔ region membership.
 
-A row grants one app user access to one region's POCs. A standard SE carries a
+A row grants one app user access to one region's POCs. An SE carries a
 single membership (their home region); a **manager** carries several (every
 region they oversee). Admins ignore memberships entirely (they see all regions);
 external viewers ignore them too (scoped by ProjectGrant instead). The set of a

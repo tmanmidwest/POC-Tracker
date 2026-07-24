@@ -61,8 +61,8 @@ class Project(Base, TimestampMixin):
         ForeignKey("app_users.id"), nullable=True, index=True
     )
 
-    # Region this POC belongs to — the axis for region-based access control. A
-    # standard SE only sees POCs in their own region; a manager sees POCs across
+    # Region this POC belongs to — the axis for region-based access control. An
+    # SE only sees POCs in their own region; a manager sees POCs across
     # their assigned regions. Nullable during rollout (backfilled from the SE's
     # region in Phase 4; orphans land in the "Unassigned" region). No DB-level FK
     # on the projects table (SQLite can't add one without recreating it, which

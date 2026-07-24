@@ -85,7 +85,7 @@
     <div class="form-row">
       <label class="label" for="default_user_tier">New-user access</label>
       <select class="select" id="default_user_tier" name="default_user_tier">
-        <option value="standard" {% if (form.default_user_tier or 'standard') == 'standard' %}selected{% endif %}>Standard — internal SE (region-scoped when enforcement is on)</option>
+        <option value="standard" {% if (form.default_user_tier or 'standard') == 'standard' %}selected{% endif %}>SE — internal (region-scoped when enforcement is on)</option>
         <option value="external" {% if form.default_user_tier == 'external' %}selected{% endif %}>External viewer — read-only, project-scoped</option>
       </select>
       <div class="form-hint">Tier assigned the first time a user signs in through this provider. Use <strong>External viewer</strong> for customer/partner logins (e.g. Google); they see only projects explicitly shared with them.</div>

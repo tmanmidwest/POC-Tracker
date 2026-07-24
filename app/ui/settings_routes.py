@@ -286,7 +286,7 @@ def create_admin(
         is_seeded=False,
     )
     # Map the selected role to the underlying flags. Unknown/blank falls back to
-    # a standard SE. Region assignment happens after creation (see user regions).
+    # an SE. Region assignment happens after creation (see user regions).
     new_user.role = role if role in VALID_ROLES else "standard"
     db.add(new_user)
     try:
@@ -400,7 +400,7 @@ def update_user(
     target.email = email_norm
     # Reconcile region memberships only when the region selector was actually
     # part of the submitted form (region_form marker present). This is shown for
-    # region-scoped roles (standard/manager); admins/externals ignore regions, so
+    # region-scoped roles (SE/manager); admins/externals ignore regions, so
     # their edits omit the marker and never touch memberships.
     if region_form:
         set_user_regions(db, target.id, region_ids)
@@ -682,7 +682,7 @@ def change_role(
 
     # This page manages internal accounts only; "external" is set elsewhere (the
     # invite / External users flow), so it isn't an accepted target here.
-    labels = {"standard": "a standard user", "manager": "a manager", "admin": "an admin"}
+    labels = {"standard": "an SE", "manager": "a manager", "admin": "an admin"}
     if role not in labels:
         flash(request, "Invalid role.", "error")
         return back
@@ -693,7 +693,7 @@ def change_role(
     if role != "admin" and target.is_seeded:
         flash(request, "The seeded admin must remain an admin.", "error")
         return back
-    # Don't demote the last remaining admin (to manager or standard).
+    # Don't demote the last remaining admin (to manager or SE).
     if role != "admin" and target.is_admin:
         admin_count = db.query(AppUser).filter(AppUser.is_admin.is_(True)).count()
         if admin_count <= 1:
@@ -726,7 +726,7 @@ def change_role(
 
 
 def _region_scoped_users(db: Session) -> list[AppUser]:
-    """Internal, non-admin users (standard SEs + managers) — the region-scoped set.
+    """Internal, non-admin users (SEs + managers) — the region-scoped set.
 
     Admins see every region and external viewers use share grants, so neither is
     listed here.

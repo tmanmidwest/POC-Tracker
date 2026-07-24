@@ -31,14 +31,14 @@ class AppUser(Base, TimestampMixin):
     no local password and authenticate through their identity provider.
 
     `is_admin` puts the user in the Admin group (can do anything). Users without
-    it are standard users: they can add/edit POC projects and use cases, but not
+    it are SEs: they can add/edit POC projects and use cases, but not
     the admin-only surfaces (lookups, users, library, auth providers, settings).
 
     Roles are stored as independent booleans (`is_admin`, `is_external`,
     `is_manager`) for backwards compatibility with existing queries and write
     sites. The `role` property is the single read/write accessor that resolves
     them into one of ``admin | manager | standard | external`` (see ``role``).
-    A **manager** is an internal, non-admin user who — unlike a standard SE —
+    A **manager** is an internal, non-admin user who — unlike an SE —
     can view and edit POCs across every region assigned to them (memberships live
     in ``user_regions`` / the ``UserRegion`` model; resolved by
     ``app.services.access.allowed_region_ids``). ``is_manager`` alone confers no
@@ -56,10 +56,10 @@ class AppUser(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # External viewer: read-only, and only sees projects explicitly shared with
-    # them (see ProjectGrant). Internal users (admin or standard) ignore grants.
+    # them (see ProjectGrant). Internal users (admin or SE) ignore grants.
     is_external: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Manager: an internal, non-admin user who can view+edit POCs across all the
-    # regions assigned to them (a standard SE is hard-scoped to their own region).
+    # regions assigned to them (an SE is hard-scoped to their own region).
     # Only meaningful when not admin and not external. Set via the ``role`` setter.
     is_manager: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
@@ -118,7 +118,7 @@ class AppUser(Base, TimestampMixin):
 
     @property
     def is_internal(self) -> bool:
-        """Internal users (admin, manager, or standard) can edit; not read-only."""
+        """Internal users (admin, manager, or SE) can edit; not read-only."""
         return not self.is_external
 
     @property

@@ -3,7 +3,7 @@
 Authentication is via API key or OAuth bearer token (a ``Principal``), not a
 region-scoped web-UI user — so these endpoints are governed by the key's access,
 not by region enforcement (which applies to interactive UI users; see
-``services/access``). In the web UI, admins/standard SEs/managers all manage
+``services/access``). In the web UI, admins/SEs/managers all manage
 projects under the shared-edit model, narrowed to their regions when enforcement
 is on.
 """

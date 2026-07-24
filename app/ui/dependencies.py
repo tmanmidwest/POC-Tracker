@@ -4,7 +4,7 @@ The JSON `get_current_user` raises 401 — fine for JSON endpoints, awful for
 HTML routes. `require_ui_user` raises a special exception that the app catches
 and turns into a redirect to /ui/login?next=<original-url>.
 
-`require_admin_ui` additionally enforces the Admin group: standard users are
+`require_admin_ui` additionally enforces the Admin group: non-admin users are
 bounced to the dashboard with a flash rather than seeing admin-only surfaces
 (lookups, the use-case library manager, and settings).
 """
