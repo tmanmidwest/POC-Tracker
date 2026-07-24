@@ -48,7 +48,12 @@ from app.services.ai import PROVIDERS, get_provider_spec
 from app.services.audit import prune_old_events, record_event
 from app.services.oidc import callback_url
 from app.services.passwords import hash_password
-from app.services.regions import get_user_region_ids, set_user_regions
+from app.services.regions import (
+    bulk_set_regions,
+    get_user_region_ids,
+    parse_region_csv,
+    set_user_regions,
+)
 from app.services.secret_box import encrypt_secret
 from app.services.tokens import (
     generate_api_key,
@@ -712,6 +717,133 @@ def change_role(
     )
     flash(request, f"'{target.username}' is now {labels[role]}.", "success")
     return back
+
+
+# ---------------------------------------------------------------------------
+# Bulk region assignment (grid + CSV import)
+# ---------------------------------------------------------------------------
+
+
+def _region_scoped_users(db: Session) -> list[AppUser]:
+    """Internal, non-admin users (standard SEs + managers) — the region-scoped set.
+
+    Admins see every region and external viewers use share grants, so neither is
+    listed here.
+    """
+    return (
+        db.query(AppUser)
+        .filter(AppUser.is_external.is_(False), AppUser.is_admin.is_(False))
+        .order_by(AppUser.username)
+        .all()
+    )
+
+
+def _render_bulk_regions(request: Request, user: AppUser, db: Session) -> Response:
+    users = _region_scoped_users(db)
+    regions = (
+        db.query(Region)
+        .filter(Region.is_active.is_(True))
+        .order_by(Region.sort_order, Region.name)
+        .all()
+    )
+    assigned = {u.id: get_user_region_ids(db, u.id) for u in users}
+    return render(
+        request,
+        "settings/bulk_regions.html",
+        current_user=user,
+        active_subsection="admin_users",
+        users=users,
+        regions=regions,
+        assigned=assigned,
+    )
+
+
+@router.get("/bulk-regions")
+def show_bulk_regions(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    return _render_bulk_regions(request, user, db)
+
+
+@router.post("/bulk-regions")
+async def save_bulk_regions(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    form = await request.form()
+    # Hidden field lists every user row rendered, so a user whose boxes are all
+    # unchecked is still reconciled (to no regions) rather than skipped.
+    row_ids = {int(v) for v in form.getlist("user_ids") if str(v).isdigit()}
+    scoped_ids = {u.id for u in _region_scoped_users(db)}
+    updated = 0
+    for uid in row_ids & scoped_ids:
+        region_ids = [
+            int(v) for v in form.getlist(f"regions_{uid}") if str(v).isdigit()
+        ]
+        set_user_regions(db, uid, region_ids)
+        updated += 1
+    db.commit()
+    _settings_event(
+        request, user,
+        category="admin_user",
+        event_type="admin_user.regions_bulk_updated",
+        target_type="app_user",
+        target_id=None,
+        target_label=f"{updated} users",
+        message=f"Bulk-updated regions for {updated} users",
+        detail={"count": updated, "via": "grid"},
+    )
+    flash(request, f"Saved region assignments for {updated} users.", "success")
+    return RedirectResponse(url="/ui/settings/bulk-regions", status_code=303)
+
+
+@router.post("/bulk-regions/import")
+async def import_bulk_regions(
+    request: Request,
+    csv_file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+) -> Response:
+    raw = await csv_file.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        flash(request, "Couldn't read that file — please upload a UTF-8 CSV.", "error")
+        return RedirectResponse(url="/ui/settings/bulk-regions", status_code=303)
+
+    entries = parse_region_csv(text)
+    if not entries:
+        flash(request, "No rows found in that CSV.", "error")
+        return RedirectResponse(url="/ui/settings/bulk-regions", status_code=303)
+
+    summary = bulk_set_regions(db, entries)
+    db.commit()
+    _settings_event(
+        request, user,
+        category="admin_user",
+        event_type="admin_user.regions_bulk_updated",
+        target_type="app_user",
+        target_id=None,
+        target_label=f"{len(summary['updated'])} users",
+        message=f"Imported region assignments for {len(summary['updated'])} users",
+        detail={"count": len(summary["updated"]), "via": "csv"},
+    )
+
+    parts = [f"Updated {len(summary['updated'])} users."]
+    if summary["unmatched"]:
+        parts.append(f"No match for: {', '.join(summary['unmatched'][:10])}.")
+    if summary["skipped"]:
+        parts.append(
+            f"Skipped (admin/external): {', '.join(summary['skipped'][:10])}."
+        )
+    if summary["unknown_regions"]:
+        parts.append(f"Unknown regions: {', '.join(summary['unknown_regions'][:10])}.")
+    level = "success" if not (summary["unmatched"] or summary["unknown_regions"]) else "error"
+    flash(request, " ".join(parts), level)
+    return RedirectResponse(url="/ui/settings/bulk-regions", status_code=303)
 
 
 # ===========================================================================

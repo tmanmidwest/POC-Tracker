@@ -64,8 +64,7 @@ Enforcement funnels through the choke points that already exist:
 
 - [x] **1.3 — Region assignment in the users UI.** ✅ Region checkboxes on the user edit page (shown for standard/manager; admins get a "sees all" note, externals none). New `app/services/regions.py` (`get_user_region_ids` / `set_user_regions`) reconciles `user_regions`. A `region_form` marker means unrelated edits (admins/externals) never touch memberships. Verified in browser.
 
-- [ ] **1.4 — Bulk assign / CSV import (scale helper).** *(optional — deferred; revisit before global onboarding)*
-  Optional but recommended before global rollout: bulk-set region for many users at once. Can defer if initial user count is small.
+- [x] **1.4 — Bulk assign / CSV import (scale helper).** ✅ New **Settings → Users → Bulk assign regions** page (`/ui/settings/bulk-regions`): an interactive grid (users × regions checkboxes, "Save all") plus CSV import (`identifier,regions`; regions in-cell split on `;`/`|`; header optional; replaces each user's set; skips admins/externals; reports unmatched / unknown-region / skipped). Logic in `app/services/regions.py` (`parse_region_csv`, `bulk_set_regions`). Verified in browser + tests.
 
 ---
 

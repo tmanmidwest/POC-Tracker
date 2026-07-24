@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% set page_title = "Bulk Region Assignment" %}
+{% block breadcrumb %}
+<a href="/ui/settings">Settings</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<a href="/ui/settings/admin-users">Users</a>
+<span class="topbar__breadcrumb-sep">/</span>
+<span>Bulk Regions</span>
+{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Bulk Region Assignment</h1>
+    <p class="page-header__subtitle">Assign regions to many SEs and managers at once. Admins see all regions and aren't listed; external viewers use share grants.</p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/settings/admin-users" class="btn btn--ghost">← Back to Users</a>
+  </div>
+</div>
+
+{% if not regions %}
+<div class="inline-error">No regions defined yet. <a href="/ui/lookups/regions">Add regions</a> first.</div>
+{% elif not users %}
+<div class="card"><div class="card__body">No region-scoped users yet. Standard SEs and managers appear here once they exist.</div></div>
+{% else %}
+
+{# ---- Interactive grid ---- #}
+<form method="post" action="/ui/settings/bulk-regions" class="card" style="margin-bottom: var(--s-6);">
+  <div class="card__body" style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          {% for r in regions %}<th style="text-align:center;">{{ r.name }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <input type="hidden" name="user_ids" value="{{ u.id }}" />
+            {% if u.display_name %}<strong>{{ u.display_name }}</strong><br><span class="text-muted text-xs mono">{{ u.username }}</span>
+            {% else %}{{ u.username }}{% endif %}
+          </td>
+          <td>
+            {% if u.role == "manager" %}<span class="badge badge--success">Manager</span>
+            {% else %}<span class="badge badge--neutral">Standard</span>{% endif %}
+          </td>
+          {% for r in regions %}
+          <td style="text-align:center;">
+            <input type="checkbox" name="regions_{{ u.id }}" value="{{ r.id }}"
+                   aria-label="{{ r.name }} for {{ u.username }}"
+                   {% if r.id in assigned[u.id] %}checked{% endif %} />
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--primary">Save all</button>
+  </div>
+</form>
+
+{% endif %}
+
+{# ---- CSV import ---- #}
+<form method="post" action="/ui/settings/bulk-regions/import" enctype="multipart/form-data" class="card">
+  <div class="card__body">
+    <h2 style="margin-top:0;">Import from CSV</h2>
+    <p class="text-muted">
+      Two columns: <code>identifier,regions</code>. The identifier is a username or email;
+      list one or more region names in the second cell separated by <code>;</code> or <code>|</code>
+      (so the comma stays the column separator). A header row is optional. Each user's regions are
+      <strong>replaced</strong> with the named set. Admins and external users are skipped.
+    </p>
+    <pre class="mono text-xs" style="background:var(--surface-2); padding:var(--s-3); border-radius:6px; overflow-x:auto;">identifier,regions
+jane@example.com,AMER
+carlos@example.com,EMEA;APAC
+se_bob,AMER</pre>
+    <div class="form-row" style="margin-top: var(--s-4);">
+      <label class="label" for="csv_file">CSV file</label>
+      <input class="input" type="file" id="csv_file" name="csv_file" accept=".csv,text/csv" required />
+    </div>
+  </div>
+  <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
+    <button type="submit" class="btn btn--secondary">Import CSV</button>
+  </div>
+</form>
+{% endblock %}
