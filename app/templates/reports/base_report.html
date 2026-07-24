@@ -32,6 +32,29 @@
     .btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
     .btn:hover { filter: brightness(0.97); }
 
+    /* Screen-only export panel — hidden when printing or rendering to PDF */
+    .report-exports { padding: 16px 32px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+    .report-exports__label {
+      font-size: 11px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .05em; margin-bottom: 10px;
+    }
+    .export-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .export-card {
+      border: 1px solid var(--line-strong); border-radius: 12px; padding: 14px;
+      display: flex; flex-direction: column; background: #fff;
+    }
+    .export-card--primary { border: 2px solid var(--accent); padding: 13px; }
+    .export-card__head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-weight: 600; }
+    .export-card__head .ico { font-size: 17px; line-height: 1; }
+    .export-card__desc { font-size: 12px; color: var(--muted); line-height: 1.45; margin-bottom: 12px; flex: 1; }
+    .export-card select {
+      width: 100%; margin-bottom: 8px; padding: 6px 8px; border-radius: 7px;
+      border: 1px solid var(--line-strong); font-size: 13px; background: #fff;
+    }
+    .export-card .btn { width: 100%; text-align: center; }
+    .export-card__btnrow { display: flex; gap: 8px; }
+    .export-card__btnrow .btn { flex: 1; }
+
     h1 { font-size: 22px; margin: 0 0 2px; }
     h2 {
       font-size: 15px; margin: 26px 0 10px; padding-bottom: 6px;
@@ -86,7 +109,7 @@
 
     @page { size: A4; margin: 16mm 14mm; }
     @media print {
-      .report-toolbar { display: none !important; }
+      .report-toolbar, .report-exports { display: none !important; }
       .report { max-width: none; margin: 0; padding: 0; }
       a { color: var(--ink); text-decoration: none; }
       .uc, .note, .shot { page-break-inside: avoid; }
@@ -108,26 +131,62 @@
       </select>
     </label>
     {% endif %}
-    <a class="btn btn--primary" href="/ui/reports/projects/{{ project.id }}/pdf?v={{ cache_bust }}&audience={{ audience }}">⬇ Download PDF</a>
-    <a class="btn" href="/ui/reports/projects/{{ project.id }}/report.docx?v={{ cache_bust }}&audience={{ audience }}">⬇ Download Word</a>
-    <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px;" title="Working copy has live status dropdowns you can edit; Read-only is a protected snapshot to share">Excel:
-      <select id="trackerMode" aria-label="Excel tracker mode">
-        <option value="working">Working copy</option>
-        <option value="readonly">Read-only</option>
-      </select>
-    </label>
-    <a class="btn" href="/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}" title="Download a formatted use-case tracker (Summary + color-coded, filterable use cases)" onclick="this.href='/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}&mode='+document.getElementById('trackerMode').value">⬇ Download Excel</a>
-    <label style="display:inline-flex; align-items:center; gap:4px; font-size:13px;" title="Choose the deck's color theme (Dark uses your template's dark layout)">Deck:
-      <select id="deckTheme" aria-label="Deck theme">
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-    </label>
-    <a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Download deck</a>
-    {% if ai_available %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}" title="Generate the deck with AI-written summary and next-steps bullets" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Deck (AI)</a>{% endif %}
-    {% if has_artifacts %}<a class="btn" href="/ui/reports/projects/{{ project.id }}/artifacts.zip?v={{ cache_bust }}&audience={{ audience }}">⬇ Download all (.zip)</a>{% endif %}
-    <button class="btn" onclick="window.print()">Print</button>
-    <a class="btn" href="/ui/projects/{{ project.id }}">Open project</a>
+    <button class="btn" onclick="window.print()">🖨 Print</button>
+    <a class="btn" href="/ui/projects/{{ project.id }}">← Open project</a>
+  </div>
+
+  <div class="report-exports">
+    <div class="report-exports__label">Downloads</div>
+    <div class="export-grid">
+
+      <div class="export-card export-card--primary">
+        <div class="export-card__head"><span class="ico">📄</span> PDF</div>
+        <div class="export-card__desc">Polished, print-ready report. Best for sharing with the customer.</div>
+        <a class="btn btn--primary" href="/ui/reports/projects/{{ project.id }}/pdf?v={{ cache_bust }}&audience={{ audience }}">⬇ Download PDF</a>
+      </div>
+
+      <div class="export-card">
+        <div class="export-card__head"><span class="ico">📝</span> Word</div>
+        <div class="export-card__desc">Editable .docx if you need to tweak the wording before sending.</div>
+        <a class="btn" href="/ui/reports/projects/{{ project.id }}/report.docx?v={{ cache_bust }}&audience={{ audience }}">⬇ Download Word</a>
+      </div>
+
+      <div class="export-card">
+        <div class="export-card__head"><span class="ico">📊</span> Excel tracker</div>
+        <div class="export-card__desc">Color-coded use-case tracker. Working copy has live status dropdowns you can edit; read-only is a protected snapshot to share.</div>
+        <select id="trackerMode" aria-label="Excel tracker mode">
+          <option value="working">Working copy</option>
+          <option value="readonly">Read-only</option>
+        </select>
+        <a class="btn" href="/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}" onclick="this.href='/ui/reports/projects/{{ project.id }}/tracker.xlsx?v={{ cache_bust }}&audience={{ audience }}&mode='+document.getElementById('trackerMode').value">⬇ Download Excel</a>
+      </div>
+
+      <div class="export-card">
+        <div class="export-card__head"><span class="ico">📽</span> Readout deck</div>
+        <div class="export-card__desc">PowerPoint summary for the readout call.{% if ai_available %} AI can draft the summary and next-steps bullets.{% endif %} Dark uses your template's dark layout.</div>
+        <select id="deckTheme" aria-label="Deck theme">
+          <option value="light">Light theme</option>
+          <option value="dark">Dark theme</option>
+        </select>
+        {% if ai_available %}
+        <div class="export-card__btnrow">
+          <a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Deck</a>
+          <a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}" title="Generate the deck with AI-written summary and next-steps bullets" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?ai=1&v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">✨ Deck (AI)</a>
+        </div>
+        {% else %}
+        <a class="btn" href="/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}" onclick="this.href='/ui/reports/projects/{{ project.id }}/readout.pptx?v={{ cache_bust }}&audience={{ audience }}&theme='+document.getElementById('deckTheme').value">⬇ Download deck</a>
+        {% endif %}
+      </div>
+
+      {% if has_artifacts %}
+      <div class="export-card">
+        <div class="export-card__head"><span class="ico">🗂</span> Everything (.zip)</div>
+        <div class="export-card__desc">All attachments and screenshots bundled into one archive.</div>
+        <a class="btn" href="/ui/reports/projects/{{ project.id }}/artifacts.zip?v={{ cache_bust }}&audience={{ audience }}">⬇ Download all</a>
+      </div>
+      {% endif %}
+
+    </div>
   </div>
   <div class="report">
     {% block content %}{% endblock %}
