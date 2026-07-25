@@ -631,35 +631,25 @@ if [ -z "$EXISTING_REPO" ] || [ "$EXISTING_REPO" = "None" ]; then
 fi
 success "ECR repository ready: $CONTAINER_IMAGE"
 
-# Check if image already exists in ECR — skip build if so
-EXISTING_IMAGE=$(aws ecr describe-images \
-  --repository-name "$ECR_REPO" \
-  --image-ids imageTag=latest \
-  --region "$REGION" \
-  --query 'imageDetails[0].imageTags[0]' \
-  --output text 2>/dev/null || echo "")
+# Always rebuild + push from the current GitHub main so a re-deploy actually
+# ships the latest code. (This used to skip the build when a :latest image
+# already existed in ECR, which silently re-deployed stale code — use
+# ./update.sh for routine code updates, but deploy.sh must never ship stale.)
+log "Logging Docker into ECR..."
+aws ecr get-login-password --region "$REGION" | \
+  docker login --username AWS --password-stdin \
+  "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com" 2>/dev/null
+success "Docker logged into ECR"
 
-if [ "$EXISTING_IMAGE" = "latest" ]; then
-  success "Image already exists in ECR — skipping build"
-else
-  log "Logging Docker into ECR..."
-  aws ecr get-login-password --region "$REGION" | \
-    docker login --username AWS --password-stdin \
-    "${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com" 2>/dev/null
-  success "Docker logged into ECR"
+log "Cloning repo from GitHub (branch: main)..."
+BUILD_DIR=$(mktemp -d)
+git clone $GITHUB_REPO "$BUILD_DIR" --depth 1 --quiet
+success "Repo cloned"
 
-  log "Cloning repo from GitHub..."
-  BUILD_DIR=$(mktemp -d)
-  git clone $GITHUB_REPO "$BUILD_DIR" --depth 1 --quiet
-  success "Repo cloned"
-
-  log "Building Docker image (this takes 3-5 minutes)..."
-  docker buildx build --platform linux/amd64 --push -t "${CONTAINER_IMAGE}" "$BUILD_DIR" --quiet
-  rm -rf "$BUILD_DIR"
-  success "Image built"
-
-    success "Image built and pushed to ECR: $CONTAINER_IMAGE"
-fi
+log "Building Docker image (this takes 3-5 minutes)..."
+docker buildx build --platform linux/amd64 --push -t "${CONTAINER_IMAGE}" "$BUILD_DIR" --quiet
+rm -rf "$BUILD_DIR"
+success "Image built and pushed to ECR: $CONTAINER_IMAGE"
 
 # ── TASK DEFINITION ───────────────────────────────────────────────────────────
 header "Task definition"

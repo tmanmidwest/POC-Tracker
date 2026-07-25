@@ -15,7 +15,9 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # ECR Public mirror of the official image — avoids Docker Hub's anonymous
+        # pull rate limit that flakes CI on shared GitHub-runner IPs.
+        image: public.ecr.aws/docker/library/postgres:16
         env:
           POSTGRES_USER: poct
           POSTGRES_PASSWORD: poct

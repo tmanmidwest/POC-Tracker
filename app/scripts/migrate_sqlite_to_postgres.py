@@ -53,11 +53,17 @@ _SEARCH_INDEX = "search_index"
 
 
 def _revision(engine: Engine) -> str | None:
-    try:
-        with engine.connect() as c:
+    """Applied Alembic revision, or None if the DB has no ``alembic_version`` table.
+
+    Connection errors are NOT swallowed — they propagate so the caller reports a
+    real "can't connect" instead of a misleading "revision is None" (which made a
+    Postgres connection timeout look like an empty target database).
+    """
+    with engine.connect() as c:  # connection failures raise here, on purpose
+        try:
             return c.execute(text("SELECT version_num FROM alembic_version")).scalar()
-    except Exception:
-        return None
+        except Exception:
+            return None  # table doesn't exist yet = fresh (un-migrated) DB
 
 
 def _copy_table(src: Engine, dst_conn, table) -> int:
@@ -100,11 +106,22 @@ def migrate(source_sqlite: Path, target_url: str, *, assume_yes: bool) -> int:
         return 2
 
     src = create_engine(src_url)
-    dst = create_engine(target_url)
+    # Fail fast (10s) instead of hanging ~2 min when the target isn't reachable.
+    dst = create_engine(target_url, connect_args={"connect_timeout": 10})
 
-    src_rev, dst_rev = _revision(src), _revision(dst)
+    src_rev = _revision(src)
     if src_rev is None:
         print(f"[ERROR] source has no alembic_version — not a Questlog DB? {source_sqlite}")
+        return 2
+    try:
+        dst_rev = _revision(dst)
+    except Exception as exc:
+        print(
+            f"[ERROR] could not connect to the target Postgres:\n        {exc}\n"
+            "        Check the URL, and that the database is reachable — for a "
+            "private RDS you must be inside the VPC, or temporarily make it "
+            "publicly accessible with your IP allowed on port 5432."
+        )
         return 2
     if dst_rev != src_rev:
         print(
