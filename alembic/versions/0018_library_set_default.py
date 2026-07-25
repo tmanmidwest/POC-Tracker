@@ -37,7 +37,7 @@ def upgrade() -> None:
     )
     # Pin the first library (the seeded one) as the default, regardless of name.
     op.execute(
-        "UPDATE library_sets SET is_default = 1 "
+        "UPDATE library_sets SET is_default = true "
         "WHERE id = (SELECT MIN(id) FROM library_sets)"
     )
 

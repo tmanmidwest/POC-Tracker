@@ -43,7 +43,7 @@ def upgrade() -> None:
     # Seed the default library so existing entries have a home.
     op.execute(
         "INSERT INTO library_sets (name, description, is_active, created_at, updated_at) "
-        "VALUES ('Standard', 'Default use case library.', 1, "
+        "VALUES ('Standard', 'Default use case library.', true, "
         "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
     )
 

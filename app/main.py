@@ -41,22 +41,31 @@ async def _audit_retention_loop() -> None:
     weeks without a restart, so this keeps the retention window enforced.
     """
     from app.services.audit import prune_old_events
+    from app.services.db_locks import LOCK_AUDIT_RETENTION, run_singleton
 
     while True:
         await asyncio.sleep(_AUDIT_PRUNE_INTERVAL_SECONDS)
         # prune_old_events does its own DB work and never raises; run it in a
-        # worker thread so the event loop isn't blocked.
-        await asyncio.to_thread(prune_old_events)
+        # worker thread so the event loop isn't blocked. Guarded so only one
+        # instance prunes when several are running (Postgres).
+        await asyncio.to_thread(
+            run_singleton, LOCK_AUDIT_RETENTION, prune_old_events,
+            label="audit_retention",
+        )
 
 
 async def _external_expiry_loop() -> None:
     """Expire lapsed external users and warn SEs once a day while running."""
+    from app.services.db_locks import LOCK_EXTERNAL_EXPIRY, run_singleton
     from app.services.external_expiry import run_sweep
 
     while True:
         await asyncio.sleep(_EXTERNAL_EXPIRY_INTERVAL_SECONDS)
-        # run_sweep owns its session and never raises; keep it off the event loop.
-        await asyncio.to_thread(run_sweep)
+        # run_sweep owns its session and never raises; keep it off the event
+        # loop. Guarded so multiple instances don't double-send expiry warnings.
+        await asyncio.to_thread(
+            run_singleton, LOCK_EXTERNAL_EXPIRY, run_sweep, label="external_expiry",
+        )
 
 
 async def _google_sync_loop() -> None:
@@ -65,12 +74,16 @@ async def _google_sync_loop() -> None:
     Push happens inline on save; this loop is the pull half (plus retrying failed
     pushes). Sleeps first so we don't hit Google during startup.
     """
+    from app.services.db_locks import LOCK_GOOGLE_SYNC, run_singleton
     from app.services.google_tasks_sync import run_pull_sweep
 
     while True:
         await asyncio.sleep(_GOOGLE_SYNC_INTERVAL_SECONDS)
         # run_pull_sweep owns its session and never raises; keep it off the loop.
-        await asyncio.to_thread(run_pull_sweep)
+        # Guarded so only one instance pulls from Google when several run.
+        await asyncio.to_thread(
+            run_singleton, LOCK_GOOGLE_SYNC, run_pull_sweep, label="google_sync",
+        )
 
 
 @asynccontextmanager
@@ -90,10 +103,20 @@ async def lifespan(_app: FastAPI) -> Any:
     # Run migrations FIRST (before any DB access), then seed
     from app.db import get_session_factory
     from app.services.audit import prune_old_events
+    from app.services.db_locks import (
+        LOCK_AUDIT_RETENTION,
+        LOCK_EXTERNAL_EXPIRY,
+        LOCK_MIGRATIONS,
+        advisory_lock,
+        run_singleton,
+    )
     from app.services.migrations import run_migrations
     from app.services.seed_data import seed_database
 
-    run_migrations()
+    # Serialize migrations across instances: with >1 container booting, a blocking
+    # advisory lock makes them run once; the rest wait, then find the DB at head.
+    with advisory_lock(LOCK_MIGRATIONS):
+        run_migrations()
 
     SessionLocal = get_session_factory()
     with SessionLocal() as db:
@@ -105,16 +128,17 @@ async def lifespan(_app: FastAPI) -> Any:
 
         mcp_gateway_tokens.sync_active_tokens(db, settings)
 
-    # Enforce the audit retention window once at startup, then daily.
+    # Enforce the audit retention window once at startup, then daily. Guarded so
+    # multiple instances don't all prune / re-run the sweep at boot.
     from app.services import system_config
 
-    prune_old_events()
+    run_singleton(LOCK_AUDIT_RETENTION, prune_old_events, label="audit_retention")
     retention_task = asyncio.create_task(_audit_retention_loop())
 
     # Expire lapsed external users (and warn SEs) once at startup, then daily.
     from app.services.external_expiry import run_sweep
 
-    run_sweep()
+    run_singleton(LOCK_EXTERNAL_EXPIRY, run_sweep, label="external_expiry")
     expiry_task = asyncio.create_task(_external_expiry_loop())
 
     # Pull Google Tasks changes back for connected users on an interval (push is

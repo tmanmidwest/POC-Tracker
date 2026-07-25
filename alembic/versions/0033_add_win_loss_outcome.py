@@ -98,13 +98,20 @@ def upgrade() -> None:
 
     # 5. Best-effort closed_date for projects already in a terminal status, so
     #    historical cycle-time has data. Uses the last-updated date as a proxy.
+    #    The date-of-timestamp expression is dialect-specific: SQLite has
+    #    date(x); Postgres uses a CAST. Boolean literal (true) is portable.
+    date_of = (
+        "CAST(updated_at AS date)"
+        if op.get_bind().dialect.name == "postgresql"
+        else "date(updated_at)"
+    )
     op.execute(
-        """
+        f"""
         UPDATE projects
-        SET closed_date = date(updated_at)
+        SET closed_date = {date_of}
         WHERE closed_date IS NULL
           AND status_id IN (
-            SELECT id FROM project_statuses WHERE is_terminal = 1
+            SELECT id FROM project_statuses WHERE is_terminal = true
           )
         """
     )

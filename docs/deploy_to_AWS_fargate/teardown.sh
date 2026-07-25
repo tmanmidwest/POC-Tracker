@@ -92,6 +92,12 @@ else
 
   ECS_SG_ID=$(aws ec2 describe-security-groups     --filters Name=group-name,Values="${APP_NAME}-ecs-sg" Name=vpc-id,Values="$VPC_ID"     --query 'SecurityGroups[0].GroupId' --output text --region "$REGION" 2>/dev/null || echo "")
 
+  # RDS resources follow deterministic names, so derive them without state.
+  DB_INSTANCE_ID="${APP_NAME}-db"
+  DB_SUBNET_GROUP="${APP_NAME}-db-subnets"
+  DB_SECRET_NAME="${APP_NAME}/database-url"
+  DB_SG_ID=$(aws ec2 describe-security-groups     --filters Name=group-name,Values="${APP_NAME}-db-sg" Name=vpc-id,Values="$VPC_ID"     --query 'SecurityGroups[0].GroupId' --output text --region "$REGION" 2>/dev/null || echo "")
+
   success "Resources discovered from AWS"
 fi
 
@@ -104,12 +110,13 @@ echo -e "  This will ${BOLD}permanently delete${NC} all AWS resources for ${BOLD
 echo ""
 echo -e "    • ECS service and cluster"
 echo -e "    • Application Load Balancer"
-echo -e "    • EFS filesystem and all stored data"
+echo -e "    • RDS PostgreSQL database (no final snapshot) + its secret"
+echo -e "    • EFS filesystem and all stored files"
 echo -e "    • Security groups"
 echo -e "    • CloudWatch log group"
 echo -e "    • ECR repository and all container images"
 echo ""
-echo -e "  ${RED}${BOLD}Your SQLite data will be gone. This cannot be undone.${NC}"
+echo -e "  ${RED}${BOLD}Your database and files will be gone. This cannot be undone.${NC}"
 echo ""
 read -rp "  Type 'delete' to confirm: " confirm
 [ "$confirm" = "delete" ] || { echo "Aborted. Nothing was deleted."; exit 0; }
@@ -305,6 +312,44 @@ if [ -n "$CERT_ARN" ] && [ "$CERT_ARN" != "None" ]; then
   warn "(the certificate-validation record and the record pointing at the load balancer)."
 else
   skip "No ACM certificate found"
+fi
+
+# ── RDS (POSTGRESQL DATABASE) ─────────────────────────────────────────────────
+header "RDS PostgreSQL database"
+
+if [ -n "${DB_INSTANCE_ID:-}" ]; then
+  log "Deleting RDS instance $DB_INSTANCE_ID (skipping final snapshot)..."
+  aws rds delete-db-instance \
+    --db-instance-identifier "$DB_INSTANCE_ID" \
+    --skip-final-snapshot --delete-automated-backups \
+    --region "$REGION" >/dev/null 2>/dev/null || warn "RDS instance not found — skipping"
+  log "Waiting for the database to finish deleting (several minutes)..."
+  aws rds wait db-instance-deleted --db-instance-identifier "$DB_INSTANCE_ID" \
+    --region "$REGION" 2>/dev/null || true
+  success "RDS instance deleted"
+fi
+
+if [ -n "${DB_SUBNET_GROUP:-}" ]; then
+  aws rds delete-db-subnet-group --db-subnet-group-name "$DB_SUBNET_GROUP" \
+    --region "$REGION" >/dev/null 2>/dev/null || true
+  success "DB subnet group deleted"
+fi
+
+if [ -n "${DB_SECRET_NAME:-}" ]; then
+  aws secretsmanager delete-secret --secret-id "$DB_SECRET_NAME" \
+    --force-delete-without-recovery --region "$REGION" >/dev/null 2>/dev/null || true
+  success "Database secret deleted"
+fi
+
+# Remove the per-instance inline policy from the shared execution role.
+aws iam delete-role-policy --role-name ecsTaskExecutionRole \
+  --policy-name "${APP_NAME}-db-secret-access" >/dev/null 2>/dev/null || true
+
+# The DB security group can go once the instance is deleted (done above).
+if [ -n "${DB_SG_ID:-}" ]; then
+  aws ec2 delete-security-group --group-id "$DB_SG_ID" \
+    --region "$REGION" >/dev/null 2>/dev/null || true
+  success "RDS security group deleted"
 fi
 
 # ── EFS ───────────────────────────────────────────────────────────────────────

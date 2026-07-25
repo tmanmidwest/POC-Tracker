@@ -1,14 +1,15 @@
 """Global full-text search over all domain entities.
 
-Queries the unified ``search_index`` FTS5 table (built and kept in sync by the
-0012 migration's triggers), ranks with bm25, then resolves the matched
+Queries the unified ``search_index`` — a Postgres table with a weighted
+``tsvector``/GIN column, built and kept in sync by the 0012 migration's triggers
+— with ``@@ to_tsquery`` + ``ts_rank``, then resolves the matched
 ``(entity_type, entity_id)`` pairs back to real objects to build display titles,
 links, and highlighted snippets.
 
 Safety:
-* User input never reaches FTS5 ``MATCH`` raw — :func:`build_match_query`
-  rebuilds it from extracted word tokens (quoted phrases + a trailing prefix),
-  so stray quotes/operators can't cause a syntax error.
+* User input never reaches the query language raw — :func:`build_tsquery`
+  rebuilds it from extracted word tokens (``\\w+`` only + a trailing prefix), so
+  stray quotes/operators can't cause a syntax error.
 * Results are bounded (overall cap + per-type limit) so a broad query can't
   return an unbounded set.
 * Snippets are HTML-escaped before ``<mark>`` highlighting, so indexed user text
@@ -106,19 +107,20 @@ def _tokens(raw: str | None) -> list[str]:
     return _WORD_RE.findall(raw or "")[:_MAX_TOKENS]
 
 
-def build_match_query(raw: str | None) -> str | None:
-    """Turn raw user input into a safe FTS5 MATCH expression, or None if too short.
+def build_tsquery(raw: str | None) -> str | None:
+    """Turn raw user input into a safe Postgres ``to_tsquery`` string, or None.
 
-    Each token becomes a quoted phrase (AND-ed together); the last token gets a
-    ``*`` for prefix matching, which powers as-you-type search.
+    Tokens are AND-ed (``&``) and the last one gets a ``:*`` prefix marker for
+    as-you-type search. Tokens are ``\\w+`` only, so the resulting string is a
+    safe argument to ``to_tsquery`` (no quotes/operators can leak through).
     """
     if not raw or len(raw.strip()) < MIN_QUERY_LEN:
         return None
     toks = _tokens(raw)
     if not toks:
         return None
-    parts = [f'"{t}"' for t in toks[:-1]] + [f'"{toks[-1]}"*']
-    return " ".join(parts)
+    parts = toks[:-1] + [f"{toks[-1]}:*"]
+    return " & ".join(parts)
 
 
 def _highlight(value: str | None, tokens: list[str]) -> Markup | None:
@@ -255,15 +257,20 @@ def search(
     types (customers, library) — keep it True for external viewers, set it False
     for an internal user merely scoped to "My POCs".
     """
-    match = build_match_query(raw)
+    match = build_tsquery(raw)
     if not match:
         return {}
 
+    # ts_rank's default weights ({A:1.0, B:0.4}) give the title column (weight A)
+    # more pull than the body (weight B). Higher rank = better, so ORDER BY DESC.
+    # Rows come back best-first as (entity_type, entity_id, score); everything
+    # downstream (grouping, per-type caps) works off that order.
     rows = db.execute(
         sql_text(
-            "SELECT entity_type, entity_id, bm25(search_index, 3.0, 1.0) AS score "
-            "FROM search_index WHERE search_index MATCH :q "
-            "ORDER BY score LIMIT :lim"
+            "SELECT entity_type, entity_id, ts_rank(tsv, query) AS score "
+            "FROM search_index, to_tsquery('english', :q) AS query "
+            "WHERE tsv @@ query "
+            "ORDER BY score DESC LIMIT :lim"
         ),
         {"q": match, "lim": overall_cap},
     ).all()
@@ -310,6 +317,13 @@ def rebuild_index(db: Session) -> int:
     """Wipe and repopulate the search index from current rows. A maintenance/
     safety backstop — normal operation is kept current by triggers. Returns the
     number of indexed rows."""
+    insert_sql = (
+        "INSERT INTO search_index(title, text, entity_type, entity_id, tsv) "
+        "VALUES(:t, :x, :et, :id, "
+        "setweight(to_tsvector('english', :t), 'A') || "
+        "setweight(to_tsvector('english', :x), 'B'))"
+    )
+
     db.execute(sql_text("DELETE FROM search_index"))
     count = 0
     for etype, model in _MODELS.items():
@@ -318,10 +332,7 @@ def rebuild_index(db: Session) -> int:
             title = " ".join(str(getattr(obj, c)) for c in title_cols if getattr(obj, c, None))
             body = " ".join(str(getattr(obj, c)) for c in text_cols if getattr(obj, c, None))
             db.execute(
-                sql_text(
-                    "INSERT INTO search_index(title, text, entity_type, entity_id) "
-                    "VALUES(:t, :x, :et, :id)"
-                ),
+                sql_text(insert_sql),
                 {"t": title, "x": body, "et": etype, "id": obj.id},
             )
             count += 1

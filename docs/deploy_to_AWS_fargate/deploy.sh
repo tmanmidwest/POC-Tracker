@@ -29,6 +29,20 @@ CPU=512        # 0.5 vCPU
 MEMORY=1024    # 1 GB
 LOG_LEVEL="INFO"
 
+# Database (RDS PostgreSQL). Postgres is the application database; deploy.sh
+# provisions a small managed instance and injects its connection URL into the
+# task via Secrets Manager. Size up DB_INSTANCE_CLASS / DB_ALLOCATED_STORAGE as
+# the portfolio grows; DB_MULTI_AZ=true adds a standby for HA (higher cost).
+DB_INSTANCE_CLASS="${DB_INSTANCE_CLASS:-db.t4g.micro}"
+DB_ALLOCATED_STORAGE="${DB_ALLOCATED_STORAGE:-20}"
+DB_ENGINE_VERSION="${DB_ENGINE_VERSION:-16}"
+DB_NAME="${DB_NAME:-poct}"
+DB_MASTER_USER="${DB_MASTER_USER:-poct}"
+DB_MULTI_AZ="${DB_MULTI_AZ:-false}"
+# Number of app tasks. Postgres supports >1 (unlike the old single-writer SQLite),
+# so default to 2 for zero-downtime rolling deploys + HA.
+DESIRED_COUNT="${DESIRED_COUNT:-2}"
+
 # Deploy the MCP server as a second container alongside the web app (mirrors the
 # repo's docker-compose). It shares the same EFS /data volume and reaches the app
 # over localhost. Set DEPLOY_MCP=false to deploy the web app only.
@@ -436,6 +450,103 @@ ACCESS_POINT_ID=$(aws efs create-access-point \
   --query 'AccessPointId' --output text)
 success "EFS access point: $ACCESS_POINT_ID"
 
+# ── RDS (POSTGRESQL DATABASE) ─────────────────────────────────────────────────
+header "RDS PostgreSQL database"
+
+DB_INSTANCE_ID="${APP_NAME}-db"
+DB_SUBNET_GROUP="${APP_NAME}-db-subnets"
+DB_SECRET_NAME="${APP_NAME}/database-url"
+
+# DB security group — Postgres (5432) reachable from the ECS tasks only.
+log "Creating RDS security group (or reusing if it exists)..."
+DB_SG_ID=$(aws ec2 describe-security-groups \
+  --filters Name=group-name,Values="${APP_NAME}-db-sg" Name=vpc-id,Values="$VPC_ID" \
+  --query 'SecurityGroups[0].GroupId' --output text --region "$REGION" 2>/dev/null || echo "")
+if [ -z "$DB_SG_ID" ] || [ "$DB_SG_ID" = "None" ]; then
+  DB_SG_ID=$(aws ec2 create-security-group \
+    --group-name "${APP_NAME}-db-sg" \
+    --description "POC Tracker RDS - Postgres from ECS tasks only" \
+    --vpc-id "$VPC_ID" --region "$REGION" \
+    --query 'GroupId' --output text)
+fi
+# Allow 5432 from the ECS task SG (idempotent — an already-exists rule is fine).
+aws ec2 authorize-security-group-ingress \
+  --group-id "$DB_SG_ID" \
+  --protocol tcp --port 5432 \
+  --source-group "$ECS_SG_ID" --region "$REGION" >/dev/null 2>&1 || true
+success "RDS security group: $DB_SG_ID"
+
+# DB subnet group spanning the same two subnets the tasks run in.
+if ! aws rds describe-db-subnet-groups --db-subnet-group-name "$DB_SUBNET_GROUP" \
+     --region "$REGION" >/dev/null 2>&1; then
+  aws rds create-db-subnet-group \
+    --db-subnet-group-name "$DB_SUBNET_GROUP" \
+    --db-subnet-group-description "POC Tracker RDS subnets" \
+    --subnet-ids "$SUBNET_1" "$SUBNET_2" --region "$REGION" >/dev/null
+fi
+success "DB subnet group: $DB_SUBNET_GROUP"
+
+# Create the instance if absent (generating a master password), else reuse it.
+DB_EXISTS=$(aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE_ID" \
+  --query 'DBInstances[0].DBInstanceIdentifier' --output text --region "$REGION" 2>/dev/null || echo "")
+MULTI_AZ_FLAG="--no-multi-az"; [ "$DB_MULTI_AZ" = "true" ] && MULTI_AZ_FLAG="--multi-az"
+
+if [ -z "$DB_EXISTS" ] || [ "$DB_EXISTS" = "None" ]; then
+  DB_PASSWORD=$(openssl rand -hex 20)
+  DB_NEW=true
+  log "Creating RDS instance $DB_INSTANCE_ID ($DB_INSTANCE_CLASS) — this takes several minutes..."
+  # shellcheck disable=SC2086
+  aws rds create-db-instance \
+    --db-instance-identifier "$DB_INSTANCE_ID" \
+    --db-instance-class "$DB_INSTANCE_CLASS" \
+    --engine postgres --engine-version "$DB_ENGINE_VERSION" \
+    --master-username "$DB_MASTER_USER" \
+    --master-user-password "$DB_PASSWORD" \
+    --allocated-storage "$DB_ALLOCATED_STORAGE" \
+    --storage-type gp3 --storage-encrypted \
+    --db-name "$DB_NAME" \
+    --vpc-security-group-ids "$DB_SG_ID" \
+    --db-subnet-group-name "$DB_SUBNET_GROUP" \
+    --backup-retention-period 7 \
+    $MULTI_AZ_FLAG --no-publicly-accessible \
+    --region "$REGION" >/dev/null
+else
+  DB_NEW=false
+  success "RDS instance already exists: $DB_INSTANCE_ID"
+fi
+
+log "Waiting for the database to become available (first creation can take ~10 min)..."
+aws rds wait db-instance-available --db-instance-identifier "$DB_INSTANCE_ID" --region "$REGION"
+DB_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier "$DB_INSTANCE_ID" \
+  --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
+success "RDS endpoint: $DB_ENDPOINT"
+
+# The connection URL lives in Secrets Manager and is injected into the task via
+# the task definition's `secrets` (never a plaintext env var). ECS reads it with
+# the execution role (policy added below).
+DB_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id "$DB_SECRET_NAME" \
+  --query 'ARN' --output text --region "$REGION" 2>/dev/null || echo "")
+if [ -z "$DB_SECRET_ARN" ] || [ "$DB_SECRET_ARN" = "None" ]; then
+  # No stored secret. If we just created the DB we know the password; for a
+  # pre-existing DB the master password isn't retrievable, so rotate it so the
+  # secret and the instance agree.
+  if [ "$DB_NEW" != "true" ]; then
+    warn "No stored DB secret for the existing instance — rotating its master password."
+    DB_PASSWORD=$(openssl rand -hex 20)
+    aws rds modify-db-instance --db-instance-identifier "$DB_INSTANCE_ID" \
+      --master-user-password "$DB_PASSWORD" --apply-immediately --region "$REGION" >/dev/null
+    aws rds wait db-instance-available --db-instance-identifier "$DB_INSTANCE_ID" --region "$REGION"
+  fi
+  DB_URL="postgresql+psycopg://${DB_MASTER_USER}:${DB_PASSWORD}@${DB_ENDPOINT}:5432/${DB_NAME}"
+  DB_SECRET_ARN=$(aws secretsmanager create-secret --name "$DB_SECRET_NAME" \
+    --description "POC Tracker POCT_DATABASE_URL for ${APP_NAME}" \
+    --secret-string "$DB_URL" --region "$REGION" \
+    --query 'ARN' --output text)
+  success "Stored database URL in Secrets Manager"
+else
+  success "Reusing database URL secret"
+fi
+
 # ── IAM TASK EXECUTION ROLE ───────────────────────────────────────────────────
 header "IAM task execution role"
 
@@ -462,6 +573,21 @@ if [ -z "$ROLE_ARN" ]; then
 else
   success "ecsTaskExecutionRole already exists"
 fi
+
+# Let the execution role read THIS instance's database-URL secret (so ECS can
+# inject POCT_DATABASE_URL). Per-instance inline policy; idempotent (overwrites).
+aws iam put-role-policy \
+  --role-name ecsTaskExecutionRole \
+  --policy-name "${APP_NAME}-db-secret-access" \
+  --policy-document "{
+    \"Version\":\"2012-10-17\",
+    \"Statement\":[{
+      \"Effect\":\"Allow\",
+      \"Action\":\"secretsmanager:GetSecretValue\",
+      \"Resource\":\"${DB_SECRET_ARN}\"
+    }]
+  }" >/dev/null
+success "Execution role can read the database secret"
 
 # ── ECS SERVICE-LINKED ROLE ──────────────────────────────────────────────────────────────
 header "ECS service-linked role"
@@ -562,6 +688,9 @@ WEBAPP_CONTAINER="
         { \"name\": \"POCT_BIND_HOST\", \"value\": \"0.0.0.0\" },
         { \"name\": \"POCT_BIND_PORT\", \"value\": \"${CONTAINER_PORT}\" }${PUBLIC_BASE_URL_ENV}
       ],
+      \"secrets\": [
+        { \"name\": \"POCT_DATABASE_URL\", \"valueFrom\": \"${DB_SECRET_ARN}\" }
+      ],
       \"mountPoints\": [{
         \"sourceVolume\": \"${APP_NAME}-data\",
         \"containerPath\": \"/data\",
@@ -606,6 +735,9 @@ if [ "$DEPLOY_MCP" = "true" ]; then
         { \"name\": \"POCT_MCP_HOST\", \"value\": \"0.0.0.0\" },
         { \"name\": \"POCT_MCP_PORT\", \"value\": \"${MCP_PORT}\" },
         { \"name\": \"POCT_MCP_BASE_URL\", \"value\": \"http://localhost:${CONTAINER_PORT}\" }
+      ],
+      \"secrets\": [
+        { \"name\": \"POCT_DATABASE_URL\", \"valueFrom\": \"${DB_SECRET_ARN}\" }
       ],
       \"mountPoints\": [{
         \"sourceVolume\": \"${APP_NAME}-data\",
@@ -925,14 +1057,11 @@ if [ "$DEPLOY_MCP" = "true" ] && [ -n "$MCP_TG_ARN" ]; then
   LB_MAPPINGS="$LB_MAPPINGS targetGroupArn=${MCP_TG_ARN},containerName=${APP_NAME}-mcp,containerPort=${MCP_PORT}"
 fi
 
-# CRITICAL for SQLite: the app keeps its DB in a single SQLite file on EFS (NFS),
-# which cannot tolerate two writers at once. ECS's default rollout (min 100% /
-# max 200%) briefly runs TWO tasks during every deploy — both open the same DB and
-# you get "sqlite3.OperationalError: disk I/O error". Forcing max 100% / min 0%
-# makes ECS STOP the old task before starting the new one (a few seconds of
-# downtime per deploy — the correct trade for a single-writer DB). max<=100 also
-# requires Availability Zone Rebalancing OFF (meaningless for a 1-task service).
-DEPLOY_CFG="maximumPercent=100,minimumHealthyPercent=0"
+# Postgres supports multiple concurrent app tasks (startup migrations + the daily
+# sweeps are advisory-locked so only one instance runs them), so use a normal
+# zero-downtime rolling deploy — start the new task before draining the old —
+# instead of the stop-then-start dance that single-writer SQLite-on-EFS forced.
+DEPLOY_CFG="maximumPercent=200,minimumHealthyPercent=100"
 
 log "Creating ECS service (or updating if it exists)..."
 EXISTING_SVC=$(aws ecs describe-services \
@@ -946,9 +1075,9 @@ if [ -n "$EXISTING_SVC" ] && [ "$EXISTING_SVC" != "None" ]; then
     --cluster "$APP_NAME" \
     --service "${APP_NAME}-webapp" \
     --task-definition "${APP_NAME}-webapp" \
-    --desired-count 1 \
+    --desired-count "$DESIRED_COUNT" \
     --load-balancers $LB_MAPPINGS \
-    --availability-zone-rebalancing DISABLED \
+    --availability-zone-rebalancing ENABLED \
     --deployment-configuration "$DEPLOY_CFG" \
     --force-new-deployment >/dev/null
 else
@@ -957,7 +1086,7 @@ else
     --cluster "$APP_NAME" \
     --service-name "${APP_NAME}-webapp" \
     --task-definition "${APP_NAME}-webapp" \
-    --desired-count 1 \
+    --desired-count "$DESIRED_COUNT" \
     --launch-type FARGATE \
     --network-configuration "awsvpcConfiguration={
       subnets=[$SUBNET_1,$SUBNET_2],
@@ -965,7 +1094,7 @@ else
       assignPublicIp=ENABLED
     }" \
     --load-balancers $LB_MAPPINGS \
-    --availability-zone-rebalancing DISABLED \
+    --availability-zone-rebalancing ENABLED \
     --deployment-configuration "$DEPLOY_CFG" \
     --health-check-grace-period-seconds 30 >/dev/null
 fi
@@ -985,6 +1114,11 @@ ALB_SG_ID=$ALB_SG_ID
 ECS_SG_ID=$ECS_SG_ID
 EFS_ID=$EFS_ID
 ACCESS_POINT_ID=$ACCESS_POINT_ID
+DB_INSTANCE_ID=$DB_INSTANCE_ID
+DB_SUBNET_GROUP=$DB_SUBNET_GROUP
+DB_SG_ID=$DB_SG_ID
+DB_SECRET_NAME=$DB_SECRET_NAME
+DB_SECRET_ARN=$DB_SECRET_ARN
 ALB_ARN=$ALB_ARN
 ALB_DNS=$ALB_DNS
 TG_ARN=$TG_ARN

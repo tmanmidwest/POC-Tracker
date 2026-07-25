@@ -55,7 +55,7 @@ def upgrade() -> None:
     op.get_bind().execute(
         sa.text(
             "UPDATE app_users SET expires_at = :exp "
-            "WHERE is_external = 1 AND is_active = 1 "
+            "WHERE is_external = true AND is_active = true "
             "AND password_hash IS NOT NULL AND expires_at IS NULL"
         ),
         {"exp": grace},

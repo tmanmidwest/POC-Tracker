@@ -55,15 +55,15 @@ def _make_project(db: Session, name: str, notes: str = "") -> int:
 # ---------------------------------------------------------------------------
 
 
-def test_build_match_query_basic() -> None:
-    assert search.build_match_query("acme ispm") == '"acme" "ispm"*'
-    assert search.build_match_query("solo") == '"solo"*'
+def test_build_tsquery_basic() -> None:
+    assert search.build_tsquery("acme ispm") == "acme & ispm:*"
+    assert search.build_tsquery("solo") == "solo:*"
 
 
-def test_build_match_query_too_short() -> None:
-    assert search.build_match_query("") is None
-    assert search.build_match_query(" a ") is None
-    assert search.build_match_query(None) is None
+def test_build_tsquery_too_short() -> None:
+    assert search.build_tsquery("") is None
+    assert search.build_tsquery(" a ") is None
+    assert search.build_tsquery(None) is None
 
 
 @pytest.mark.parametrize(
