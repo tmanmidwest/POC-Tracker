@@ -13,6 +13,7 @@ preset is the *inner* markup of a 24x24 ``viewBox`` drawn with
 
 from __future__ import annotations
 
+import time
 from urllib.parse import quote
 
 # Theme accent (matches --primary in app.css); used when no color is set.
@@ -128,6 +129,10 @@ def favicon_data_uri(key: str | None, color: str) -> str:
 
 
 _cache: dict[str, str] | None = None
+_cache_at: float = 0.0
+# See app.services.system_config: bound cross-instance cache staleness with a
+# short TTL (a write in one instance can't invalidate the others' caches).
+_CACHE_TTL_SECONDS = 30
 
 
 def invalidate() -> None:
@@ -173,7 +178,8 @@ def _load() -> dict[str, str]:
 
 def current_branding() -> dict[str, str]:
     """Return cached, render-ready branding values for template context."""
-    global _cache
-    if _cache is None:
+    global _cache, _cache_at
+    if _cache is None or time.monotonic() - _cache_at > _CACHE_TTL_SECONDS:
         _cache = _load()
+        _cache_at = time.monotonic()
     return _cache

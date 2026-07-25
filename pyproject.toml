@@ -26,6 +26,9 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy>=2.0.36",
     "alembic>=1.14.0",
+    # Postgres driver (v3). SQLite remains the default; psycopg is only used
+    # when POCT_DATABASE_URL points at Postgres. See docs/postgres-migration-plan.md.
+    "psycopg[binary]>=3.2",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.6.0",
     "python-multipart>=0.0.12",

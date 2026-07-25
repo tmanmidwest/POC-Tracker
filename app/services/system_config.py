@@ -13,6 +13,7 @@ it.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -22,12 +23,25 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 _cache: dict[str, Any] | None = None
+_cache_at: float = 0.0
+# When more than one instance runs, a write in one instance can't invalidate()
+# the others' caches, so bound cross-instance staleness with a short TTL.
+_CACHE_TTL_SECONDS = 30
 
 
 def invalidate() -> None:
     """Drop the cached config so the next read reloads from the DB."""
     global _cache
     _cache = None
+
+
+def _get() -> dict[str, Any]:
+    """Return the cached config, (re)loading on first use or after the TTL."""
+    global _cache, _cache_at
+    if _cache is None or time.monotonic() - _cache_at > _CACHE_TTL_SECONDS:
+        _cache = _load()
+        _cache_at = time.monotonic()
+    return _cache
 
 
 def _default_retention_days() -> int:
@@ -92,26 +106,17 @@ def _load() -> dict[str, Any]:
 
 def current_retention_days() -> int:
     """Return the cached audit retention window in days (0 = keep forever)."""
-    global _cache
-    if _cache is None:
-        _cache = _load()
-    return int(_cache["audit_retention_days"])
+    return int(_get()["audit_retention_days"])
 
 
 def tasks_enabled() -> bool:
     """Return whether the Task Manager module is enabled (cached)."""
-    global _cache
-    if _cache is None:
-        _cache = _load()
-    return bool(_cache["tasks_enabled"])
+    return bool(_get()["tasks_enabled"])
 
 
 def current_external_user_ttl_days() -> int:
     """Return the cached default external-user lifetime in days (0 = never)."""
-    global _cache
-    if _cache is None:
-        _cache = _load()
-    return int(_cache["external_user_ttl_days"])
+    return int(_get()["external_user_ttl_days"])
 
 
 def region_enforcement_enabled() -> bool:
@@ -121,10 +126,7 @@ def region_enforcement_enabled() -> bool:
     projects — the safe pre-rollout state. Access/scope code calls this to decide
     whether to apply hard region boundaries.
     """
-    global _cache
-    if _cache is None:
-        _cache = _load()
-    return bool(_cache["region_enforcement_enabled"])
+    return bool(_get()["region_enforcement_enabled"])
 
 
 def set_retention_days(db: Session, days: int) -> None:
@@ -166,10 +168,7 @@ def rbac_dynamic_enabled() -> bool:
     gates so behavior matches the four hardcoded roles. When True, ``can()`` reads
     the union of the user's assigned roles' capabilities.
     """
-    global _cache
-    if _cache is None:
-        _cache = _load()
-    return bool(_cache["rbac_dynamic_enabled"])
+    return bool(_get()["rbac_dynamic_enabled"])
 
 
 def set_rbac_dynamic_enabled(db: Session, enabled: bool) -> None:

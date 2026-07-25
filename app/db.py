@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
@@ -20,36 +19,26 @@ _SessionLocal: sessionmaker[Session] | None = None
 
 
 def _build_engine() -> Engine:
-    """Construct a SQLAlchemy engine for the configured SQLite database."""
+    """Construct the Postgres engine: a health-checked, sized connection pool.
+
+    ``pool_pre_ping`` transparently recovers connections dropped by the DB or a
+    proxy (common with managed Postgres / RDS); ``pool_recycle`` retires idle
+    connections before the server closes them.
+    """
     settings = get_settings()
+    # The signing/session keys live under data_dir (on EFS in AWS), so ensure it
+    # exists even though the database itself is remote.
     settings.ensure_data_dir()
 
-    engine = create_engine(
+    return create_engine(
         settings.database_url,
-        # SQLite-specific: allow use across threads (FastAPI runs in async + threadpool)
-        connect_args={"check_same_thread": False},
-        # echo=False; flip to True for SQL debugging
+        pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_recycle=settings.db_pool_recycle_seconds,
         echo=False,
         future=True,
     )
-
-    # Enforce foreign keys and set sane pragmas on every connection
-    @event.listens_for(engine, "connect")
-    def _sqlite_pragmas(dbapi_connection: Any, _connection_record: Any) -> None:
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        # Wait up to 5s for the write lock instead of failing immediately with
-        # "database is locked" when two writes briefly contend (explicit rather
-        # than relying on the driver's implicit default).
-        cursor.execute("PRAGMA busy_timeout=5000")
-        # Make ON DELETE CASCADE fire row triggers too, so the full-text
-        # search index is cleaned up when a parent (e.g. a project) is deleted.
-        cursor.execute("PRAGMA recursive_triggers=ON")
-        cursor.close()
-
-    return engine
 
 
 def get_engine() -> Engine:

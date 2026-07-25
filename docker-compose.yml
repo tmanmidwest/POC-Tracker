@@ -20,15 +20,21 @@ services:
     volumes:
       # Named volume (not a host bind mount): a fresh named volume inherits the
       # image's /data ownership (uid/gid 1000, the non-root `poct` user), so the
-      # container can write session_secret/poct.db. A bind mount would be created
-      # root-owned on the host and break with PermissionError.
+      # container can write session keys + uploaded files. A bind mount would be
+      # created root-owned on the host and break with PermissionError.
       - poct-data:/data
     environment:
       POCT_LOG_LEVEL: INFO
+      # Postgres is the database. Reach the bundled service over the compose
+      # network; override POCT_DATABASE_URL to point at an external/managed DB.
+      POCT_DATABASE_URL: ${POCT_DATABASE_URL:-postgresql+psycopg://poct:poct@postgres:5432/poct}
       # Off by default. Set POCT_ENABLE_DEMO_TOOLS=1 (e.g. in a demo env-file) to
       # expose the admin Settings → Demo Data page for loading/removing a sample
       # portfolio. Leave unset on production instances.
       POCT_ENABLE_DEMO_TOOLS: ${POCT_ENABLE_DEMO_TOOLS:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
@@ -47,7 +53,10 @@ services:
     container_name: ${POCT_STACK_NAME:-poc-tracker}-mcp
     command: ["poct-mcp"]
     depends_on:
-      - app
+      app:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     ports:
       - "${POCT_MCP_HOST_PORT:-8011}:8011"
     volumes:
@@ -56,6 +65,7 @@ services:
       - poct-data:/data
     environment:
       POCT_LOG_LEVEL: INFO
+      POCT_DATABASE_URL: ${POCT_DATABASE_URL:-postgresql+psycopg://poct:poct@postgres:5432/poct}
       POCT_MCP_TRANSPORT: streamable-http
       POCT_MCP_HOST: 0.0.0.0
       POCT_MCP_PORT: "8011"
@@ -78,5 +88,27 @@ services:
       retries: 3
       start_period: 10s
 
+  # Postgres — the application database. The app + mcp services connect here
+  # automatically (see their POCT_DATABASE_URL); `docker compose up` brings it up
+  # first and waits for it to be healthy. Data persists in the poct-pgdata volume.
+  postgres:
+    image: postgres:16
+    container_name: ${POCT_STACK_NAME:-poc-tracker}-postgres
+    environment:
+      POSTGRES_USER: poct
+      POSTGRES_PASSWORD: poct
+      POSTGRES_DB: poct
+    ports:
+      - "${POCT_PG_HOST_PORT:-5432}:5432"
+    volumes:
+      - poct-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poct -d poct"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   poct-data:
+  poct-pgdata:

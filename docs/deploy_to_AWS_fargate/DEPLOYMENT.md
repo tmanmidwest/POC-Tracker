@@ -29,12 +29,14 @@ cd docs/deploy_to_AWS_fargate
 | ECR repository (`<name>-webapp`) | Stores the image built from this repo |
 | ECS cluster + service (`<name>`) | Runs the Fargate task |
 | Fargate task (2 containers) | **web app** on `8010` + **MCP server** on `8443` |
-| EFS filesystem + access point | Persistent `/data` (SQLite DB, secrets, keys) |
+| **RDS PostgreSQL** (`<name>-db`) | The application database (small `db.t4g.micro` by default) |
+| **Secrets Manager** (`<name>/database-url`) | The DB connection URL, injected into the task |
+| EFS filesystem + access point | Persistent `/data` (secrets, keys, uploaded files) |
 | Application Load Balancer | Public endpoint(s) — `:80/:443` for the app, `:8443` for MCP |
 | Target groups | `<name>-tg` (app) and `<name>-mcp-tg` (MCP) |
-| Security groups | `<name>-alb-sg`, `<name>-ecs-sg` |
+| Security groups | `<name>-alb-sg`, `<name>-ecs-sg`, `<name>-db-sg` |
 | CloudWatch log group (`/ecs/<name>-webapp`) | Container logs (`ecs/*` = app, `mcp/*` = MCP) |
-| IAM `ecsTaskExecutionRole` | Shared, created once if absent |
+| IAM `ecsTaskExecutionRole` | Shared, created once if absent (+ per-instance secret-read policy) |
 
 `<name>` is the instance name you choose at deploy time (default `poc-tracker`).
 
@@ -166,15 +168,45 @@ pushes to ECR, re-registers the task definition (pinning `POCT_PUBLIC_BASE_URL` 
 the web app container only), and rolls the ECS service. Since both containers use
 the same image, the MCP server updates in the same roll.
 
+> `update.sh` only swaps the image and re-registers the **existing** task
+> definition — it does **not** create infrastructure. Use it for routine code
+> updates *after* the database is already wired (see below).
+
+## Cutting an existing instance over to Postgres
+
+An instance first deployed on the old SQLite build has no RDS database, no secret,
+and no `POCT_DATABASE_URL` in its task. **Run `./deploy.sh` (not `./update.sh`) to
+cut it over** — `update.sh` would just redeploy the new image against a database
+that isn't there, and the task would fail to start.
+
+```bash
+INSTANCE=<name> ./deploy.sh      # idempotent — reuses ECR/ECS/EFS/ALB, ADDS RDS
+```
+
+`deploy.sh` provisions the RDS instance, stores its URL in Secrets Manager, wires
+it into the task definition's `secrets`, and rolls the service. Notes:
+
+- It **waits ~10 minutes** for the new database to become available on first
+  creation — that's expected, not a hang.
+- The new database boots **fresh (migrated + seeded)** — the instance's old
+  **SQLite data does not carry over**. To preserve it, run the one-time migration
+  after the deploy (see [`../postgres-cutover-runbook.md`](../postgres-cutover-runbook.md) §B).
+- The service now runs `DESIRED_COUNT` tasks (default **2**, for HA + zero-downtime
+  rolling deploys). Set `DESIRED_COUNT=1 ./deploy.sh` to run a single task.
+
+After the cutover, routine updates go back to `./update.sh` — it preserves the
+`secrets` wiring across re-registrations.
+
 ## Tearing down
 
 ```bash
 ./teardown.sh    # type 'delete' to confirm
 ```
 
-Deletes the ECS service/cluster, both target groups, the ALB and listeners, EFS
-(**including your SQLite data**), security groups, log group, and ECR repository.
-The shared `ecsTaskExecutionRole` IAM role is left in place.
+Deletes the ECS service/cluster, both target groups, the ALB and listeners, the
+**RDS database (no final snapshot)** and its secret, EFS (**including your uploaded
+files**), security groups, log group, and ECR repository. The shared
+`ecsTaskExecutionRole` IAM role is left in place (its per-instance secret policy is removed).
 
 ## Recovering state on another machine
 
@@ -208,28 +240,32 @@ and `manage.sh` / `update.sh` / `teardown.sh` let you pick which one to act on.
 
 | Resource | Approx. monthly |
 |---|---|
-| Fargate (0.5 vCPU / 1 GB, both containers) | ~$18 |
+| Fargate — 2 tasks (0.5 vCPU / 1 GB each) | ~$36 |
 | Application Load Balancer | ~$16 |
-| EFS + CloudWatch | ~$1–2 |
-| **Total** | **~$35/month** |
+| RDS `db.t4g.micro` (single-AZ, 20 GB gp3) | ~$13–15 |
+| EFS + CloudWatch + Secrets Manager | ~$2–3 |
+| **Total** | **~$67/month** |
 
-Web-app-only (`DEPLOY_MCP=false`) can drop to `CPU=256 / MEMORY=512` (edit the top
-of `deploy.sh`), cutting Fargate to ~$9. Run `./manage.sh stop` when idle to
-eliminate compute charges; `./teardown.sh` to stop all charges.
+Cost levers: set `DESIRED_COUNT=1` for a single app task (~$18 less, but no
+zero-downtime deploys / HA); `DEPLOY_MCP=false` with `CPU=256 / MEMORY=512` cuts
+Fargate further. `DB_MULTI_AZ=true` roughly doubles the RDS line for a standby.
+`./teardown.sh` stops all charges (**including deleting the database**).
 
 ---
 
 ## Notes & caveats
 
-- **Single replica only.** SQLite can't handle concurrent writers — desired count
-  stays at 1. Don't scale the service. The scripts also set the ECS rollout to
-  **`max 100% / min 0%`** (with Availability Zone Rebalancing disabled) so a deploy
-  **stops the old task before starting the new one** — otherwise ECS's default
-  (min 100% / max 200%) briefly runs two tasks against the same SQLite file on EFS
-  and throws `sqlite3.OperationalError: disk I/O error`. The trade-off is a few
-  seconds of downtime per deploy, which is correct for a single-writer DB.
-- **`/data` is non-negotiable.** It holds the DB, session secret, and MCP token
-  files. Teardown deletes the EFS filesystem and everything on it.
+- **Postgres is the database (RDS).** The app connects via `POCT_DATABASE_URL`,
+  injected from Secrets Manager — never a plaintext env var. Because Postgres
+  handles concurrent writers, the service runs **`DESIRED_COUNT` tasks (default 2)**
+  with a normal **zero-downtime rolling deploy** (`max 200% / min 100%`); startup
+  migrations and the daily sweeps are advisory-locked so only one task runs them.
+- **DB backups are RDS's job.** Automated snapshots + 7-day retention are on by
+  default (tune `--backup-retention-period`); use point-in-time recovery to
+  restore data. The in-app backup archive holds **uploaded files + keys only**.
+- **`/data` (EFS) holds files, session secret, and MCP token** — no longer the
+  database. Teardown deletes the RDS instance (no final snapshot), its secret,
+  and the EFS filesystem.
 - **Toggling MCP on an existing deployment:** re-running `deploy.sh` with a
   different `DEPLOY_MCP` reconciles the security-group rules, target group,
   listener, and service load-balancer wiring, then rolls a new task definition.

@@ -117,36 +117,22 @@ def test_validate_rejects_newer_format(db_session: Session) -> None:
     settings.backups_dir.mkdir(parents=True, exist_ok=True)
     bad = settings.backups_dir / "fake.zip"
     with pyzipper.AESZipFile(str(bad), "w") as z:
-        z.writestr("db/poct.db", b"x")
         z.writestr(
             "manifest.json",
-            json.dumps({"format_version": 999, "db_sha256": "irrelevant"}),
+            json.dumps({"format_version": 999}),
         )
     with pytest.raises(backups.BackupError, match="newer version"):
         backups.validate_archive(bad, None)
 
 
-def test_validate_rejects_unknown_schema(db_session: Session) -> None:
-    import hashlib
-    import json
-
+def test_validate_rejects_non_archive(db_session: Session) -> None:
+    """A zip without a manifest isn't a Questlog backup."""
     settings = get_settings()
     settings.backups_dir.mkdir(parents=True, exist_ok=True)
-    bad = settings.backups_dir / "badschema.zip"
-    db_bytes = b"not-a-real-db"
+    bad = settings.backups_dir / "random.zip"
     with pyzipper.AESZipFile(str(bad), "w") as z:
-        z.writestr("db/poct.db", db_bytes)
-        z.writestr(
-            "manifest.json",
-            json.dumps(
-                {
-                    "format_version": 1,
-                    "db_sha256": hashlib.sha256(db_bytes).hexdigest(),
-                    "schema_revision": "zzz_not_a_real_revision",
-                }
-            ),
-        )
-    with pytest.raises(backups.BackupError, match="schema is newer"):
+        z.writestr("something.txt", b"not a backup")
+    with pytest.raises(backups.BackupError, match="not a Questlog backup"):
         backups.validate_archive(bad, None)
 
 
@@ -175,26 +161,30 @@ def test_retention_keeps_only_latest(db_session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_stage_and_apply_restore_reverts_data(db_session: Session) -> None:
+def test_stage_and_apply_restore_reverts_files(db_session: Session) -> None:
+    """Applying a restore reverts the uploaded-files directory to the archive's
+    state and writes a pre-restore safety snapshot. (The database is restored
+    out-of-band via the managed DB, so it isn't part of this flow.)"""
     settings = get_settings()
+    attachments = settings.data_dir / "note_attachments"
+    attachments.mkdir(parents=True, exist_ok=True)
 
-    # State A: take a backup of the current DB. The DB snapshot is taken before
-    # the run row is committed, so backup A contains zero backup_runs rows.
+    # State A: a file that exists at backup time.
+    sentinel = attachments / "brief.txt"
+    sentinel.write_text("original")
     run = backups.create_backup(db_session, created_by="tester")
     archive = backups.archive_path(run)
     assert archive is not None
 
-    # Mutate: add a sentinel row that does NOT exist in backup A.
-    db_session.add(BackupRun(status=STATUS_SUCCESS, filename="SENTINEL", encrypted=False))
-    db_session.commit()
-    assert db_session.query(BackupRun).filter_by(filename="SENTINEL").count() == 1
+    # Mutate the files after the backup: change one, add another.
+    sentinel.write_text("CHANGED")
+    (attachments / "extra.txt").write_text("added later")
 
-    # Stage the restore of A.
+    # Stage + apply the restore of A.
     backups.stage_restore(archive, None)
     assert settings.restore_marker_path.exists()
     assert backups.pending_restore_info() is not None
 
-    # Simulate startup: release the engine, then apply.
     db_session.close()
     _rebuild_engine()
     applied = backups.apply_pending_restore()
@@ -204,17 +194,9 @@ def test_stage_and_apply_restore_reverts_data(db_session: Session) -> None:
     # A pre-restore safety snapshot should have been written.
     assert list(settings.backups_dir.glob("pre-restore-*.zip"))
 
-    # Reopen and confirm the sentinel is gone (state reverted to A).
-    from app.db import get_session_factory
-
-    _rebuild_engine()
-    fresh = get_session_factory()()
-    try:
-        assert fresh.query(BackupRun).filter_by(filename="SENTINEL").count() == 0
-        # Snapshot A predates its own run row, so it holds no backup_runs.
-        assert fresh.query(BackupRun).count() == 0
-    finally:
-        fresh.close()
+    # Files reverted to state A: original content back, later addition gone.
+    assert sentinel.read_text() == "original"
+    assert not (attachments / "extra.txt").exists()
 
 
 def test_apply_is_noop_without_marker(db_session: Session) -> None:

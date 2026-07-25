@@ -15,6 +15,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import __version__
 
+# Local default when POCT_DATABASE_URL is unset — matches the bundled
+# docker-compose Postgres service (reachable at localhost from the host, and set
+# explicitly to the in-network host inside compose / to RDS on AWS).
+DEFAULT_DATABASE_URL = "postgresql+psycopg://poct:poct@localhost:5432/poct"
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -30,6 +35,33 @@ class Settings(BaseSettings):
     data_dir: Path = Field(
         default=Path("/data"),
         description="Directory where the SQLite DB and signing keys live.",
+    )
+
+    # --- Database ---
+    # Postgres is the only supported database. POCT_DATABASE_URL selects the
+    # instance; when unset the app targets a local Postgres (the bundled
+    # docker-compose service). Real deployments always set this: compose sets the
+    # in-network host, AWS injects the RDS URL.
+    database_url_override: str | None = Field(
+        default=None,
+        validation_alias="POCT_DATABASE_URL",
+        description=(
+            "Full SQLAlchemy Postgres URL, e.g. "
+            "postgresql+psycopg://user:pw@host:5432/poct. Defaults to a local "
+            "Postgres when unset."
+        ),
+    )
+    db_pool_size: int = Field(
+        default=5,
+        description="Postgres connection-pool size. Ignored for SQLite.",
+    )
+    db_max_overflow: int = Field(
+        default=10,
+        description="Postgres pool overflow connections beyond pool_size. Ignored for SQLite.",
+    )
+    db_pool_recycle_seconds: int = Field(
+        default=1800,
+        description="Recycle pooled Postgres connections older than this. Ignored for SQLite.",
     )
 
     # --- Bind ---
@@ -131,14 +163,14 @@ class Settings(BaseSettings):
     # --- Computed paths ---
 
     @property
-    def database_path(self) -> Path:
-        """Path to the SQLite database file."""
-        return self.data_dir / "poct.db"
-
-    @property
     def database_url(self) -> str:
-        """SQLAlchemy connection string for the SQLite database."""
-        return f"sqlite:///{self.database_path}"
+        """SQLAlchemy Postgres connection string.
+
+        ``POCT_DATABASE_URL`` when set (compose sets the in-network host; AWS
+        injects the RDS URL), otherwise a local default pointing at the bundled
+        docker-compose Postgres. Postgres is the only supported database.
+        """
+        return self.database_url_override or DEFAULT_DATABASE_URL
 
     @property
     def jwt_signing_key_path(self) -> Path:
