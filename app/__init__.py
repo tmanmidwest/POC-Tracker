@@ -7,4 +7,4 @@ here) when cutting a release — ``pyproject.toml`` reads it dynamically and
 docs/RELEASING.md.
 """
 
-__version__ = "1.2.1"
+__version__ = "1.3.1"
