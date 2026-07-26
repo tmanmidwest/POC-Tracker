@@ -665,6 +665,16 @@ if [ "$ENABLE_HTTPS" = "true" ] && [ -n "$DOMAIN_NAME" ]; then
         { \"name\": \"POCT_PUBLIC_BASE_URL\", \"value\": \"https://${DOMAIN_NAME}\" }"
 fi
 
+# Tell the web app which port the MCP server is publicly reachable on, so the
+# Settings → MCP connection examples render the working URL (host from
+# POCT_PUBLIC_BASE_URL / the request, port from here) instead of the local 8011
+# default. Only meaningful when the MCP container is deployed.
+MCP_PUBLIC_PORT_ENV=""
+if [ "$DEPLOY_MCP" = "true" ]; then
+  MCP_PUBLIC_PORT_ENV=",
+        { \"name\": \"POCT_MCP_PUBLIC_PORT\", \"value\": \"${MCP_PORT}\" }"
+fi
+
 # Web app container. Note the trailing comma/brace is closed below so we can
 # optionally append the MCP container before the array closes.
 WEBAPP_CONTAINER="
@@ -676,7 +686,7 @@ WEBAPP_CONTAINER="
       \"environment\": [
         { \"name\": \"POCT_LOG_LEVEL\", \"value\": \"${LOG_LEVEL}\" },
         { \"name\": \"POCT_BIND_HOST\", \"value\": \"0.0.0.0\" },
-        { \"name\": \"POCT_BIND_PORT\", \"value\": \"${CONTAINER_PORT}\" }${PUBLIC_BASE_URL_ENV}
+        { \"name\": \"POCT_BIND_PORT\", \"value\": \"${CONTAINER_PORT}\" }${PUBLIC_BASE_URL_ENV}${MCP_PUBLIC_PORT_ENV}
       ],
       \"secrets\": [
         { \"name\": \"POCT_DATABASE_URL\", \"valueFrom\": \"${DB_SECRET_ARN}\" }

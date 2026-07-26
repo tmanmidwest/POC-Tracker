@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -985,6 +986,23 @@ def delete_api_key(
 # ===========================================================================
 
 
+def _mcp_public_endpoint(request: Request) -> str:
+    """Best-effort externally-reachable MCP ``/mcp`` URL for the connection examples.
+
+    Uses ``POCT_MCP_PUBLIC_URL`` verbatim when set. Otherwise derives scheme+host
+    from ``POCT_PUBLIC_BASE_URL`` (or the incoming request) and appends
+    ``POCT_MCP_PUBLIC_PORT`` — so local docker shows ``:8011`` and the AWS deploy
+    (which sets the port to 8443) shows the Cloudflare-proxyable URL automatically.
+    """
+    settings = get_settings()
+    if settings.mcp_public_url:
+        return settings.mcp_public_url.rstrip("/") + "/mcp"
+    parts = urlsplit(settings.public_base_url or str(request.base_url))
+    scheme = parts.scheme or "https"
+    host = parts.hostname or "your-mcp-host"
+    return urlunsplit((scheme, f"{host}:{settings.mcp_public_port}", "/mcp", "", ""))
+
+
 @router.get("/mcp")
 def show_mcp_token(
     request: Request,
@@ -1003,6 +1021,7 @@ def show_mcp_token(
         gateway=mcp_gateway.status(),
         gateway_tokens=mcp_gateway_tokens.list_tokens(db),
         new_gateway_token=new_gateway_token,
+        mcp_endpoint=_mcp_public_endpoint(request),
     )
 
 

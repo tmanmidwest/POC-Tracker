@@ -168,12 +168,17 @@ header "Redeploying to ECS"
 # URIs exactly match what's registered at the identity provider. We re-register
 # the current task definition with the env var injected, then roll the service to
 # that new revision. (force-new-deployment alone keeps the old env vars.)
-log "Setting POCT_PUBLIC_BASE_URL=${APP_BASE} on the task definition..."
+# Also (re)pin POCT_MCP_PUBLIC_PORT from saved state when MCP is deployed, so the
+# Settings → MCP connection examples keep showing the real reachable port (8443)
+# rather than the local 8011 default across routine code updates.
+MCP_PUBLIC_PORT_VALUE=""
+[ "${DEPLOY_MCP:-false}" = "true" ] && MCP_PUBLIC_PORT_VALUE="${MCP_PORT:-}"
+log "Setting POCT_PUBLIC_BASE_URL=${APP_BASE}${MCP_PUBLIC_PORT_VALUE:+ and POCT_MCP_PUBLIC_PORT=${MCP_PUBLIC_PORT_VALUE}} on the task definition..."
 NEW_TASK_DEF=$(aws ecs describe-task-definition \
   --task-definition "${APP_NAME}-webapp" \
   --region "$REGION" \
   --query 'taskDefinition' --output json \
-  | APP_BASE="$APP_BASE" python3 -c '
+  | APP_BASE="$APP_BASE" MCP_PUBLIC_PORT="$MCP_PUBLIC_PORT_VALUE" python3 -c '
 import json, os, sys
 td = json.load(sys.stdin)
 # Strip read-only fields that register-task-definition rejects.
@@ -181,13 +186,17 @@ for k in ("taskDefinitionArn", "revision", "status", "requiresAttributes",
           "compatibilities", "registeredAt", "registeredBy"):
     td.pop(k, None)
 base = os.environ["APP_BASE"]
+mcp_port = os.environ.get("MCP_PUBLIC_PORT", "")
 # Only the web app container serves the UI/OAuth flow, so pin the public base URL
 # there. The MCP container reaches the app over localhost and must not get it.
 for c in td.get("containerDefinitions", []):
     if not c.get("name", "").endswith("-webapp"):
         continue
-    env = [e for e in c.get("environment", []) if e.get("name") != "POCT_PUBLIC_BASE_URL"]
+    drop = {"POCT_PUBLIC_BASE_URL", "POCT_MCP_PUBLIC_PORT"}
+    env = [e for e in c.get("environment", []) if e.get("name") not in drop]
     env.append({"name": "POCT_PUBLIC_BASE_URL", "value": base})
+    if mcp_port:
+        env.append({"name": "POCT_MCP_PUBLIC_PORT", "value": mcp_port})
     c["environment"] = env
 print(json.dumps(td))
 ') || error "Failed to build updated task definition."

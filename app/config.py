@@ -115,6 +115,28 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- MCP connection examples (Settings → MCP) ---
+    mcp_public_url: str | None = Field(
+        default=None,
+        description=(
+            "Externally-reachable base URL of the MCP server, including port "
+            "(e.g. https://poc.example.com:8443). Shown verbatim in the "
+            "Settings → MCP connection examples. If unset, the examples derive "
+            "the scheme+host from public_base_url (or the incoming request) and "
+            "append mcp_public_port."
+        ),
+    )
+    mcp_public_port: int = Field(
+        default=8011,
+        description=(
+            "Port the MCP server is publicly reachable on, used to build the "
+            "Settings → MCP connection examples when mcp_public_url is unset. "
+            "Local docker-compose exposes 8011; the AWS Fargate deploy sets this "
+            "to 8443 (the Cloudflare-proxyable HTTPS port) on the web app "
+            "container so the examples show the working URL automatically."
+        ),
+    )
+
     # --- Audit / activity log ---
     audit_retention_days: int = Field(
         default=30,

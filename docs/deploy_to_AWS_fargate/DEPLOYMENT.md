@@ -131,6 +131,7 @@ The web app container (env prefix `POCT_`):
 | `POCT_BIND_HOST` / `POCT_BIND_PORT` | `0.0.0.0` / `8010` | Bind address |
 | `POCT_LOG_LEVEL` | `INFO` | Log verbosity |
 | `POCT_PUBLIC_BASE_URL` | set by `update.sh` (and by `deploy.sh` for HTTPS) | Pins OAuth/redirect base URL |
+| `POCT_MCP_PUBLIC_PORT` | `8443` (the MCP port), set when `DEPLOY_MCP=true` | Makes the **Settings → MCP** connection examples show the real reachable URL (`https://<domain>:8443/mcp`) instead of the local `8011` default |
 
 The MCP container additionally gets `POCT_MCP_TRANSPORT=streamable-http`,
 `POCT_MCP_HOST=0.0.0.0`, `POCT_MCP_PORT=8443`, and
