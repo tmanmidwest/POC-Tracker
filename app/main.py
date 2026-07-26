@@ -245,6 +245,7 @@ def create_app() -> FastAPI:
     from app.api.v1.session_auth import router as session_auth_router
     from app.api.v1.tasks import router as tasks_router
     from app.api.v1.use_case_library import router as use_case_library_router
+    from app.api.v1.users import router as users_router
 
     # /api/v1/auth/* (session login, API keys, OAuth client management)
     app.include_router(session_auth_router, prefix="/api/v1")
@@ -269,6 +270,7 @@ def create_app() -> FastAPI:
     app.include_router(use_case_library_router, prefix="/api/v1")
     app.include_router(projects_router, prefix="/api/v1")
     app.include_router(tasks_router, prefix="/api/v1")
+    app.include_router(users_router, prefix="/api/v1")
 
     # /oauth/token (RFC 6749 - mounted at root, not under /api/v1)
     app.include_router(oauth_token_router)

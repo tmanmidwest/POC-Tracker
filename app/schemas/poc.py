@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.models.app_user import VALID_ROLES
 
 # ---------------------------------------------------------------------------
 # Lightweight nested references
@@ -27,6 +29,58 @@ class UserRef(BaseModel):
 
     id: int
     username: str
+
+
+# ---------------------------------------------------------------------------
+# App users (login accounts: admins, managers, SEs, external viewers)
+# ---------------------------------------------------------------------------
+
+
+class AppUserOut(BaseModel):
+    """A login account. ``role`` is the canonical resolved role (see AppUser)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    display_name: str | None
+    email: str | None
+    role: str
+    is_active: bool
+    last_login_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AppUserCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    display_name: str | None = Field(default=None, max_length=200)
+    email: str | None = Field(default=None, max_length=320)
+    # One of admin | manager | standard (SE) | external. Defaults to an SE.
+    role: str = "standard"
+    # Optional local password (min 8 chars). Omit for SSO-only accounts or
+    # placeholder users that only need to exist for project assignment.
+    password: str | None = Field(default=None, min_length=8, max_length=255)
+    is_active: bool = True
+
+    @field_validator("role")
+    @classmethod
+    def _known_role(cls, v: str) -> str:
+        if v not in VALID_ROLES:
+            raise ValueError(f"Unknown role {v!r}; expected one of {VALID_ROLES}")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def _valid_email(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if "@" not in v:
+            raise ValueError("Enter a valid email address, or leave it blank.")
+        return v
 
 
 # ---------------------------------------------------------------------------

@@ -92,6 +92,32 @@ def test_find_projects(mcp_env) -> None:  # type: ignore[no-untyped-def]
     assert any("acme" in (p["customer"]["name"].lower()) for p in found)
 
 
+def test_create_and_list_users_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
+    m = mcp_env
+    # Create an SE (standard) and a manager; assign a project to the SE.
+    se = m.create_user(
+        "jordan.se", display_name="Jordan SE", email="jordan.se@demoworldfun.net"
+    )
+    assert se["role"] == "standard"
+    assert se["email"] == "jordan.se@demoworldfun.net"
+    mgr = m.create_user("pat.mgr", role="manager", email="pat.mgr@demoworldfun.net")
+    assert mgr["role"] == "manager"
+
+    # list_users filters by resolved role.
+    ses = m.list_users(role="standard")
+    assert any(u["id"] == se["id"] for u in ses)
+    assert all(u["role"] == "standard" for u in ses)
+
+    # The new SE id is usable as a project's sales_engineer_id.
+    cust = m.create_customer("Assign Co")
+    proj = m.create_project(cust["id"], name="Assign POC", sales_engineer_id=se["id"])
+    assert proj["sales_engineer_id"] == se["id"]
+
+    # Duplicate email -> clean error surfaced through the API.
+    with pytest.raises(RuntimeError, match="already in use"):
+        m.create_user("dupe", email="jordan.se@demoworldfun.net")
+
+
 def test_unknown_status_name_is_a_clear_error(mcp_env) -> None:  # type: ignore[no-untyped-def]
     m = mcp_env
     result = m.add_custom_use_cases(1, [

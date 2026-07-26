@@ -276,6 +276,49 @@ def create_customer(
     return _post("/customers/", {k: v for k, v in body.items() if v is not None})
 
 
+# ---------------------------------------------------------------------------
+# Write tools — users (Sales Engineers, managers, admins, external viewers)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_users(role: str | None = None, include_inactive: bool = False) -> list[dict]:
+    """List login accounts (users). Optionally filter by `role`
+    (admin | manager | standard | external — "standard" is a Sales Engineer).
+
+    Useful for turning an SE's name into an id for create_project's
+    `sales_engineer_id`."""
+    params: dict[str, Any] = {"include_inactive": include_inactive}
+    if role is not None:
+        params["role"] = role
+    return _get("/users/", params)
+
+
+@mcp.tool()
+def create_user(
+    username: str,
+    role: str = "standard",
+    display_name: str | None = None,
+    email: str | None = None,
+    password: str | None = None,
+    is_active: bool = True,
+) -> dict:
+    """Create a login account. `role` is one of admin | manager | standard |
+    external — "standard" is a Sales Engineer (SE), "manager" an internal
+    non-admin who can span regions. `password` is optional (min 8 chars): omit
+    it for SSO-only or placeholder accounts that only need to exist so projects
+    can be assigned to them via `sales_engineer_id`. Returns the created user."""
+    body: dict[str, Any] = {
+        "username": username,
+        "role": role,
+        "display_name": display_name,
+        "email": email,
+        "password": password,
+        "is_active": is_active,
+    }
+    return _post("/users/", {k: v for k, v in body.items() if v is not None})
+
+
 @mcp.tool()
 def create_project(
     customer_id: int,
