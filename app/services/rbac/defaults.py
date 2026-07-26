@@ -60,10 +60,18 @@ LEGACY_TIER: dict[str, str] = {
     "grant.manage": "internal",
     "sharelink.manage": "internal",
     "external.extend_expiry": "internal",
-    # Reports
+    # Reports (per-project exports)
     "report.generate": "open",
     "report.choose_audience": "internal",
     "report.export_internal": "internal",
+    # Report builder (saved/shared/scheduled). All four are for any internal user
+    # (managers + SEs) — scheduling recurring email included. Region scope still
+    # bounds which rows a scheduled send can reach, and each send is audited. An
+    # admin can narrow this per role via the role builder once dynamic RBAC is on.
+    "report.view": "internal",
+    "report.create": "internal",
+    "report.publish": "internal",
+    "report.schedule": "internal",
     # Administration
     "lookups.manage": "admin",
     "library.manage": "admin",

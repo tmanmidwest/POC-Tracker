@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% set page_title = report.name %}
+{% block breadcrumb %}<a href="/ui/reports/saved">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ report.name }}</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ report.name }}</h1>
+    <p class="page-header__subtitle">
+      {{ result.total_matched }} {{ entity_labels[report.entity] if entity_labels is defined else report.entity }} ·
+      {% if report.is_summary %}summary{% else %}{{ result.columns|length }} columns{% endif %}
+      {% if report.description %} · {{ report.description }}{% endif %}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    {% if can_edit %}<a href="/ui/reports/{{ report.id }}/edit" class="btn btn--secondary">Edit</a>{% endif %}
+    {% if can_edit and can_schedule %}
+    <button type="button" class="btn btn--secondary" onclick="document.getElementById('sched-modal').hidden=false">
+      {{ "Scheduled" if report.is_scheduled else "Schedule" }}
+    </button>
+    {% endif %}
+    <div class="rpt-export">
+      <a href="/ui/reports/{{ report.id }}/export.xlsx" class="btn btn--secondary">Export XLSX</a>
+      <a href="/ui/reports/{{ report.id }}/export.csv" class="btn btn--ghost btn--sm">CSV</a>
+      <a href="/ui/reports/{{ report.id }}/export.pdf" class="btn btn--ghost btn--sm">PDF</a>
+    </div>
+  </div>
+</div>
+
+{% if report.is_scheduled %}
+<div class="rpt-scope" style="margin-bottom:var(--s-4);">
+  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg>
+  <span>Emailed <strong>{{ report.schedule.freq }}</strong> to {{ report.schedule.recipients|length }} recipient(s) as {{ report.schedule.format|upper }}. Each recipient sees only rows they're allowed to.</span>
+</div>
+{% endif %}
+
+<div class="rpt-run">
+  <div class="card card--flush rpt-run__table">
+    {% include "reports/_preview.html" with context %}
+  </div>
+
+  {% if report.is_summary and result.group_rows %}
+  <div class="card rpt-run__chart">
+    <div class="card__pad" style="padding:var(--s-5);">
+      <div class="rpt-chart-title">By {{ result.group_field.label if result.group_field else "group" }}</div>
+      {% set maxc = result.group_rows|map(attribute='count')|max %}
+      <div class="rpt-bars">
+        {% for g in result.group_rows[:10] %}
+        <div class="rpt-bar">
+          <span class="rpt-bar__lab" title="{{ g.label }}">{{ g.label }}</span>
+          <div class="rpt-bar__track"><div class="rpt-bar__fill" style="width: {{ (100 * g.count / maxc) if maxc else 0 }}%;"></div></div>
+          <span class="rpt-bar__val">{{ g.count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% if can_edit and can_schedule %}
+<div class="modal-overlay" id="sched-modal" hidden>
+  <form class="modal" style="max-width:520px;" method="post" action="/ui/reports/{{ report.id }}/schedule">
+    <div class="modal__header">
+      <h2 class="modal__title">Schedule email delivery</h2>
+      <button type="button" class="modal__close" onclick="document.getElementById('sched-modal').hidden=true">×</button>
+    </div>
+    <div class="modal__body">
+      {% set sch = report.schedule or {} %}
+      <div class="form-row">
+        <label class="label">How often?</label>
+        <div style="display:flex; gap:8px;">
+          <select class="select" name="freq" id="sched-freq">
+            <option value="weekly" {{ 'selected' if sch.freq == 'weekly' else '' }}>Weekly</option>
+            <option value="daily" {{ 'selected' if sch.freq == 'daily' else '' }}>Daily</option>
+            <option value="monthly" {{ 'selected' if sch.freq == 'monthly' else '' }}>Monthly</option>
+          </select>
+          <select class="select" name="day" id="sched-day">
+            {% for i, d in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
+            <option value="{{ i }}" {{ 'selected' if sch.day == i else '' }}>{{ d }}</option>
+            {% endfor %}
+          </select>
+          <select class="select" name="hour" style="max-width:110px;">
+            {% for h in range(0,24) %}
+            <option value="{{ h }}" {{ 'selected' if sch.hour == h else ('selected' if (sch.hour is not defined and h == 8) else '') }}>{{ '%02d:00'|format(h) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-hint">Runs from a background loop (one sender across all app instances). Monthly uses the day number.</div>
+      </div>
+      <div class="form-row">
+        <label class="label" for="sched-to">Send to</label>
+        <input class="input" id="sched-to" name="recipients" value="{{ sch.recipients|join(', ') if sch.recipients else '' }}"
+               placeholder="alex@company.com, team@company.com">
+        <div class="form-hint">Delivered via the configured SMTP server. Each send is recorded in the activity log.</div>
+      </div>
+      <div class="form-row">
+        <label class="label" for="sched-fmt">Attach as</label>
+        <select class="select" id="sched-fmt" name="format">
+          <option value="xlsx" {{ 'selected' if sch.format == 'xlsx' else '' }}>XLSX</option>
+          <option value="csv" {{ 'selected' if sch.format == 'csv' else '' }}>CSV</option>
+          <option value="pdf" {{ 'selected' if sch.format == 'pdf' else '' }}>PDF</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions" style="padding: var(--s-4) var(--s-6); justify-content: space-between;">
+      {% if report.is_scheduled %}
+      <button type="submit" formaction="/ui/reports/{{ report.id }}/unschedule" class="btn btn--ghost">Remove schedule</button>
+      {% else %}<span></span>{% endif %}
+      <div style="display:flex; gap:8px;">
+        <button type="button" class="btn btn--secondary" onclick="document.getElementById('sched-modal').hidden=true">Cancel</button>
+        <button type="submit" class="btn btn--primary">{{ "Update schedule" if report.is_scheduled else "Schedule" }}</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 _AUDIT_PRUNE_INTERVAL_SECONDS = 24 * 60 * 60
 _EXTERNAL_EXPIRY_INTERVAL_SECONDS = 24 * 60 * 60
 _GOOGLE_SYNC_INTERVAL_SECONDS = 5 * 60
+_REPORT_SCHEDULER_INTERVAL_SECONDS = 30 * 60
 
 
 async def _audit_retention_loop() -> None:
@@ -83,6 +84,23 @@ async def _google_sync_loop() -> None:
         # Guarded so only one instance pulls from Google when several run.
         await asyncio.to_thread(
             run_singleton, LOCK_GOOGLE_SYNC, run_pull_sweep, label="google_sync",
+        )
+
+
+async def _report_scheduler_loop() -> None:
+    """Deliver due scheduled reports on an interval while the app runs.
+
+    Sleeps first (no sends at startup), then wakes every half hour. Guarded by an
+    advisory lock so only one instance sends; the sweep owns its session, never
+    raises, and one failing report can't stop the loop.
+    """
+    from app.services.db_locks import LOCK_REPORT_SCHEDULER, run_singleton
+    from app.services.reporting.scheduler import run_due_sweep
+
+    while True:
+        await asyncio.sleep(_REPORT_SCHEDULER_INTERVAL_SECONDS)
+        await asyncio.to_thread(
+            run_singleton, LOCK_REPORT_SCHEDULER, run_due_sweep, label="report_scheduler",
         )
 
 
@@ -145,6 +163,9 @@ async def lifespan(_app: FastAPI) -> Any:
     # inline). The loop sleeps before its first run, so no network at startup.
     google_sync_task = asyncio.create_task(_google_sync_loop())
 
+    # Deliver due scheduled reports on an interval (sleeps before its first run).
+    report_scheduler_task = asyncio.create_task(_report_scheduler_loop())
+
     # Trigger engine creation early so we fail fast on bad config
     engine = get_engine()
     log.info(
@@ -163,7 +184,8 @@ async def lifespan(_app: FastAPI) -> Any:
     retention_task.cancel()
     expiry_task.cancel()
     google_sync_task.cancel()
-    for task in (retention_task, expiry_task, google_sync_task):
+    report_scheduler_task.cancel()
+    for task in (retention_task, expiry_task, google_sync_task, report_scheduler_task):
         try:
             await task
         except asyncio.CancelledError:
@@ -280,6 +302,7 @@ def create_app() -> FastAPI:
     from app.ui.portal_routes import public_router as ui_portal_public_router
     from app.ui.project_routes import router as ui_project_router
     from app.ui.report_routes import router as ui_report_router
+    from app.ui.reporting_routes import router as ui_reporting_router
     from app.ui.role_routes import router as ui_role_router
     from app.ui.search_routes import router as ui_search_router
     from app.ui.settings_routes import router as ui_settings_router
@@ -298,6 +321,10 @@ def create_app() -> FastAPI:
     app.include_router(ui_feedback_router)
     app.include_router(ui_dashboard_router)
     app.include_router(ui_project_router)
+    # The saved-report builder (self-gates per route on report.* capabilities);
+    # mounted before the legacy report router so its /saved, /new, /{id}/* paths
+    # resolve. Both share the /ui/reports prefix without colliding.
+    app.include_router(ui_reporting_router)
     app.include_router(ui_report_router)
     app.include_router(ui_search_router)
 

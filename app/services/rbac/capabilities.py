@@ -224,6 +224,34 @@ CAPABILITIES: tuple[Capability, ...] = (
         "Export internal reports",
         "Generate the internal report variant that includes internal-only notes.",
     ),
+    # -- Report builder (the saved/shared/scheduled reporting layer) -----------
+    Capability(
+        "report.view",
+        AREA_REPORTS,
+        "View saved reports",
+        "Open and run saved reports (your own, shared-with-you, and published). "
+        "Every run re-applies your region access, so you only see rows you may.",
+    ),
+    Capability(
+        "report.create",
+        AREA_REPORTS,
+        "Build & save reports",
+        "Use the report builder to create, edit, and delete your own saved reports.",
+    ),
+    Capability(
+        "report.publish",
+        AREA_REPORTS,
+        "Publish reports",
+        "Share a report to a role/region audience or publish it to a curated "
+        "catalog for others to run.",
+    ),
+    Capability(
+        "report.schedule",
+        AREA_REPORTS,
+        "Schedule report email",
+        "Set up recurring email delivery of a report (higher blast radius — "
+        "sends on a schedule to a recipient list).",
+    ),
     # -- Administration -------------------------------------------------------
     Capability(
         "lookups.manage",

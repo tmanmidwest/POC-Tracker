@@ -1,0 +1,59 @@
+{# Renders a RunResult as a table (tabular or summary). Standalone fragment:
+   used by the builder's live preview (fetched) and included by the run view. #}
+{% if error %}
+  <div class="inline-error">{{ error }}</div>
+{% elif result is none %}
+  <div class="rpt-empty">Pick what to report on, add columns, and your preview appears here.</div>
+{% else %}
+  {% if result.scope and result.scope.region_scoped %}
+  <div class="rpt-scope">
+    <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1.5l5.5 2.5v4c0 3.5-2.5 5.5-5.5 6.5C5 13.5 2.5 11.5 2.5 8V4z"/><path d="M6 8l1.5 1.5L11 6.5"/></svg>
+    <span>Scoped to <strong>{{ result.scope.region_count }} of {{ result.scope.total_regions }} regions</strong>{% if result.scope.region_names %} ({{ result.scope.region_names|join(", ") }}){% endif %} — you only see rows you're allowed to.</span>
+  </div>
+  {% endif %}
+
+  <div class="rpt-preview-bar">
+    <span class="text-muted">
+      {{ result.total_matched }} match{{ "" if result.total_matched == 1 else "es" }}
+      {% if preview and result.total_matched > preview_limit %}· showing first {{ preview_limit }}{% endif %}
+    </span>
+    {% if result.capped %}<span class="badge badge--warning">Capped at {{ result.loaded }} rows loaded</span>{% endif %}
+  </div>
+
+  <div class="table-wrap">
+  {% if result.is_summary %}
+    <table class="table">
+      <thead><tr>
+        <th>{{ result.group_field.label if result.group_field else "All" }}</th>
+        {% for h in result.measure_headers %}<th class="rpt-num">{{ h }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+        {% for g in result.group_rows %}
+        <tr>
+          <td><strong>{{ g.label }}</strong></td>
+          <td class="rpt-num">{{ g.count }}</td>
+          {% for m in g.measures %}<td class="rpt-num">{{ m }}</td>{% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ result.measure_headers|length + 1 }}" class="table__empty">No matching rows.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <table class="table">
+      <thead><tr>{% for c in result.columns %}<th{% if c.type in ('number',) %} class="rpt-num"{% endif %}>{{ c.label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in result.rows %}
+        <tr>
+          {% for cell in row.cells %}
+          <td{% if result.columns[loop.index0].type in ('number',) %} class="rpt-num"{% endif %}>{{ cell }}</td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ result.columns|length or 1 }}" class="table__empty">No matching rows.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+  </div>
+{% endif %}

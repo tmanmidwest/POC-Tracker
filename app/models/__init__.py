@@ -44,6 +44,7 @@ from app.models.project_use_case import ProjectUseCase
 from app.models.region import Region
 from app.models.role import Role
 from app.models.role_capability import RoleCapability
+from app.models.saved_report import SavedReport
 from app.models.screenshot import Screenshot
 from app.models.smtp_config import SmtpConfig
 from app.models.task import Task
@@ -100,6 +101,7 @@ __all__ = [
     "Region",
     "Role",
     "RoleCapability",
+    "SavedReport",
     "Screenshot",
     "SmtpConfig",
     "Task",

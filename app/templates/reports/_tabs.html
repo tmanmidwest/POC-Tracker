@@ -1,0 +1,8 @@
+{# Section tabs for the Reports area. Set `reports_tab` before including. #}
+<div class="tabs" style="margin-bottom: var(--s-5);">
+  <a class="tabs__tab {% if reports_tab == 'saved' %}is-active{% endif %}" href="/ui/reports/saved">Saved reports</a>
+  {% if current_user and current_user.is_internal %}
+  <a class="tabs__tab {% if reports_tab == 'analytics' %}is-active{% endif %}" href="/ui/reports/analytics">Win/Loss analytics</a>
+  {% endif %}
+  <a class="tabs__tab {% if reports_tab == 'all' %}is-active{% endif %}" href="/ui/reports">All POCs &amp; exports</a>
+</div>

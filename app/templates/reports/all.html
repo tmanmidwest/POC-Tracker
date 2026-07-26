@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% set page_title = "All POCs Report" %}
-{% block breadcrumb %}<a href="/ui/reports">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>All POCs</span>{% endblock %}
+{% set reports_tab = 'all' %}
+{% block breadcrumb %}<a href="/ui/reports/saved">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>All POCs</span>{% endblock %}
 
 {% block main %}
+{% include "reports/_tabs.html" with context %}
 <div class="page-header">
   <div class="page-header__text">
     <h1 class="page-header__title">All POCs</h1>

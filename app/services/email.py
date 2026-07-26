@@ -104,18 +104,20 @@ def send_email(
     subject: str,
     text_body: str,
     html_body: str | None = None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
 ) -> None:
     """Send one email using the stored SMTP config.
 
-    Raises :class:`EmailNotConfigured` if email isn't enabled/configured, or
-    :class:`EmailSendError` if delivery fails.
+    ``attachments`` is an optional list of ``(filename, mime_type, data)`` tuples
+    (e.g. a scheduled report's XLSX/PDF). Raises :class:`EmailNotConfigured` if
+    email isn't enabled/configured, or :class:`EmailSendError` if delivery fails.
     """
     config = get_config(db)
     if not (config.is_enabled and config.is_configured):
         raise EmailNotConfigured(
             "Email is not enabled and configured (need a host and from address)."
         )
-    message = _build_message(config, to, subject, text_body, html_body)
+    message = _build_message(config, to, subject, text_body, html_body, attachments)
     _deliver(config, message, [to])
 
 
@@ -142,6 +144,7 @@ def _build_message(
     subject: str,
     text_body: str,
     html_body: str | None,
+    attachments: list[tuple[str, str, bytes]] | None = None,
 ) -> EmailMessage:
     msg = EmailMessage()
     from_name = config.from_name or config.from_email
@@ -153,6 +156,12 @@ def _build_message(
     msg.set_content(text_body)
     if html_body:
         msg.add_alternative(html_body, subtype="html")
+    for filename, mime, data in attachments or []:
+        maintype, _, subtype = mime.partition("/")
+        msg.add_attachment(
+            data, maintype=maintype or "application", subtype=subtype or "octet-stream",
+            filename=filename,
+        )
     return msg
 
 

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set page_title = "Reports" %}
+{% set reports_tab = 'saved' %}
+{% block breadcrumb %}<span>Reports</span>{% endblock %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">Reports</h1>
+    <p class="page-header__subtitle">Build, save, and schedule reports across your POC portfolio. Every report re-applies your region access when it runs.</p>
+  </div>
+  <div class="page-header__actions">
+    {% if can_create %}
+    <a href="/ui/reports/new" class="btn btn--primary">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      New report
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% include "reports/_tabs.html" with context %}
+
+<div class="card card--flush">
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr><th>Name</th><th>Reports on</th><th>Visibility</th><th>Schedule</th><th>Owner</th><th>Updated</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for r in reports %}
+    <tr>
+      <td>
+        <a href="/ui/reports/{{ r.id }}/run"><strong>{{ r.name }}</strong></a>
+        {% if r.description %}<div class="text-muted" style="font-size:12px;">{{ r.description }}</div>{% endif %}
+      </td>
+      <td class="text-muted">
+        {{ entity_labels.get(r.entity, r.entity) }}{% if r.is_summary %} <span class="badge badge--neutral">Summary</span>{% endif %}
+      </td>
+      <td>
+        {% if r.visibility == 'published' %}<span class="badge badge--info">Published · {{ r.audience_kind|capitalize }}</span>
+        {% elif r.visibility == 'shared' %}<span class="badge badge--info">Shared</span>
+        {% else %}<span class="badge badge--neutral">Private</span>{% endif %}
+      </td>
+      <td>
+        {% if r.is_scheduled %}<span class="badge badge--success badge--dot">{{ r.schedule.freq|capitalize }}</span>
+        {% else %}<span class="text-faint">—</span>{% endif %}
+      </td>
+      <td class="text-muted">{{ r.owner.display_label if r.owner else "—" }}</td>
+      <td class="mono text-muted" style="font-size:12px;">{{ r.updated_at.date().isoformat() if r.updated_at else "—" }}</td>
+      <td style="text-align:right; white-space:nowrap;">
+        <a href="/ui/reports/{{ r.id }}/run" class="btn btn--ghost btn--sm">Run</a>
+        {% if current_user.is_superuser or (r.owner and r.owner.id == current_user.id) %}
+        <a href="/ui/reports/{{ r.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="table__empty">
+      No saved reports yet.
+      {% if can_create %}<a href="/ui/reports/new">Build your first one →</a>{% endif %}
+    </td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+</div>
+{% endblock %}

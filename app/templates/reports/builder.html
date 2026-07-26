@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% set page_title = "Report builder" %}
+{% block breadcrumb %}<a href="/ui/reports/saved">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit report" if report else "New report" }}</span>{% endblock %}
+
+{% block main %}
+<form id="rpt-form" method="post" action="{{ '/ui/reports/' ~ report.id if report else '/ui/reports' }}">
+  <input type="hidden" name="entity" id="f-entity" value="{{ report.entity if report else 'project' }}">
+  <input type="hidden" name="is_summary" id="f-summary" value="{{ '1' if report and report.is_summary else '0' }}">
+  <input type="hidden" name="definition_json" id="f-definition" value="{}">
+  <input type="hidden" name="visibility" id="f-visibility" value="{{ report.visibility if report else 'private' }}">
+
+  <div class="page-header">
+    <div class="page-header__text">
+      <h1 class="page-header__title">{{ "Edit report" if report else "New report" }}</h1>
+      <p class="page-header__subtitle">Pick what to report on, choose columns and filters, then save. The preview runs live and region-scoped.</p>
+    </div>
+    <div class="page-header__actions">
+      <a href="/ui/reports/saved" class="btn btn--secondary">Cancel</a>
+      <button type="button" class="btn btn--primary" onclick="rptOpenSave()">Save…</button>
+    </div>
+  </div>
+
+  <div class="rpt-builder">
+    <!-- config rail -->
+    <div class="rpt-rail">
+      <div class="rpt-group">
+        <div class="rpt-group__head"><h3>1 · Report on</h3></div>
+        <div class="rpt-group__body">
+          <div class="rpt-seg" id="rpt-entity">
+            {% for e in entities %}
+            <button type="button" data-entity="{{ e }}">{{ entity_labels.get(e, e) }}</button>
+            {% endfor %}
+          </div>
+          <label class="checkbox-row" style="margin-top:10px;">
+            <input type="checkbox" id="rpt-summary-toggle"> <span>Summary (group &amp; aggregate)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="rpt-group" id="rpt-columns-group">
+        <div class="rpt-group__head"><h3>2 · Columns</h3><span class="rpt-count" id="rpt-columns-count"></span></div>
+        <div class="rpt-group__body" id="rpt-columns"></div>
+      </div>
+
+      <div class="rpt-group" id="rpt-summary-group" hidden>
+        <div class="rpt-group__head"><h3>2 · Group &amp; measure</h3></div>
+        <div class="rpt-group__body">
+          <label class="label">Group by</label>
+          <select class="select" id="rpt-groupby"></select>
+          <div style="margin-top:12px;">
+            <label class="label">Measures <span class="text-faint" style="font-weight:400;">(count is always included)</span></label>
+            <div id="rpt-measures"></div>
+            <span class="rpt-add" id="rpt-add-measure">+ Add measure</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="rpt-group">
+        <div class="rpt-group__head"><h3>3 · Filters</h3></div>
+        <div class="rpt-group__body">
+          <div id="rpt-filters"></div>
+          <span class="rpt-add" id="rpt-add-filter">+ Add filter</span>
+        </div>
+      </div>
+
+      <div class="rpt-group" id="rpt-sort-group">
+        <div class="rpt-group__head"><h3>4 · Sort</h3></div>
+        <div class="rpt-group__body">
+          <div style="display:flex; gap:8px;">
+            <select class="select" id="rpt-sort-field"><option value="">Default order</option></select>
+            <select class="select" id="rpt-sort-dir" style="max-width:120px;">
+              <option value="asc">A → Z</option><option value="desc">Z → A</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- live preview -->
+    <div class="rpt-preview">
+      <div class="rpt-preview__head">
+        <div><div class="rpt-preview__title">Live preview</div><div class="text-subtle" style="font-size:12px;">Read-only · bounded · region-scoped</div></div>
+      </div>
+      <div id="preview"><div class="rpt-empty">Pick what to report on, add columns, and your preview appears here.</div></div>
+    </div>
+  </div>
+
+  <!-- save modal -->
+  <div class="modal-overlay" id="rpt-save-modal" hidden>
+    <div class="modal" style="max-width:520px;">
+      <div class="modal__header">
+        <h2 class="modal__title">Save report</h2>
+        <button type="button" class="modal__close" onclick="rptCloseSave()">×</button>
+      </div>
+      <div class="modal__body">
+        <div class="form-row">
+          <label class="label" for="rpt-name">Report name</label>
+          <input class="input" id="rpt-name" name="name" maxlength="200" required
+                 value="{{ report.name if report else '' }}" placeholder="e.g. EMEA open POCs — weekly pipeline">
+        </div>
+        <div class="form-row">
+          <label class="label" for="rpt-desc">Description <span class="text-faint">(optional)</span></label>
+          <input class="input" id="rpt-desc" name="description" maxlength="500"
+                 value="{{ report.description if report else '' }}">
+        </div>
+
+        <div class="form-row">
+          <label class="label">Who can see it?</label>
+          <label class="rpt-radio"><input type="radio" name="vis" value="private" checked><div><strong>Private</strong><div class="text-subtle">Only you can see and run it.</div></div></label>
+          {% if can_publish %}
+          <label class="rpt-radio"><input type="radio" name="vis" value="shared"><div><strong>Shared</strong><div class="text-subtle">Pick roles or regions who can run it.</div></div></label>
+          <label class="rpt-radio"><input type="radio" name="vis" value="published"><div><strong>Published</strong><div class="text-subtle">Add to the catalog for a client/internal audience.</div></div></label>
+          {% endif %}
+        </div>
+
+        {% if can_publish %}
+        <div class="form-row" id="rpt-aud-shared" hidden>
+          <label class="label">Share with</label>
+          <div class="rpt-aud-grid">
+            {% for key, label in share_roles %}
+            <label class="checkbox-row"><input type="checkbox" name="audience_roles" value="{{ key }}"> {{ label }}</label>
+            {% endfor %}
+          </div>
+          {% if regions %}
+          <label class="label" style="margin-top:8px;">…or regions</label>
+          <div class="rpt-aud-grid">
+            {% for r in regions %}
+            <label class="checkbox-row"><input type="checkbox" name="audience_regions" value="{{ r.id }}"> {{ r.name }}</label>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        <div class="form-row" id="rpt-aud-published" hidden>
+          <label class="label" for="rpt-aud-kind">Audience</label>
+          <select class="select" id="rpt-aud-kind" name="audience_kind">
+            <option value="internal">Internal (may include internal-only fields)</option>
+            <option value="client">Client-safe</option>
+          </select>
+          <div class="form-hint">🔒 Region scope is re-applied per viewer — a published report never leaks rows across regions.</div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="form-actions" style="padding: var(--s-4) var(--s-6);">
+        <button type="button" class="btn btn--secondary" onclick="rptCloseSave()">Cancel</button>
+        <button type="submit" class="btn btn--primary">{{ "Save changes" if report else "Save report" }}</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script type="application/json" id="rpt-fields-data">{{ fields_json|safe }}</script>
+<script type="application/json" id="rpt-oplabels-data">{{ op_labels_json|safe }}</script>
+<script type="application/json" id="rpt-measurelabels-data">{{ measure_labels_json|safe }}</script>
+<script type="application/json" id="rpt-report-data">{{ report_json|safe }}</script>
+{% endblock %}
+
+{% block body_scripts %}
+<script>
+(function(){
+  const FIELDS = JSON.parse(document.getElementById('rpt-fields-data').textContent);
+  const OPL = JSON.parse(document.getElementById('rpt-oplabels-data').textContent);
+  const MEASL = JSON.parse(document.getElementById('rpt-measurelabels-data').textContent);
+  const EXISTING = JSON.parse(document.getElementById('rpt-report-data').textContent);
+  const NO_VALUE_OPS = ['is_empty','is_not_empty','is_true','is_false'];
+  const MULTI_OPS = ['in','not_in'];
+
+  // ---- state ----
+  const state = {
+    entity: 'project',
+    summary: false,
+    columns: [],          // ordered field keys
+    filters: [],          // {field, op, value}
+    group_by: null,
+    measures: [],         // {fn, field}
+    sort: {field:'', dir:'asc'},
+  };
+
+  if (EXISTING) {
+    state.entity = EXISTING.entity || 'project';
+    state.summary = !!EXISTING.is_summary;
+    const d = EXISTING.definition || {};
+    state.columns = d.columns || [];
+    state.filters = (d.filters || []).map(f => ({field:f.field, op:f.op, value:f.value}));
+    state.group_by = d.group_by || null;
+    state.measures = d.measures || [];
+    state.sort = (d.sort && d.sort[0]) ? {field:d.sort[0].field, dir:d.sort[0].dir} : {field:'', dir:'asc'};
+  }
+
+  const fieldsFor = () => FIELDS[state.entity] || [];
+  const fieldByKey = (k) => fieldsFor().find(f => f.key === k);
+
+  // ---- rendering ----
+  function renderEntity() {
+    document.querySelectorAll('#rpt-entity button').forEach(b => {
+      b.classList.toggle('on', b.dataset.entity === state.entity);
+    });
+    document.getElementById('rpt-summary-toggle').checked = state.summary;
+    document.getElementById('rpt-columns-group').hidden = state.summary;
+    document.getElementById('rpt-summary-group').hidden = !state.summary;
+    document.getElementById('rpt-sort-group').hidden = state.summary;
+  }
+
+  function renderColumns() {
+    const box = document.getElementById('rpt-columns');
+    box.innerHTML = '';
+    fieldsFor().forEach(f => {
+      const id = 'col-' + f.key;
+      const row = document.createElement('label');
+      row.className = 'rpt-field' + (f.source === 'derived' ? ' rpt-field--derived' : '');
+      row.innerHTML =
+        '<input type="checkbox" ' + (state.columns.includes(f.key) ? 'checked' : '') + '>' +
+        '<span>' + esc(f.label) + '</span>' +
+        '<span class="rpt-ftype">' + f.type + '</span>';
+      const cb = row.querySelector('input');
+      cb.addEventListener('change', () => {
+        if (cb.checked) { if(!state.columns.includes(f.key)) state.columns.push(f.key); }
+        else state.columns = state.columns.filter(k => k !== f.key);
+        updateCount(); sync();
+      });
+      if (f.help) row.title = f.help;
+      box.appendChild(row);
+    });
+    updateCount();
+  }
+
+  function updateCount() {
+    document.getElementById('rpt-columns-count').textContent = state.columns.length + ' selected';
+  }
+
+  function optionList(fields, selected) {
+    return fields.map(f => '<option value="'+f.key+'"'+(f.key===selected?' selected':'')+'>'+esc(f.label)+'</option>').join('');
+  }
+
+  function renderFilters() {
+    const box = document.getElementById('rpt-filters');
+    box.innerHTML = '';
+    const filterable = fieldsFor().filter(f => f.filterable);
+    state.filters.forEach((flt, i) => {
+      const f = fieldByKey(flt.field) || filterable[0];
+      if (!flt.field && f) flt.field = f.key;
+      const row = document.createElement('div');
+      row.className = 'rpt-filter';
+      const ops = (f ? f.ops : []).map(o => '<option value="'+o+'"'+(o===flt.op?' selected':'')+'>'+(OPL[o]||o)+'</option>').join('');
+      row.innerHTML =
+        '<div class="rpt-filter__top">' +
+          '<select class="select rpt-f-field">'+optionList(filterable, flt.field)+'</select>' +
+          '<span class="rpt-x" title="Remove">×</span>' +
+        '</div>' +
+        '<div class="rpt-filter__bot">' +
+          '<select class="select rpt-f-op" style="max-width:130px;">'+ops+'</select>' +
+          '<span class="rpt-f-val"></span>' +
+        '</div>';
+      box.appendChild(row);
+      renderFilterValue(row, flt);
+      row.querySelector('.rpt-f-field').addEventListener('change', (e) => {
+        flt.field = e.target.value;
+        const nf = fieldByKey(flt.field);
+        flt.op = nf.ops[0]; flt.value = null;
+        renderFilters(); sync();
+      });
+      row.querySelector('.rpt-f-op').addEventListener('change', (e) => {
+        flt.op = e.target.value; flt.value = null;
+        renderFilterValue(row, flt); sync();
+      });
+      row.querySelector('.rpt-x').addEventListener('click', () => {
+        state.filters.splice(i,1); renderFilters(); sync();
+      });
+    });
+  }
+
+  function renderFilterValue(row, flt) {
+    const holder = row.querySelector('.rpt-f-val');
+    const f = fieldByKey(flt.field);
+    holder.innerHTML = '';
+    if (!f || NO_VALUE_OPS.includes(flt.op)) { flt.value = null; return; }
+    const inputType = (f.type === 'date') ? 'date' : (f.type === 'number' ? 'number' : 'text');
+    if (flt.op === 'between') {
+      const v = Array.isArray(flt.value) ? flt.value : ['',''];
+      holder.innerHTML = '<input class="input rpt-in" type="'+inputType+'" value="'+esc(v[0]||'')+'"> <span class="text-faint">to</span> <input class="input rpt-in2" type="'+inputType+'" value="'+esc(v[1]||'')+'">';
+      const a = holder.querySelector('.rpt-in'), b = holder.querySelector('.rpt-in2');
+      const upd = () => { flt.value = [a.value, b.value]; sync(); };
+      a.addEventListener('input', upd); b.addEventListener('input', upd);
+    } else {
+      const placeholder = MULTI_OPS.includes(flt.op) ? 'comma,separated,values' : '';
+      const listId = 'dl-' + Math.random().toString(36).slice(2);
+      const val = Array.isArray(flt.value) ? flt.value.join(',') : (flt.value || '');
+      holder.innerHTML = '<input class="input rpt-in" list="'+listId+'" placeholder="'+placeholder+'" value="'+esc(val)+'"><datalist id="'+listId+'"></datalist>';
+      const inp = holder.querySelector('.rpt-in');
+      inp.addEventListener('input', () => {
+        flt.value = MULTI_OPS.includes(flt.op) ? inp.value.split(',').map(s=>s.trim()).filter(Boolean) : inp.value;
+        sync();
+      });
+      // populate suggestions for enum/string fields
+      if (f.type === 'enum' || f.type === 'string') {
+        fetch('/ui/reports/options?entity='+encodeURIComponent(state.entity)+'&field='+encodeURIComponent(f.key))
+          .then(r => r.ok ? r.text() : '').then(html => { const dl = document.getElementById(listId); if(dl) dl.innerHTML = html; })
+          .catch(()=>{});
+      }
+    }
+  }
+
+  function renderSummary() {
+    const groupable = fieldsFor().filter(f => f.groupable);
+    const gsel = document.getElementById('rpt-groupby');
+    gsel.innerHTML = '<option value="">(no grouping)</option>' + optionList(groupable, state.group_by || '');
+    gsel.value = state.group_by || '';
+    renderMeasures();
+  }
+
+  function renderMeasures() {
+    const box = document.getElementById('rpt-measures');
+    const measurable = fieldsFor().filter(f => f.measurable);
+    box.innerHTML = '';
+    state.measures.forEach((m, i) => {
+      const row = document.createElement('div');
+      row.className = 'rpt-measure';
+      const fnOpts = ['avg','sum','min','max'].map(fn => '<option value="'+fn+'"'+(fn===m.fn?' selected':'')+'>'+(MEASL[fn]||fn)+'</option>').join('');
+      row.innerHTML =
+        '<select class="select rpt-m-fn" style="max-width:110px;">'+fnOpts+'</select>' +
+        '<select class="select rpt-m-field">'+optionList(measurable, m.field)+'</select>' +
+        '<span class="rpt-x">×</span>';
+      box.appendChild(row);
+      row.querySelector('.rpt-m-fn').addEventListener('change', e => { m.fn = e.target.value; sync(); });
+      row.querySelector('.rpt-m-field').addEventListener('change', e => { m.field = e.target.value; sync(); });
+      row.querySelector('.rpt-x').addEventListener('click', () => { state.measures.splice(i,1); renderMeasures(); sync(); });
+    });
+  }
+
+  function renderSort() {
+    const sortable = fieldsFor().filter(f => f.sortable);
+    const sel = document.getElementById('rpt-sort-field');
+    sel.innerHTML = '<option value="">Default order</option>' + optionList(sortable, state.sort.field);
+    sel.value = state.sort.field || '';
+    document.getElementById('rpt-sort-dir').value = state.sort.dir;
+  }
+
+  function renderAll() {
+    renderEntity(); renderColumns(); renderFilters(); renderSummary(); renderSort();
+    sync();
+  }
+
+  // ---- definition + preview ----
+  function buildDefinition() {
+    const d = {columns:[], filters:[], group_by:null, measures:[], sort:[]};
+    d.filters = state.filters
+      .filter(f => f.field && f.op)
+      .map(f => ({field:f.field, op:f.op, value: (NO_VALUE_OPS.includes(f.op) ? null : f.value)}));
+    if (state.summary) {
+      d.group_by = state.group_by || null;
+      d.measures = state.measures.filter(m => m.fn && m.field);
+    } else {
+      d.columns = state.columns.slice();
+      if (state.sort.field) d.sort = [{field:state.sort.field, dir:state.sort.dir}];
+    }
+    return d;
+  }
+
+  function sync() {
+    document.getElementById('f-entity').value = state.entity;
+    document.getElementById('f-summary').value = state.summary ? '1' : '0';
+    document.getElementById('f-definition').value = JSON.stringify(buildDefinition());
+    schedulePreview();
+  }
+
+  let previewTimer = null;
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(refreshPreview, 250);
+  }
+  function refreshPreview() {
+    const fd = new FormData();
+    fd.append('entity', state.entity);
+    fd.append('is_summary', state.summary ? '1' : '0');
+    fd.append('definition_json', document.getElementById('f-definition').value);
+    fetch('/ui/reports/preview', {method:'POST', body: fd})
+      .then(r => r.text()).then(html => { document.getElementById('preview').innerHTML = html; })
+      .catch(() => {});
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  // ---- events ----
+  document.getElementById('rpt-entity').addEventListener('click', e => {
+    const b = e.target.closest('button[data-entity]'); if(!b) return;
+    if (b.dataset.entity === state.entity) return;
+    state.entity = b.dataset.entity;
+    // reset field-dependent state when entity changes
+    state.columns = []; state.filters = []; state.group_by = null; state.measures = []; state.sort = {field:'',dir:'asc'};
+    renderAll();
+  });
+  document.getElementById('rpt-summary-toggle').addEventListener('change', e => {
+    state.summary = e.target.checked; renderEntity(); sync();
+  });
+  document.getElementById('rpt-add-filter').addEventListener('click', () => {
+    const filterable = fieldsFor().filter(f => f.filterable);
+    if (!filterable.length) return;
+    const f = filterable[0];
+    state.filters.push({field:f.key, op:f.ops[0], value:null});
+    renderFilters(); sync();
+  });
+  document.getElementById('rpt-add-measure').addEventListener('click', () => {
+    const measurable = fieldsFor().filter(f => f.measurable);
+    if (!measurable.length) return;
+    state.measures.push({fn:'avg', field:measurable[0].key});
+    renderMeasures(); sync();
+  });
+  document.getElementById('rpt-groupby').addEventListener('change', e => { state.group_by = e.target.value || null; sync(); });
+  document.getElementById('rpt-sort-field').addEventListener('change', e => { state.sort.field = e.target.value; sync(); });
+  document.getElementById('rpt-sort-dir').addEventListener('change', e => { state.sort.dir = e.target.value; sync(); });
+
+  // ---- save modal ----
+  window.rptOpenSave = function() {
+    // require at least a preview-able definition
+    document.getElementById('rpt-save-modal').hidden = false;
+    // preselect visibility if editing
+    if (EXISTING && EXISTING.visibility) {
+      const r = document.querySelector('input[name="vis"][value="'+EXISTING.visibility+'"]');
+      if (r) { r.checked = true; syncVisibility(); }
+    }
+  };
+  window.rptCloseSave = function() { document.getElementById('rpt-save-modal').hidden = true; };
+  function syncVisibility() {
+    const v = (document.querySelector('input[name="vis"]:checked')||{}).value || 'private';
+    document.getElementById('f-visibility').value = v;
+    const sh = document.getElementById('rpt-aud-shared'), pub = document.getElementById('rpt-aud-published');
+    if (sh) sh.hidden = v !== 'shared';
+    if (pub) pub.hidden = v !== 'published';
+  }
+  document.querySelectorAll('input[name="vis"]').forEach(r => r.addEventListener('change', syncVisibility));
+
+  // prefill audience when editing
+  if (EXISTING && EXISTING.audience) {
+    (EXISTING.audience.role_keys||[]).forEach(k => { const el=document.querySelector('input[name="audience_roles"][value="'+k+'"]'); if(el) el.checked=true; });
+    (EXISTING.audience.region_ids||[]).forEach(k => { const el=document.querySelector('input[name="audience_regions"][value="'+k+'"]'); if(el) el.checked=true; });
+    if (EXISTING.audience.kind) { const k=document.getElementById('rpt-aud-kind'); if(k) k.value=EXISTING.audience.kind; }
+  }
+
+  // ---- go ----
+  renderAll();
+})();
+</script>
+{% endblock %}
