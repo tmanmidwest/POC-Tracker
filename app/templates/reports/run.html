@@ -7,7 +7,7 @@
   <div class="page-header__text">
     <h1 class="page-header__title">{{ report.name }}</h1>
     <p class="page-header__subtitle">
-      {{ result.total_matched }} {{ entity_labels[report.entity] if entity_labels is defined else report.entity }} ·
+      {{ result.total_matched }} {{ entity_labels.get(report.entity, report.entity) if entity_labels is defined else report.entity }} ·
       {% if report.is_summary %}summary{% else %}{{ result.columns|length }} columns{% endif %}
       {% if report.description %} · {{ report.description }}{% endif %}
     </p>
@@ -53,13 +53,16 @@
         </div>
         {% endfor %}
       </div>
+      {% if result.group_rows|length > 10 %}
+      <div class="text-muted" style="font-size:12px; margin-top:var(--s-3);">Showing top 10 of {{ result.group_rows|length }} groups — see the table above for all.</div>
+      {% endif %}
     </div>
   </div>
   {% endif %}
 </div>
 
 {% if can_edit and can_schedule %}
-<div class="modal-overlay" id="sched-modal" hidden>
+<div class="modal-overlay" id="sched-modal" data-modal-persist hidden>
   <form class="modal" style="max-width:520px;" method="post" action="/ui/reports/{{ report.id }}/schedule">
     <div class="modal__header">
       <h2 class="modal__title">Schedule email delivery</h2>
@@ -75,18 +78,16 @@
             <option value="daily" {{ 'selected' if sch.freq == 'daily' else '' }}>Daily</option>
             <option value="monthly" {{ 'selected' if sch.freq == 'monthly' else '' }}>Monthly</option>
           </select>
-          <select class="select" name="day" id="sched-day">
-            {% for i, d in [(0,'Monday'),(1,'Tuesday'),(2,'Wednesday'),(3,'Thursday'),(4,'Friday'),(5,'Saturday'),(6,'Sunday')] %}
-            <option value="{{ i }}" {{ 'selected' if sch.day == i else '' }}>{{ d }}</option>
-            {% endfor %}
-          </select>
+          {# Options are (re)built by the script below to match the frequency:
+             weekday names for weekly, day-of-month for monthly, hidden for daily. #}
+          <select class="select" name="day" id="sched-day" data-current="{{ sch.day if sch.day is not none else '' }}"></select>
           <select class="select" name="hour" style="max-width:110px;">
             {% for h in range(0,24) %}
             <option value="{{ h }}" {{ 'selected' if sch.hour == h else ('selected' if (sch.hour is not defined and h == 8) else '') }}>{{ '%02d:00'|format(h) }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-hint">Runs from a background loop (one sender across all app instances). Monthly uses the day number.</div>
+        <div class="form-hint">Runs from a background loop (one sender across all app instances). Weekly picks a weekday; monthly picks a day of the month (1–28); daily ignores the day.</div>
       </div>
       <div class="form-row">
         <label class="label" for="sched-to">Send to</label>
@@ -115,4 +116,34 @@
   </form>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block body_scripts %}
+<script>
+// Adapt the schedule day-picker to the chosen frequency:
+//   weekly  → weekday names (0=Mon..6=Sun, matches the server)
+//   monthly → day of month (1–28; the scheduler clamps to this range)
+//   daily   → no day needed, so the control is hidden and left out of the POST
+(function () {
+  const freq = document.getElementById('sched-freq');
+  const day = document.getElementById('sched-day');
+  if (!freq || !day) return;
+  const current = day.dataset.current === '' ? null : parseInt(day.dataset.current, 10);
+  const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  function build() {
+    const f = freq.value;
+    if (f === 'daily') { day.innerHTML = ''; day.hidden = true; day.disabled = true; return; }
+    day.hidden = false; day.disabled = false;
+    let opts = '';
+    if (f === 'monthly') {
+      for (let d = 1; d <= 28; d++) opts += '<option value="' + d + '"' + (current === d ? ' selected' : '') + '>Day ' + d + '</option>';
+    } else {
+      WEEK.forEach((name, i) => { opts += '<option value="' + i + '"' + (current === i ? ' selected' : '') + '>' + name + '</option>'; });
+    }
+    day.innerHTML = opts;
+  }
+  freq.addEventListener('change', build);
+  build();
+})();
+</script>
 {% endblock %}

@@ -124,6 +124,9 @@
       html[data-theme="dark"] .btn--primary { color: #fff; }
       /* Brand accent is often very dark (e.g. slate-900) — keep links legible on dark. */
       html[data-theme="dark"] a { color: #93c5fd; }
+      /* Tint the status pills to the dark palette instead of bright light chips. */
+      html[data-theme="dark"] .badge--ok { background: #14321f; border-color: #1c5233; color: #4ade80; }
+      html[data-theme="dark"] .badge--internal { background: #3a2e12; border-color: #5c4a1c; color: #fcd34d; }
     }
 
     @page { size: A4; margin: 16mm 14mm; }

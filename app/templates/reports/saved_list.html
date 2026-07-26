@@ -4,6 +4,7 @@
 {% block breadcrumb %}<span>Reports</span>{% endblock %}
 
 {% block main %}
+{% include "reports/_tabs.html" with context %}
 <div class="page-header">
   <div class="page-header__text">
     <h1 class="page-header__title">Reports</h1>
@@ -18,8 +19,6 @@
     {% endif %}
   </div>
 </div>
-
-{% include "reports/_tabs.html" with context %}
 
 <div class="card card--flush">
 <div class="table-wrap">

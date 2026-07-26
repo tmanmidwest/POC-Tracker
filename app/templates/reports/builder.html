@@ -16,7 +16,7 @@
     </div>
     <div class="page-header__actions">
       <a href="/ui/reports/saved" class="btn btn--secondary">Cancel</a>
-      <button type="button" class="btn btn--primary" onclick="rptOpenSave()">Save…</button>
+      <button type="button" class="btn btn--primary" id="rpt-save-btn" onclick="rptOpenSave()">Save…</button>
     </div>
   </div>
 
@@ -86,7 +86,7 @@
   </div>
 
   <!-- save modal -->
-  <div class="modal-overlay" id="rpt-save-modal" hidden>
+  <div class="modal-overlay" id="rpt-save-modal" data-modal-persist hidden>
     <div class="modal" style="max-width:520px;">
       <div class="modal__header">
         <h2 class="modal__title">Save report</h2>
@@ -193,6 +193,13 @@
   function renderEntity() {
     document.querySelectorAll('#rpt-entity button').forEach(b => {
       b.classList.toggle('on', b.dataset.entity === state.entity);
+      // The report type is immutable once saved — the server rejects a changed
+      // entity, so lock the tabs in edit mode rather than let work be discarded.
+      if (EXISTING) {
+        const locked = b.dataset.entity !== state.entity;
+        b.disabled = locked;
+        b.title = locked ? "A report's type can't be changed after it's created." : '';
+      }
     });
     document.getElementById('rpt-summary-toggle').checked = state.summary;
     document.getElementById('rpt-columns-group').hidden = state.summary;
@@ -318,7 +325,7 @@
       row.innerHTML =
         '<select class="select rpt-m-fn" style="max-width:110px;">'+fnOpts+'</select>' +
         '<select class="select rpt-m-field">'+optionList(measurable, m.field)+'</select>' +
-        '<span class="rpt-x">×</span>';
+        '<span class="rpt-x" title="Remove">×</span>';
       box.appendChild(row);
       row.querySelector('.rpt-m-fn').addEventListener('change', e => { m.fn = e.target.value; sync(); });
       row.querySelector('.rpt-m-field').addEventListener('change', e => { m.field = e.target.value; sync(); });
@@ -355,10 +362,25 @@
     return d;
   }
 
+  const EMPTY_PREVIEW =
+    '<div class="rpt-empty">Pick what to report on, add columns, and your preview appears here.</div>';
+
+  // A definition the server would accept: a tabular report needs at least one
+  // column; a summary needs a group-by or a complete measure (count is implicit).
+  // Guarding on this keeps a brand-new report showing the empty state instead of
+  // firing a preview that comes back as a red "needs at least one column" error.
+  function isPreviewable() {
+    if (state.summary) return !!state.group_by || state.measures.some(m => m.fn && m.field);
+    return state.columns.length > 0;
+  }
+
   function sync() {
     document.getElementById('f-entity').value = state.entity;
     document.getElementById('f-summary').value = state.summary ? '1' : '0';
     document.getElementById('f-definition').value = JSON.stringify(buildDefinition());
+    const saveBtn = document.getElementById('rpt-save-btn');
+    saveBtn.disabled = !isPreviewable();
+    saveBtn.title = saveBtn.disabled ? 'Add at least one column (or a group/measure) first.' : '';
     schedulePreview();
   }
 
@@ -368,20 +390,34 @@
     previewTimer = setTimeout(refreshPreview, 250);
   }
   function refreshPreview() {
+    const pane = document.getElementById('preview');
+    if (!isPreviewable()) { pane.innerHTML = EMPTY_PREVIEW; pane.classList.remove('is-loading'); return; }
     const fd = new FormData();
     fd.append('entity', state.entity);
     fd.append('is_summary', state.summary ? '1' : '0');
     fd.append('definition_json', document.getElementById('f-definition').value);
-    fetch('/ui/reports/preview', {method:'POST', body: fd})
-      .then(r => r.text()).then(html => { document.getElementById('preview').innerHTML = html; })
-      .catch(() => {});
+    pane.classList.add('is-loading');
+    fetch('/ui/reports/preview', {method:'POST', body: fd, credentials:'same-origin'})
+      .then(r => { if (!r.ok) throw new Error('preview request failed'); return r.text(); })
+      .then(html => { pane.innerHTML = html; })
+      .catch(() => { pane.innerHTML = '<div class="inline-error">Couldn\'t refresh the preview — check your filter values and try again.</div>'; })
+      .finally(() => { pane.classList.remove('is-loading'); });
   }
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
   // ---- events ----
+  // The whole builder is one <form>; pressing Enter in a filter/config input
+  // would submit it, bypassing the Save modal (and its visibility choice).
+  // Let Enter through only inside the Save modal (name/description fields).
+  document.getElementById('rpt-form').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches('input') && !e.target.closest('#rpt-save-modal')) {
+      e.preventDefault();
+    }
+  });
   document.getElementById('rpt-entity').addEventListener('click', e => {
     const b = e.target.closest('button[data-entity]'); if(!b) return;
+    if (EXISTING) return;  // entity is locked when editing (see renderEntity)
     if (b.dataset.entity === state.entity) return;
     state.entity = b.dataset.entity;
     // reset field-dependent state when entity changes
@@ -410,7 +446,9 @@
 
   // ---- save modal ----
   window.rptOpenSave = function() {
-    // require at least a preview-able definition
+    // Require at least a preview-able definition so we never open the modal into
+    // a save that the server will reject (which would round-trip and lose work).
+    if (!isPreviewable()) return;
     document.getElementById('rpt-save-modal').hidden = false;
     // preselect visibility if editing
     if (EXISTING && EXISTING.visibility) {

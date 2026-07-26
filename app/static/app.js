@@ -138,20 +138,31 @@ function toggleSidebar(btn) {
   }).catch(() => { /* non-blocking; the visual change already applied */ });
 }
 
-// Modal: close on Escape, close on overlay click
+// Modal: close on Escape, close on overlay click.
+// Two kinds of `.modal-overlay` exist:
+//  - dynamic (HTMX-injected): closing them means removing them from the DOM.
+//  - persistent (authored in a template with `data-modal-persist`, toggled via
+//    the `hidden` attribute — e.g. the report Save and Schedule modals): closing
+//    means hiding them, so the element survives and can be reopened. Removing
+//    them here would delete the markup and break the reopen button.
+function closeModalOverlay(overlay) {
+  if (!overlay) return;
+  if ('modalPersist' in overlay.dataset) overlay.hidden = true;
+  else overlay.remove();
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    document.querySelectorAll('.modal-overlay').forEach((el) => el.remove());
+    document.querySelectorAll('.modal-overlay').forEach(closeModalOverlay);
   }
 });
 
 document.addEventListener('click', (e) => {
   if (e.target.classList && e.target.classList.contains('modal-overlay')) {
-    e.target.remove();
+    closeModalOverlay(e.target);
   }
   if (e.target.classList && e.target.classList.contains('modal__close')) {
-    const overlay = e.target.closest('.modal-overlay');
-    if (overlay) overlay.remove();
+    closeModalOverlay(e.target.closest('.modal-overlay'));
   }
 });
 
