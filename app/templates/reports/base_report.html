@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme or 'light' }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -106,6 +106,25 @@
 
     .report-footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     .empty { color: var(--muted); font-style: italic; }
+
+    /* On-screen dark theme — follows the user's app theme.
+       Scoped to @media screen so PDF/print output (WeasyPrint renders as
+       print media) always stays light, which is correct for paper. */
+    @media screen {
+      html[data-theme="dark"] {
+        --ink: #e7e5e4; --muted: #a8a29e; --line: #3a3735;
+        --line-strong: #4a4644; --soft: #292524;
+      }
+      html[data-theme="dark"] body { background: #1c1917; }
+      html[data-theme="dark"] .report-toolbar,
+      html[data-theme="dark"] .report-exports { background: #1c1917; }
+      html[data-theme="dark"] .btn,
+      html[data-theme="dark"] .export-card,
+      html[data-theme="dark"] .export-card select { background: #292524; color: var(--ink); }
+      html[data-theme="dark"] .btn--primary { color: #fff; }
+      /* Brand accent is often very dark (e.g. slate-900) — keep links legible on dark. */
+      html[data-theme="dark"] a { color: #93c5fd; }
+    }
 
     @page { size: A4; margin: 16mm 14mm; }
     @media print {
