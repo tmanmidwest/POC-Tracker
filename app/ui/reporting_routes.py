@@ -241,7 +241,6 @@ def _resolve_visibility(user: AppUser, requested: str) -> str:
     return VISIBILITY_PRIVATE
 
 
-@router.post("")
 @router.post("/")
 async def create(
     request: Request,

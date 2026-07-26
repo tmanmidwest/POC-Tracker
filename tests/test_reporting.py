@@ -284,7 +284,7 @@ def test_routes_end_to_end(admin_session) -> None:
     })
     assert prev.status_code == 200
     # Create
-    created = c.post("/ui/reports", data={
+    created = c.post("/ui/reports/", data={
         "name": "Smoke report", "description": "",
         "entity": "project", "is_summary": "0", "visibility": "private",
         "definition_json": json.dumps({"columns": ["name", "status"]}),

@@ -3,7 +3,7 @@
 {% block breadcrumb %}<a href="/ui/reports/saved">Reports</a> <span class="topbar__breadcrumb-sep">/</span> <span>{{ "Edit report" if report else "New report" }}</span>{% endblock %}
 
 {% block main %}
-<form id="rpt-form" method="post" action="{{ '/ui/reports/' ~ report.id if report else '/ui/reports' }}">
+<form id="rpt-form" method="post" action="{{ '/ui/reports/' ~ report.id if report else '/ui/reports/' }}">
   <input type="hidden" name="entity" id="f-entity" value="{{ report.entity if report else 'project' }}">
   <input type="hidden" name="is_summary" id="f-summary" value="{{ '1' if report and report.is_summary else '0' }}">
   <input type="hidden" name="definition_json" id="f-definition" value="{}">
