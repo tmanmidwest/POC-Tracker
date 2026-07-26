@@ -1783,6 +1783,40 @@ a.kpi-card:hover .kpi-card__hint { color: var(--text-muted); }
 
 .chart-panel__body { min-height: 0; }
 
+/* Bar list — a categorical breakdown that stays legible past the ~5 slices
+   where a donut turns into unreadable arcs + a detached wrapping legend. One
+   labeled row per category (sorted by count), with the value and share inline. */
+.barlist { display: flex; flex-direction: column; gap: 10px; padding-top: 2px; }
+.barlist__meta { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+.barlist__row {
+  display: grid;
+  grid-template-columns: minmax(84px, 38%) 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: 12px;
+}
+.barlist__label {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.barlist__track {
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.barlist__fill { display: block; height: 100%; border-radius: 999px; min-width: 3px; }
+.barlist__val {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.barlist__pct { font-weight: 500; color: var(--text-muted); margin-left: 4px; }
+
 /* Attention lists */
 .attention-grid {
   display: grid;
