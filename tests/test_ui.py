@@ -368,7 +368,7 @@ def test_project_report_html_and_zip(ui: TestClient) -> None:
     assert "sidebar__nav" not in r.text  # navigation bar omitted
     assert "Journal entry one" in r.text
     assert "/ui/projects/screenshots/" in r.text
-    assert "Download all (.zip)" in r.text  # has_artifacts -> zip button shown
+    assert "Everything (.zip)" in r.text  # has_artifacts -> zip export card shown
     assert "artifacts.zip?v=" in r.text  # cache-busted download link
     assert "/pdf?v=" in r.text
 

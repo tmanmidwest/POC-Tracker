@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -168,7 +168,12 @@ def test_salesforce_update_uses_updated_at_when_no_completed_on(
 
     _patch_stream(monkeypatch, fake_stream)
 
-    today = date.today()
+    # The fallback proxy date is uc.updated_at.date(), which is UTC (updated_at is
+    # stored in UTC). Build the window in the same UTC frame so the freshly-created
+    # record lands inside it even when run past midnight UTC on a machine whose
+    # local date is still the prior day (production containers run UTC, so this
+    # only bit the test).
+    today = datetime.now(timezone.utc).date()
     resp = admin_ui.post(
         f"/ui/projects/{pid}/salesforce-update/stream",
         data={"start": (today - timedelta(days=7)).isoformat(), "end": today.isoformat()},
