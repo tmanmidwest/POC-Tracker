@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from app.models import (
     Contact,
     Customer,
+    Feedback,
     NoteAttachment,
     Project,
     ProjectNote,
@@ -37,6 +38,7 @@ from app.models import (
     Screenshot,
     UseCaseLibrary,
 )
+from app.models.feedback import FEEDBACK_KIND_LABELS
 
 MIN_QUERY_LEN = 2
 DEFAULT_PER_TYPE = 8
@@ -55,11 +57,12 @@ TYPE_LABELS = {
     "contact": "Contacts",
     "attachment": "Attachments",
     "screenshot": "Screenshots",
+    "feedback": "Feedback",
 }
 # Display order of result groups.
 TYPE_ORDER = [
     "project", "use_case", "library", "note",
-    "customer", "contact", "attachment", "screenshot",
+    "customer", "contact", "attachment", "screenshot", "feedback",
 ]
 
 _MODELS = {
@@ -71,6 +74,7 @@ _MODELS = {
     "note": ProjectNote,
     "attachment": NoteAttachment,
     "screenshot": Screenshot,
+    "feedback": Feedback,
 }
 
 # Columns fed into the index title/text per entity — mirrors the 0012 migration
@@ -86,6 +90,19 @@ _INDEX_FIELDS: dict[str, tuple[list[str], list[str]]] = {
     "note": (["created_by"], ["body"]),
     "attachment": (["original_filename"], ["original_filename"]),
     "screenshot": (["caption"], ["caption", "original_filename"]),
+    "feedback": (["title"], ["title", "body"]),
+}
+
+
+def _extra_feedback_text(obj: Feedback) -> str:
+    """Comment bodies folded into a feedback item's indexed text."""
+    return " ".join(c.body for c in obj.comments if c.body)
+
+
+# Indexable text that isn't a plain column (e.g. child rows). Mirrors what the
+# DB triggers fold in, so rebuild_index() stays consistent with live indexing.
+_EXTRA_TEXT = {
+    "feedback": _extra_feedback_text,
 }
 
 
@@ -193,6 +210,20 @@ def _b_screenshot(s: Screenshot) -> tuple[str, str, str]:
         " ".join(filter(None, [s.caption, s.original_filename])), url
 
 
+def _b_feedback(f: Feedback) -> tuple[str, str, str]:
+    # Prefix the title with the kind so bugs vs. feature requests read apart in
+    # the results. Links to the read-only detail (any internal user can open it).
+    # Comment bodies are included in the snippet source so a term that only
+    # appears in a comment still highlights (the index folds them in too).
+    kind = FEEDBACK_KIND_LABELS.get(f.kind, f.kind)
+    parts = [f.title, f.body, *(c.body for c in f.comments)]
+    return (
+        f"{kind} · {f.title}",
+        " ".join(p for p in parts if p),
+        f"/ui/feedback/all/{f.id}",
+    )
+
+
 _BUILDERS = {
     "project": _b_project,
     "customer": _b_customer,
@@ -202,12 +233,15 @@ _BUILDERS = {
     "note": _b_note,
     "attachment": _b_attachment,
     "screenshot": _b_screenshot,
+    "feedback": _b_feedback,
 }
 
 
 # Entity types scoped to a single project, and how to find that project's id.
-# Types not listed here (customer, contact, library) are not project-scoped and
-# are hidden entirely from external viewers.
+# Types not listed here (customer, contact, library, feedback) are not
+# project-scoped and are hidden entirely from external viewers — which is the
+# desired rule for feedback too (every internal user may see all feedback; an
+# external submitter must not see others', so they see none in search).
 _PROJECT_ID_OF = {
     "project": lambda o: o.id,
     "use_case": lambda o: o.project_id,
@@ -229,9 +263,10 @@ def _visible_to(
     When it's a set, project-scoped hits are limited to those ids.
 
     ``restrict_unscoped`` controls non-project-scoped types (customers, library,
-    contacts). True for external viewers — they see nothing outside their granted
-    projects. False for an internal user merely scoped to "My POCs" — they still
-    see global reference data, just narrowed project content.
+    contacts, feedback). True for external viewers — they see nothing outside
+    their granted projects. False for an internal user merely scoped to "My POCs"
+    — they still see global reference data (and all feedback), just narrowed
+    project content.
     """
     if visible_project_ids is None:
         return True
@@ -317,20 +352,25 @@ def rebuild_index(db: Session) -> int:
     """Wipe and repopulate the search index from current rows. A maintenance/
     safety backstop — normal operation is kept current by triggers. Returns the
     number of indexed rows."""
+    # si_tsv() centralizes weighting + separator normalization (see migration
+    # 0047), so the rebuild backstop indexes identically to the live triggers.
     insert_sql = (
         "INSERT INTO search_index(title, text, entity_type, entity_id, tsv) "
-        "VALUES(:t, :x, :et, :id, "
-        "setweight(to_tsvector('english', :t), 'A') || "
-        "setweight(to_tsvector('english', :x), 'B'))"
+        "VALUES(:t, :x, :et, :id, si_tsv(:t, :x))"
     )
 
     db.execute(sql_text("DELETE FROM search_index"))
     count = 0
     for etype, model in _MODELS.items():
         title_cols, text_cols = _INDEX_FIELDS[etype]
+        extra_fn = _EXTRA_TEXT.get(etype)
         for obj in db.query(model).all():
             title = " ".join(str(getattr(obj, c)) for c in title_cols if getattr(obj, c, None))
             body = " ".join(str(getattr(obj, c)) for c in text_cols if getattr(obj, c, None))
+            if extra_fn:
+                extra = extra_fn(obj)
+                if extra:
+                    body = f"{body} {extra}".strip()
             db.execute(
                 sql_text(insert_sql),
                 {"t": title, "x": body, "et": etype, "id": obj.id},
