@@ -6,8 +6,8 @@ Three surfaces:
   the current user has made, with their current status.
 * **Browse** (any internal user): a read-only board of *all* feedback grouped by
   status, so internal users can see what's been raised and where it is in the
-  process — without the drag-to-move, priority, internal notes, or delete
-  controls the admin board carries. Never exposes ``admin_notes``.
+  process — without the drag-to-move, priority, or delete controls the admin
+  board carries. A read-only detail page shows the admin comment timeline.
 * **Manage** (admins only): a Kanban board grouped by status with drag-to-move,
   plus a per-item detail page to set priority, edit status, and keep internal
   notes.
@@ -24,10 +24,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import AppUser, Feedback, FeedbackStatus
+from app.models import AppUser, Feedback, FeedbackComment, FeedbackStatus
 from app.models.feedback import (
     FEEDBACK_KIND_LABELS,
     FEEDBACK_KINDS,
@@ -168,7 +168,7 @@ def _board_columns(
     statuses = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).all()
 
     kind_filter = kind if kind in FEEDBACK_KINDS else None
-    base = db.query(Feedback)
+    base = db.query(Feedback).options(selectinload(Feedback.comments))
     if kind_filter:
         base = base.filter(Feedback.kind == kind_filter)
     items = base.order_by(Feedback.created_at.desc()).all()
@@ -191,9 +191,9 @@ def browse_board(
 ) -> Response:
     """Read-only board of all feedback, so internal users can see where it is.
 
-    Same grouping as the manage board but with no controls and no ``admin_notes``.
-    The template renders a board (default) and a list; a client-side toggle
-    switches between them.
+    Same grouping as the manage board but with no controls. The template renders
+    a board (default) and a list; a client-side toggle switches between them.
+    Each card links to a read-only detail page with the comment timeline.
     """
     columns, orphans, items = _board_columns(db, kind)
     kind_filter = kind if kind in FEEDBACK_KINDS else None
@@ -207,6 +207,29 @@ def browse_board(
         items=items,
         total=len(items),
         kind_filter=kind_filter,
+        kind_labels=FEEDBACK_KIND_LABELS,
+    )
+
+
+@router.get("/all/{fid}")
+def browse_detail(
+    fid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_feedback_view),
+) -> Response:
+    """Read-only detail for an internal viewer: submission + comment timeline.
+
+    Same comments an admin sees on the manage page, but with no triage controls
+    and no way to add or remove a comment (that stays with ``feedback.manage``).
+    """
+    item = _get_item(db, fid)
+    return render(
+        request,
+        "feedback/browse_detail.html",
+        current_user=user,
+        active_section="feedback_all",
+        item=item,
         kind_labels=FEEDBACK_KIND_LABELS,
     )
 
@@ -273,7 +296,6 @@ async def update_feedback(
     request: Request,
     status_id: int = Form(...),
     priority: str = Form(""),
-    admin_notes: str = Form(""),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_feedback_manage),
 ) -> Response:
@@ -284,11 +306,58 @@ async def update_feedback(
 
     item.status_id = status_id
     item.priority = priority if priority in FEEDBACK_PRIORITIES else None
-    item.admin_notes = (admin_notes or "").strip() or None
     db.commit()
     _feedback_event(request, user, item, "updated", "Updated")
     flash(request, "Feedback updated.", "success")
-    return RedirectResponse(url="/ui/feedback/manage", status_code=303)
+    return RedirectResponse(url=f"/ui/feedback/manage/{fid}", status_code=303)
+
+
+@router.post("/manage/{fid}/comments")
+async def add_comment(
+    fid: int,
+    request: Request,
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_feedback_manage),
+) -> Response:
+    """Append a comment to the item's timeline (admins only)."""
+    item = _get_item(db, fid)
+    text = (body or "").strip()
+    if not text:
+        flash(request, "A comment can't be empty.", "error")
+        return RedirectResponse(url=f"/ui/feedback/manage/{fid}", status_code=303)
+
+    comment = FeedbackComment(
+        feedback_id=item.id,
+        author_user_id=user.id,
+        author_label=user.display_label,
+        body=text,
+    )
+    db.add(comment)
+    db.commit()
+    _feedback_event(request, user, item, "commented", "Commented on")
+    flash(request, "Comment added.", "success")
+    return RedirectResponse(url=f"/ui/feedback/manage/{fid}", status_code=303)
+
+
+@router.post("/manage/{fid}/comments/{cid}/delete")
+def delete_comment(
+    fid: int,
+    cid: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_feedback_manage),
+) -> Response:
+    """Remove a single comment (admins only)."""
+    item = _get_item(db, fid)
+    comment = db.get(FeedbackComment, cid)
+    if comment is None or comment.feedback_id != item.id:
+        raise HTTPException(status_code=404, detail="Comment not found.")
+    db.delete(comment)
+    db.commit()
+    _feedback_event(request, user, item, "comment_deleted", "Deleted a comment on")
+    flash(request, "Comment deleted.", "success")
+    return RedirectResponse(url=f"/ui/feedback/manage/{fid}", status_code=303)
 
 
 @router.post("/manage/{fid}/status")

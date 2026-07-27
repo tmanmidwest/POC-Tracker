@@ -51,15 +51,50 @@
           </select>
         </div>
       </div>
-      <div class="form-row">
-        <label class="label" for="admin_notes">Internal notes <span class="text-muted text-xs">— not shown to the submitter</span></label>
-        <textarea class="input" id="admin_notes" name="admin_notes" rows="4" placeholder="Triage notes, links to issues, decisions…">{{ item.admin_notes or '' }}</textarea>
-      </div>
     </div>
     <div class="form-actions" style="padding: var(--s-5) var(--s-6);">
       <button type="submit" class="btn btn--primary">Save changes</button>
     </div>
   </form>
+
+  <div class="card">
+    <div class="card__header">
+      <h2 class="card__title">Comments</h2>
+      <span class="text-muted text-xs">Visible to internal users · not shown to the submitter</span>
+    </div>
+    <div class="card__body">
+      {% if item.comments %}
+        <ul class="fb-thread">
+          {% for c in item.comments %}
+          <li class="fb-thread__item">
+            <div class="fb-thread__head">
+              <span class="fb-thread__author">{{ c.author_label }}</span>
+              <span class="text-muted text-xs">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              <form method="post" action="/ui/feedback/manage/{{ item.id }}/comments/{{ c.id }}/delete"
+                    class="fb-thread__del" onsubmit="return confirm('Delete this comment?');">
+                <button type="submit" class="btn btn--ghost btn--sm" style="color:var(--danger);" aria-label="Delete comment">Delete</button>
+              </form>
+            </div>
+            <div class="fb-thread__body" style="white-space: pre-wrap;">{{ c.body }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted" style="margin-bottom: var(--s-4);">No comments yet. Add the first update below.</p>
+      {% endif %}
+
+      <form method="post" action="/ui/feedback/manage/{{ item.id }}/comments" style="margin-top: var(--s-4);">
+        <div class="form-row">
+          <label class="label" for="comment-body">Add a comment</label>
+          <textarea class="input" id="comment-body" name="body" rows="3" required
+                    placeholder="Triage decision, an update, a link to an issue, or why it's being closed…"></textarea>
+        </div>
+        <div style="display:flex; justify-content:flex-end;">
+          <button type="submit" class="btn btn--primary btn--sm">Add comment</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div style="display:flex;">
     <form method="post" action="/ui/feedback/manage/{{ item.id }}/delete" style="margin:0;"
@@ -69,4 +104,15 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fb-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-4); }
+  .fb-thread__item { border-left: 2px solid var(--border, #e5e7eb); padding: 0 0 0 var(--s-4); }
+  .fb-thread__head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-1); }
+  .fb-thread__author { font-weight: 600; }
+  .fb-thread__del { margin: 0 0 0 auto; }
+  .fb-thread__body { line-height: 1.4; }
+</style>
 {% endblock %}

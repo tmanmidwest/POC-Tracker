@@ -2,7 +2,7 @@
 
 Unlike projects (shared team data), a feedback item is submitted by whoever is
 signed in; any internal or external user may submit, but only admins manage the
-queue (status, priority, internal notes). Statuses are a global, admin-managed
+queue (status, priority, comments). Statuses are a global, admin-managed
 lookup. The submitter is kept as a nullable FK plus a ``submitter_label``
 snapshot so the queue still shows who reported an item even if that account is
 later removed.
@@ -21,6 +21,7 @@ from app.models.feedback_status import FeedbackStatus
 
 if TYPE_CHECKING:
     from app.models.app_user import AppUser
+    from app.models.feedback_comment import FeedbackComment
 
 
 # Kind of feedback. Fixed code-level enum (not an admin lookup).
@@ -66,11 +67,17 @@ class Feedback(Base, TimestampMixin):
     # "low" | "medium" | "high" | "urgent"; None = unprioritized.
     priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
-    # Internal triage notes, visible only to admins.
-    admin_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-
     submitter: Mapped[AppUser | None] = relationship("AppUser", lazy="joined")
     status: Mapped[FeedbackStatus] = relationship("FeedbackStatus", lazy="joined")
+
+    # Admin-authored timeline (triage, updates, closure). Oldest first; removed
+    # with the parent item.
+    comments: Mapped[list[FeedbackComment]] = relationship(
+        "FeedbackComment",
+        back_populates="feedback",
+        cascade="all, delete-orphan",
+        order_by="FeedbackComment.created_at",
+    )
 
     @property
     def kind_label(self) -> str:

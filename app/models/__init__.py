@@ -20,6 +20,7 @@ from app.models.customer import Customer
 from app.models.dashboard_pref import DashboardPref
 from app.models.feature_type import FeatureType
 from app.models.feedback import Feedback
+from app.models.feedback_comment import FeedbackComment
 from app.models.feedback_status import FeedbackStatus
 from app.models.google_tasks_config import GoogleTasksConfig
 from app.models.library_set import LibrarySet
@@ -77,6 +78,7 @@ __all__ = [
     "DashboardPref",
     "FeatureType",
     "Feedback",
+    "FeedbackComment",
     "FeedbackStatus",
     "GoogleTasksConfig",
     "LibrarySet",

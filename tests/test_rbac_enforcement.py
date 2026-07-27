@@ -8,7 +8,15 @@ is a no-op for the seeded roles, and only then do custom roles take effect.
 from __future__ import annotations
 
 from app.db import get_session_factory
-from app.models import AppUser, Feedback, FeedbackStatus, Role, RoleCapability, UserRole
+from app.models import (
+    AppUser,
+    Feedback,
+    FeedbackComment,
+    FeedbackStatus,
+    Role,
+    RoleCapability,
+    UserRole,
+)
 from app.services import system_config
 from app.services.access import region_scoped
 from app.services.passwords import hash_password
@@ -182,32 +190,107 @@ def test_feedback_browse_blocks_external(client):
     assert resp.status_code in (302, 303)  # Forbidden -> redirect
 
 
-def test_feedback_browse_hides_admin_notes(client):
-    # The read-only board must never leak admin_notes to non-admins.
-    db = get_session_factory()()
-    try:
-        se = _mk_user(db, "se_notes", "standard")
-        status = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).first()
-        assert status is not None, "feedback statuses should be seeded"
+def _mk_feedback(db, submitter, title, *, body="", comment=None):
+    """Create a feedback item (and optional first comment); return its id."""
+    status = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).first()
+    assert status is not None, "feedback statuses should be seeded"
+    item = Feedback(
+        submitter_user_id=submitter.id,
+        submitter_label="Submitter",
+        kind="bug",
+        title=title,
+        body=body or None,
+        status_id=status.id,
+    )
+    db.add(item)
+    db.flush()
+    if comment:
         db.add(
-            Feedback(
-                submitter_user_id=se.id,
-                submitter_label="SE Notes",
-                kind="bug",
-                title="Visible bug title",
-                body="Public body",
-                status_id=status.id,
-                admin_notes="SECRET-INTERNAL-NOTE",
+            FeedbackComment(
+                feedback_id=item.id,
+                author_user_id=None,
+                author_label="Admin",
+                body=comment,
             )
         )
-        db.commit()
+    db.commit()
+    return item.id
+
+
+def test_feedback_comment_visible_to_internal(client):
+    # An internal viewer sees the admin comment timeline on the read-only detail,
+    # but gets no way to add one (read-only surface).
+    db = get_session_factory()()
+    try:
+        se = _mk_user(db, "se_c", "standard")
+        fid = _mk_feedback(db, se, "Card title", comment="Closing note: shipped in 1.5")
     finally:
         db.close()
-    _login(client, "se_notes")
-    resp = client.get("/ui/feedback/all")
+    _login(client, "se_c")
+    resp = client.get(f"/ui/feedback/all/{fid}")
     assert resp.status_code == 200, resp.text
-    assert "Visible bug title" in resp.text
-    assert "SECRET-INTERNAL-NOTE" not in resp.text
+    assert "Closing note: shipped in 1.5" in resp.text
+    assert 'name="body"' not in resp.text  # no add-comment form
+
+
+def test_feedback_browse_detail_blocks_external(client):
+    # External viewers can't reach the read-only detail (and its comments) either.
+    db = get_session_factory()()
+    try:
+        admin = db.query(AppUser).filter(AppUser.is_seeded.is_(True)).one()
+        fid = _mk_feedback(db, admin, "Hidden from external", comment="internal update")
+        _mk_user(db, "ext_d", "external", is_external=True)
+    finally:
+        db.close()
+    _login(client, "ext_d")
+    resp = client.get(f"/ui/feedback/all/{fid}", follow_redirects=False)
+    assert resp.status_code in (302, 303)
+
+
+def test_feedback_add_comment_requires_manage(client):
+    # An SE (feedback.view but not feedback.manage) can't post a comment.
+    db = get_session_factory()()
+    try:
+        se = _mk_user(db, "se_add", "standard")
+        fid = _mk_feedback(db, se, "Needs a comment")
+    finally:
+        db.close()
+    _login(client, "se_add")
+    resp = client.post(
+        f"/ui/feedback/manage/{fid}/comments",
+        data={"body": "nope"},
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)  # Forbidden -> redirect, not added
+    db = get_session_factory()()
+    try:
+        assert db.query(FeedbackComment).filter_by(feedback_id=fid).count() == 0
+    finally:
+        db.close()
+
+
+def test_feedback_admin_can_add_comment(admin_session):
+    # An admin (feedback.manage) can append to the timeline.
+    db = get_session_factory()()
+    try:
+        admin = db.query(AppUser).filter(AppUser.is_seeded.is_(True)).one()
+        fid = _mk_feedback(db, admin, "Admin comments here")
+    finally:
+        db.close()
+    resp = admin_session.post(
+        f"/ui/feedback/manage/{fid}/comments",
+        data={"body": "Triaged, waiting on eng"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303, resp.text
+    db = get_session_factory()()
+    try:
+        comments = db.query(FeedbackComment).filter_by(feedback_id=fid).all()
+        assert len(comments) == 1
+        assert comments[0].body == "Triaged, waiting on eng"
+        assert comments[0].author_label  # snapshot recorded
+    finally:
+        db.close()
 
 
 def test_system_settings_toggles_dynamic_rbac(admin_session):

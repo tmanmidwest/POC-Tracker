@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set page_title = item.title %}
+{% block breadcrumb %}<a href="/ui/feedback/all">All feedback</a> <span class="topbar__breadcrumb-sep">/</span> <span>#{{ item.id }}</span>{% endblock %}
+
+{% macro priority_badge(p) %}
+  {% if p %}
+    {% set colors = {'low': '#16a34a', 'medium': '#ca8a04', 'high': '#ea580c', 'urgent': '#dc2626'} %}
+    {% set c = colors.get(p) %}
+    <span class="badge" style="background:{{ c }}1a; color:{{ c }}; border-color:{{ c }}66; text-transform:capitalize;">{{ p }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">{{ item.title }}</h1>
+    <p class="page-header__subtitle">
+      {% if item.kind == 'bug' %}<span class="badge badge--warning">{{ kind_labels.get(item.kind, item.kind) }}</span>{% else %}<span class="badge badge--neutral">{{ kind_labels.get(item.kind, item.kind) }}</span>{% endif %}
+      {% if item.status.is_terminal %}<span class="badge badge--success">{{ item.status.name }}</span>{% else %}<span class="badge badge--neutral">{{ item.status.name }}</span>{% endif %}
+      {{ priority_badge(item.priority) }}
+      · Submitted by {{ item.submitter_label }} on {{ item.created_at.strftime('%Y-%m-%d %H:%M') }}
+    </p>
+  </div>
+  <div class="page-header__actions">
+    <a href="/ui/feedback/all" class="btn btn--secondary">Back to board</a>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr; gap: var(--s-5); max-width: 720px;">
+
+  <div class="card">
+    <div class="card__header"><h2 class="card__title">Submission</h2></div>
+    <div class="card__body">
+      {% if item.body %}
+        <div style="white-space: pre-wrap;">{{ item.body }}</div>
+      {% else %}
+        <p class="text-muted">No additional details were provided.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__header"><h2 class="card__title">Updates</h2></div>
+    <div class="card__body">
+      {% if item.comments %}
+        <ul class="fb-thread">
+          {% for c in item.comments %}
+          <li class="fb-thread__item">
+            <div class="fb-thread__head">
+              <span class="fb-thread__author">{{ c.author_label }}</span>
+              <span class="text-muted text-xs">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="fb-thread__body" style="white-space: pre-wrap;">{{ c.body }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">No updates have been posted yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fb-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-4); }
+  .fb-thread__item { border-left: 2px solid var(--border, #e5e7eb); padding: 0 0 0 var(--s-4); }
+  .fb-thread__head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-1); }
+  .fb-thread__author { font-weight: 600; }
+  .fb-thread__body { line-height: 1.4; }
+</style>
+{% endblock %}
