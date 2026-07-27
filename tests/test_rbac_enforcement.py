@@ -8,7 +8,7 @@ is a no-op for the seeded roles, and only then do custom roles take effect.
 from __future__ import annotations
 
 from app.db import get_session_factory
-from app.models import AppUser, Role, RoleCapability, UserRole
+from app.models import AppUser, Feedback, FeedbackStatus, Role, RoleCapability, UserRole
 from app.services import system_config
 from app.services.access import region_scoped
 from app.services.passwords import hash_password
@@ -40,6 +40,12 @@ def _assert_expected(admin, se, ext):
     assert not ext.can("project.edit")
     assert ext.can("project.view")
     assert not ext.can("note.view_internal")
+    # Read-only feedback board: internal users (and admins) yes, externals no;
+    # managing it stays admin-only.
+    assert admin.can("feedback.view")
+    assert se.can("feedback.view")
+    assert not ext.can("feedback.view")
+    assert not se.can("feedback.manage")
 
 
 def test_can_parity_between_switch_off_and_on(client):
@@ -142,6 +148,66 @@ def test_require_capability_allows_admin(admin_session):
     # ...while an admin (feedback.manage via legacy admin tier) gets through.
     resp = admin_session.get("/ui/feedback/manage")
     assert resp.status_code == 200, resp.text
+
+
+def _login(client, username, password="pw123456"):
+    resp = client.post(
+        "/api/v1/auth/session/login",
+        json={"username": username, "password": password},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def test_feedback_browse_allows_internal(client):
+    # An SE (no feedback.manage) CAN reach the read-only browse board.
+    db = get_session_factory()()
+    try:
+        _mk_user(db, "se_browse", "standard")
+    finally:
+        db.close()
+    _login(client, "se_browse")
+    resp = client.get("/ui/feedback/all")
+    assert resp.status_code == 200, resp.text
+
+
+def test_feedback_browse_blocks_external(client):
+    # An external viewer is bounced from the browse board (internal-tier gate).
+    db = get_session_factory()()
+    try:
+        _mk_user(db, "ext_browse", "external", is_external=True)
+    finally:
+        db.close()
+    _login(client, "ext_browse")
+    resp = client.get("/ui/feedback/all", follow_redirects=False)
+    assert resp.status_code in (302, 303)  # Forbidden -> redirect
+
+
+def test_feedback_browse_hides_admin_notes(client):
+    # The read-only board must never leak admin_notes to non-admins.
+    db = get_session_factory()()
+    try:
+        se = _mk_user(db, "se_notes", "standard")
+        status = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).first()
+        assert status is not None, "feedback statuses should be seeded"
+        db.add(
+            Feedback(
+                submitter_user_id=se.id,
+                submitter_label="SE Notes",
+                kind="bug",
+                title="Visible bug title",
+                body="Public body",
+                status_id=status.id,
+                admin_notes="SECRET-INTERNAL-NOTE",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    _login(client, "se_notes")
+    resp = client.get("/ui/feedback/all")
+    assert resp.status_code == 200, resp.text
+    assert "Visible bug title" in resp.text
+    assert "SECRET-INTERNAL-NOTE" not in resp.text
 
 
 def test_system_settings_toggles_dynamic_rbac(admin_session):

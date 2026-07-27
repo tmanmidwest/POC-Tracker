@@ -1,9 +1,13 @@
 """HTML UI for user feedback (bug reports & feature requests).
 
-Two surfaces:
+Three surfaces:
 
 * **Submit** (any signed-in user): a short form plus a list of the submissions
   the current user has made, with their current status.
+* **Browse** (any internal user): a read-only board of *all* feedback grouped by
+  status, so internal users can see what's been raised and where it is in the
+  process — without the drag-to-move, priority, internal notes, or delete
+  controls the admin board carries. Never exposes ``admin_notes``.
 * **Manage** (admins only): a Kanban board grouped by status with drag-to-move,
   plus a per-item detail page to set priority, edit status, and keep internal
   notes.
@@ -41,6 +45,11 @@ router = APIRouter(prefix="/ui/feedback", tags=["ui"], include_in_schema=False)
 # The feedback board (/manage) requires the feedback.manage capability. While the
 # dynamic-RBAC switch is off this is identical to the old admins-only gate.
 require_feedback_manage = require_capability("feedback.manage")
+
+# The read-only browse board (/all) requires feedback.view — an internal-tier
+# capability, so while the dynamic-RBAC switch is off every internal user (and
+# admins) can reach it, but external viewers cannot.
+require_feedback_view = require_capability("feedback.view")
 
 
 def _feedback_event(
@@ -143,18 +152,19 @@ async def create_feedback(
 
 
 # ---------------------------------------------------------------------------
-# Manage (admins only)
+# Browse (read-only — any internal user)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/manage")
-def manage_board(
-    request: Request,
-    kind: str | None = None,
-    db: Session = Depends(get_db),
-    user: AppUser = Depends(require_feedback_manage),
-) -> Response:
-    """Kanban board of all feedback, grouped by status (columns in sort order)."""
+def _board_columns(
+    db: Session, kind: str | None
+) -> tuple[list[dict[str, Any]], list[Feedback], list[Feedback]]:
+    """Group all feedback into per-status columns (shared by browse + manage).
+
+    Returns ``(columns, orphans, items)`` where ``columns`` are the statuses in
+    sort order each with their cards, ``orphans`` are items on a status that no
+    longer exists, and ``items`` is the flat filtered list.
+    """
     statuses = db.query(FeedbackStatus).order_by(FeedbackStatus.sort_order).all()
 
     kind_filter = kind if kind in FEEDBACK_KINDS else None
@@ -169,6 +179,53 @@ def manage_board(
         by_status.get(it.status_id, orphans).append(it)
 
     columns = [{"status": s, "cards": by_status[s.id]} for s in statuses]
+    return columns, orphans, items
+
+
+@router.get("/all")
+def browse_board(
+    request: Request,
+    kind: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_feedback_view),
+) -> Response:
+    """Read-only board of all feedback, so internal users can see where it is.
+
+    Same grouping as the manage board but with no controls and no ``admin_notes``.
+    The template renders a board (default) and a list; a client-side toggle
+    switches between them.
+    """
+    columns, orphans, items = _board_columns(db, kind)
+    kind_filter = kind if kind in FEEDBACK_KINDS else None
+    return render(
+        request,
+        "feedback/browse.html",
+        current_user=user,
+        active_section="feedback_all",
+        columns=columns,
+        orphans=orphans,
+        items=items,
+        total=len(items),
+        kind_filter=kind_filter,
+        kind_labels=FEEDBACK_KIND_LABELS,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Manage (admins only)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/manage")
+def manage_board(
+    request: Request,
+    kind: str | None = None,
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_feedback_manage),
+) -> Response:
+    """Kanban board of all feedback, grouped by status (columns in sort order)."""
+    columns, orphans, items = _board_columns(db, kind)
+    kind_filter = kind if kind in FEEDBACK_KINDS else None
     return render(
         request,
         "feedback/board.html",

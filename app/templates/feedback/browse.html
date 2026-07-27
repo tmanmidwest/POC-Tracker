@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% set page_title = "All feedback" %}
+{% block breadcrumb %}<a href="/ui/feedback">Feedback</a> <span class="topbar__breadcrumb-sep">/</span> <span>All</span>{% endblock %}
+
+{% macro kind_badge(kind, labels) %}
+  {% if kind == 'bug' %}
+    <span class="badge badge--warning">{{ labels.get(kind, kind) }}</span>
+  {% else %}
+    <span class="badge badge--neutral">{{ labels.get(kind, kind) }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro priority_badge(p) %}
+  {% if p %}
+    {% set colors = {'low': '#16a34a', 'medium': '#ca8a04', 'high': '#ea580c', 'urgent': '#dc2626'} %}
+    {% set c = colors.get(p) %}
+    <span class="badge" style="background:{{ c }}1a; color:{{ c }}; border-color:{{ c }}66; text-transform:capitalize;">{{ p }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro status_badge(status) %}
+  {% if status.is_terminal %}
+    <span class="badge badge--success">{{ status.name }}</span>
+  {% else %}
+    <span class="badge badge--neutral">{{ status.name }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% block main %}
+<div class="page-header">
+  <div class="page-header__text">
+    <h1 class="page-header__title">All feedback</h1>
+    <p class="page-header__subtitle">{{ total }} item(s). Everything that's been submitted and where it is in the process. Read-only.</p>
+  </div>
+  <div class="page-header__actions">
+    <div class="fb-btn-group" role="group" aria-label="Filter by type">
+      <a href="/ui/feedback/all" class="btn btn--ghost btn--sm {% if not kind_filter %}is-active{% endif %}">All</a>
+      <a href="/ui/feedback/all?kind=bug" class="btn btn--ghost btn--sm {% if kind_filter == 'bug' %}is-active{% endif %}">Bugs</a>
+      <a href="/ui/feedback/all?kind=feature_request" class="btn btn--ghost btn--sm {% if kind_filter == 'feature_request' %}is-active{% endif %}">Features</a>
+    </div>
+    <div class="fb-btn-group fb-viewtoggle" role="group" aria-label="Change layout">
+      <button type="button" class="btn btn--ghost btn--sm is-active" data-view="board" aria-pressed="true">Board</button>
+      <button type="button" class="btn btn--ghost btn--sm" data-view="list" aria-pressed="false">List</button>
+    </div>
+  </div>
+</div>
+
+{% if orphans %}
+<div class="app-banner app-banner--warning" role="alert" style="margin-bottom: var(--s-5);">
+  <span class="app-banner__text">
+    {{ orphans | length }} item(s) are on a status that no longer exists. An admin can reassign them from the manage board.
+  </span>
+</div>
+{% endif %}
+
+{% if not columns %}
+<div class="empty-state">
+  <h3 class="empty-state__title">No statuses configured</h3>
+  <p class="empty-state__body">Feedback statuses haven't been set up yet, so there's nothing to show here.</p>
+</div>
+{% elif not items %}
+<div class="empty-state">
+  <p class="empty-state__body">No feedback has been submitted yet{% if kind_filter %} for this type{% endif %}.</p>
+</div>
+{% else %}
+
+{# ---- Board view (default) ---- #}
+<div class="fb-view" data-view="board">
+  <div class="fb-board">
+    {% for col in columns %}
+    <section class="fb-col">
+      <header class="fb-col__head">
+        <span class="fb-col__title">{{ col.status.name }}</span>
+        <span class="badge badge--neutral fb-col__count">{{ col.cards | length }}</span>
+      </header>
+      <div class="fb-col__body">
+        {% for item in col.cards %}
+        <article class="fb-card">
+          <div class="fb-card__badges">
+            {{ kind_badge(item.kind, kind_labels) }}
+            {{ priority_badge(item.priority) }}
+          </div>
+          <div class="fb-card__title">{{ item.title }}</div>
+          {% if item.body %}<div class="fb-card__body-text text-muted text-xs">{{ item.body }}</div>{% endif %}
+          <div class="fb-card__meta text-muted text-xs">
+            {{ item.submitter_label or 'Unknown' }} · {{ item.created_at.strftime('%Y-%m-%d') }}
+          </div>
+        </article>
+        {% else %}
+        <div class="fb-col__empty text-muted text-xs">Nothing here</div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+</div>
+
+{# ---- List view ---- #}
+<div class="fb-view" data-view="list" hidden>
+  <div class="card card--flush">
+    <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Type</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th>Submitted by</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td><strong>{{ item.title }}</strong>
+            {% if item.body %}<div class="text-muted text-xs" style="max-width: 46ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ item.body }}</div>{% endif %}
+          </td>
+          <td>{{ kind_badge(item.kind, kind_labels) }}</td>
+          <td>{{ priority_badge(item.priority) }}</td>
+          <td>{{ status_badge(item.status) }}</td>
+          <td class="text-muted">{{ item.submitter_label or 'Unknown' }}</td>
+          <td class="mono text-muted">{{ item.created_at.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .fb-board { display: flex; gap: var(--s-4); overflow-x: auto; padding-bottom: var(--s-4); align-items: flex-start; }
+  .fb-col { flex: 0 0 280px; background: var(--surface-2, #f6f7f9); border: 1px solid var(--border, #e5e7eb); border-radius: var(--radius, 8px); display: flex; flex-direction: column; }
+  .fb-col__head { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--border, #e5e7eb); font-weight: 600; }
+  .fb-col__title { flex: 1; }
+  .fb-col__body { padding: var(--s-3); display: flex; flex-direction: column; gap: var(--s-3); min-height: 60px; }
+  .fb-col__empty { text-align: center; padding: var(--s-4); border: 1px dashed var(--border, #e5e7eb); border-radius: var(--radius, 8px); }
+  .fb-card { background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: var(--radius, 8px); box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.04)); padding: var(--s-3); }
+  .fb-card__badges { display: flex; gap: var(--s-2); flex-wrap: wrap; margin-bottom: var(--s-2); }
+  .fb-card__title { font-weight: 600; line-height: 1.3; margin-bottom: var(--s-2); }
+  .fb-card__body-text { margin-bottom: var(--s-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .fb-view[hidden] { display: none; }
+  .fb-btn-group { display: inline-flex; gap: var(--s-2); align-items: center; }
+</style>
+{% endblock %}
+
+{% block body_scripts %}
+<script>
+(function () {
+  var toggle = document.querySelector('.fb-viewtoggle');
+  if (!toggle) return;
+  var views = document.querySelectorAll('.fb-view');
+  var STORAGE_KEY = 'fbBrowseView';
+
+  function apply(view) {
+    if (view !== 'list') view = 'board';
+    views.forEach(function (v) { v.hidden = (v.getAttribute('data-view') !== view); });
+    toggle.querySelectorAll('[data-view]').forEach(function (b) {
+      var active = b.getAttribute('data-view') === view;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  var saved;
+  try { saved = localStorage.getItem(STORAGE_KEY); } catch (e) { saved = null; }
+  apply(saved || 'board');
+
+  toggle.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-view]');
+    if (!btn) return;
+    var view = btn.getAttribute('data-view');
+    apply(view);
+    try { localStorage.setItem(STORAGE_KEY, view); } catch (e2) {}
+  });
+})();
+</script>
+{% endblock %}

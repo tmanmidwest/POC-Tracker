@@ -16,9 +16,13 @@
     <h1 class="page-header__title">Feedback</h1>
     <p class="page-header__subtitle">Report a bug or request a feature. We read every submission.</p>
   </div>
-  {% if current_user and current_user.is_admin %}
+  {% if current_user and current_user.can('feedback.manage') %}
   <div class="page-header__actions">
     <a href="/ui/feedback/manage" class="btn btn--secondary">Manage feedback</a>
+  </div>
+  {% elif current_user and current_user.can('feedback.view') %}
+  <div class="page-header__actions">
+    <a href="/ui/feedback/all" class="btn btn--secondary">View all feedback</a>
   </div>
   {% endif %}
 </div>

@@ -88,6 +88,7 @@ LEGACY_TIER: dict[str, str] = {
     "oauthclient.manage": "admin",
     "mcptoken.manage": "admin",
     "settings.manage": "admin",
+    "feedback.view": "internal",  # any internal user can browse the board read-only
     "feedback.manage": "admin",
     "audit.view": "internal",  # legacy audit router is internal_only, not admin
     # Region administration

@@ -345,6 +345,14 @@ CAPABILITIES: tuple[Capability, ...] = (
         "Change system settings, branding, SMTP, and demo-data controls.",
     ),
     Capability(
+        "feedback.view",
+        AREA_ADMIN,
+        "View feedback board",
+        "See all submitted feedback and where each item is in the process, "
+        "read-only (no editing, internal notes, or deletion; submitting stays "
+        "open to all users).",
+    ),
+    Capability(
         "feedback.manage",
         AREA_ADMIN,
         "Manage feedback board",
