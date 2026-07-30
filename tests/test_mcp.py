@@ -86,6 +86,61 @@ def test_add_from_library_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-d
     assert len(again) == 0
 
 
+def test_manage_library_via_mcp(mcp_env) -> None:  # type: ignore[no-untyped-def]
+    m = mcp_env
+    # Create a brand-new library, populate it, then copy an entry into a project.
+    lib = m.create_library_set("Product X Library", description="X-specific set")
+    assert lib["is_default"] is False
+    assert any(s["id"] == lib["id"] for s in m.list_library_sets())
+
+    # Rename it.
+    renamed = m.update_library_set(lib["id"], name="Product X Use Cases")
+    assert renamed["name"] == "Product X Use Cases"
+
+    # Single + bulk add of master entries (feature type resolved by name).
+    one = m.create_library_use_case(
+        lib["id"], name="SSO login", category="Access", feature_type="JML",
+        default_reference_number="1.1",
+    )
+    assert one["library_set_id"] == lib["id"]
+    assert one["feature_type"]["name"] == "JML"
+
+    bulk = m.create_library_use_cases(lib["id"], [
+        {"name": "MFA enrollment", "category": "Access"},
+        {"name": "SoD check", "category": "Certifications", "feature_type": "JML"},
+        {"category": "Broken"},  # missing name -> error
+    ])
+    assert bulk["added"] == 2
+    assert len(bulk["errors"]) == 1
+
+    # The new library scopes list_use_case_library.
+    entries = m.list_use_case_library(library_set_id=lib["id"])
+    assert len(entries) == 3
+    assert {e["name"] for e in entries} == {"SSO login", "MFA enrollment", "SoD check"}
+
+    # Edit an entry.
+    edited = m.update_library_use_case(one["id"], description="Validate SAML SSO")
+    assert edited["description"] == "Validate SAML SSO"
+
+    # The library entries can be copied into a project as snapshots.
+    cust = m.create_customer("Lib Mgmt Co")
+    proj = m.create_project(cust["id"], name="Lib Mgmt POC")
+    copied = m.add_use_cases_from_library(proj["id"], [one["id"]])
+    assert len(copied) == 1
+
+    # Deleting a non-empty, non-default library is blocked.
+    with pytest.raises(RuntimeError, match="use case"):
+        m.delete_library_set(lib["id"])
+
+    # Delete entries, then the library.
+    for e in entries:
+        assert m.delete_library_use_case(e["id"])["deleted"] is True
+    assert m.delete_library_set(lib["id"])["deleted"] is True
+    assert all(s["id"] != lib["id"] for s in m.list_library_sets())
+    # The project snapshot survives its source entry's deletion.
+    assert any(u["name"] == "SSO login" for u in m.get_project(proj["id"])["use_cases"])
+
+
 def test_find_projects(mcp_env) -> None:  # type: ignore[no-untyped-def]
     m = mcp_env
     found = m.find_projects("acme")

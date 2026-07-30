@@ -512,6 +512,187 @@ def delete_use_case(use_case_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Write tools — use-case libraries (the reusable master template list)
+#
+# These manage the LIBRARY itself, not a project. A "library" (aka library set)
+# is a named collection; its entries are reusable master use cases you can copy
+# into projects with add_use_cases_from_library. Editing/deleting a library entry
+# never touches use cases already copied into a project — those are independent
+# snapshots.
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def create_library_set(
+    name: str, description: str | None = None, is_active: bool = True
+) -> dict:
+    """Create a NEW use-case library (named collection of master use cases).
+
+    Use this to start a fresh library (e.g. a per-product or per-industry set)
+    that you can then fill with create_library_use_case(s) and later copy into
+    projects. Names must be unique. Returns the created library, whose `id` is the
+    `library_set_id` for adding entries."""
+    body = {"name": name, "description": description, "is_active": is_active}
+    return _post("/library-sets/", {k: v for k, v in body.items() if v is not None})
+
+
+@mcp.tool()
+def update_library_set(
+    set_id: int,
+    name: str | None = None,
+    description: str | None = None,
+    is_active: bool | None = None,
+) -> dict:
+    """Rename or update a use-case library. Only provided fields change. Returns
+    the updated library."""
+    body: dict[str, Any] = {}
+    if name is not None:
+        body["name"] = name
+    if description is not None:
+        body["description"] = description
+    if is_active is not None:
+        body["is_active"] = is_active
+    return _patch(f"/library-sets/{set_id}", body)
+
+
+@mcp.tool()
+def delete_library_set(set_id: int) -> dict:
+    """Delete a use-case library. Blocked if it is the default library or still
+    contains entries — delete or move its entries first. Returns a confirmation."""
+    _delete(f"/library-sets/{set_id}")
+    return {"deleted": True, "library_set_id": set_id}
+
+
+def _lib_uc_payload(item: dict[str, Any], feature_map: dict[str, int]) -> dict[str, Any]:
+    """Build a use-case-library (master) POST/PATCH payload from a loose item."""
+    body: dict[str, Any] = {
+        "name": item.get("name"),
+        "category": item.get("category"),
+        "default_reference_number": item.get(
+            "default_reference_number", item.get("reference_number")
+        ),
+        "description": item.get("description"),
+        "success_validation": item.get("success_validation"),
+    }
+    ft = item.get("feature_type_id", item.get("feature_type"))
+    body["feature_type_id"] = _resolve(ft, feature_map, "feature type")
+    return {k: v for k, v in body.items() if v is not None}
+
+
+@mcp.tool()
+def create_library_use_case(
+    library_set_id: int,
+    name: str,
+    category: str,
+    default_reference_number: str | None = None,
+    description: str | None = None,
+    success_validation: str | None = None,
+    feature_type: Any = None,
+    is_active: bool = True,
+) -> dict:
+    """Add a single master use case to a library (see list_library_sets for the
+    `library_set_id`, or create one with create_library_set). `feature_type`
+    accepts a name or id. This adds to the reusable LIBRARY, not a project.
+    Returns the created library entry."""
+    payload = _lib_uc_payload(
+        {
+            "name": name, "category": category,
+            "default_reference_number": default_reference_number,
+            "description": description, "success_validation": success_validation,
+            "feature_type": feature_type,
+        },
+        _name_map("/feature-types/"),
+    )
+    payload["library_set_id"] = library_set_id
+    payload["is_active"] = is_active
+    return _post("/use-case-library/", payload)
+
+
+@mcp.tool()
+def create_library_use_cases(library_set_id: int, use_cases: list[dict]) -> dict:
+    """Bulk-add master use cases to a library from a list. Use this to populate a
+    library you just created with create_library_set.
+
+    Each item is an object with:
+      - name (required), category (required)
+      - default_reference_number  (or reference_number — optional ordering hint)
+      - description, success_validation  (optional)
+      - feature_type  (name or id, optional — e.g. "JML", "ISPM")
+
+    Returns a summary: how many were added, the created entries, and any per-item
+    errors (the rest still get added)."""
+    feature_map = _name_map("/feature-types/")
+    created: list[dict] = []
+    errors: list[dict] = []
+    for i, item in enumerate(use_cases):
+        try:
+            if not item.get("name") or not item.get("category"):
+                raise ValueError("each use case needs at least 'name' and 'category'")
+            payload = _lib_uc_payload(item, feature_map)
+            payload["library_set_id"] = library_set_id
+            res = _post("/use-case-library/", payload)
+            created.append({
+                "id": res["id"],
+                "name": res["name"],
+                "category": res["category"],
+                "default_reference_number": res.get("default_reference_number"),
+            })
+        except Exception as exc:
+            errors.append({"index": i, "name": item.get("name"), "error": str(exc)})
+    return {
+        "library_set_id": library_set_id,
+        "added": len(created),
+        "created": created,
+        "errors": errors,
+    }
+
+
+@mcp.tool()
+def update_library_use_case(
+    entry_id: int,
+    library_set_id: int | None = None,
+    name: str | None = None,
+    category: str | None = None,
+    default_reference_number: str | None = None,
+    description: str | None = None,
+    success_validation: str | None = None,
+    feature_type: Any = None,
+    is_active: bool | None = None,
+) -> dict:
+    """Update a master use-case library entry. Only provided fields change. Pass
+    `library_set_id` to move the entry into a different library. `feature_type`
+    accepts a name or id. Returns the updated entry."""
+    body: dict[str, Any] = {}
+    if library_set_id is not None:
+        body["library_set_id"] = library_set_id
+    if name is not None:
+        body["name"] = name
+    if category is not None:
+        body["category"] = category
+    if default_reference_number is not None:
+        body["default_reference_number"] = default_reference_number
+    if description is not None:
+        body["description"] = description
+    if success_validation is not None:
+        body["success_validation"] = success_validation
+    if is_active is not None:
+        body["is_active"] = is_active
+    if feature_type is not None:
+        body["feature_type_id"] = _resolve(
+            feature_type, _name_map("/feature-types/"), "feature type"
+        )
+    return _patch(f"/use-case-library/{entry_id}", body)
+
+
+@mcp.tool()
+def delete_library_use_case(entry_id: int) -> dict:
+    """Delete a master use-case library entry. Project use cases already copied
+    from it are unaffected (they keep their snapshot). Returns a confirmation."""
+    _delete(f"/use-case-library/{entry_id}")
+    return {"deleted": True, "entry_id": entry_id}
+
+
+# ---------------------------------------------------------------------------
 # Project note tools (dated journal entries)
 # ---------------------------------------------------------------------------
 
