@@ -19,6 +19,13 @@
     </div>
   </div>
   <div class="page-header__actions">
+    {% if customer.website %}
+    <form method="post" action="/ui/customers/{{ customer.id }}/fetch-logo" style="margin:0; display:inline;"
+          {% if logo_uri %}onsubmit="return confirm('Replace the current logo with one fetched from the website?');"{% endif %}>
+      <input type="hidden" name="return_to" value="detail" />
+      <button type="submit" class="btn btn--secondary" title="Pull the logo from {{ customer.website }}">{{ "Refresh logo" if logo_uri else "Fetch logo" }}</button>
+    </form>
+    {% endif %}
     <a href="/ui/customers/{{ customer.id }}/edit" class="btn btn--secondary">Edit</a>
     <a href="/ui/projects/new?customer_id={{ customer.id }}" class="btn btn--primary">+ New Project</a>
   </div>

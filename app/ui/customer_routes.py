@@ -240,6 +240,7 @@ def fetch_logo_from_website(
     customer_id: int,
     request: Request,
     website: str | None = Form(None),
+    return_to: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_internal_ui),
 ) -> Response:
@@ -247,6 +248,8 @@ def fetch_logo_from_website(
 
     Uses the website submitted on the form (persisting it if it changed) so the
     button works right after the user types a URL, without a separate save.
+    ``return_to=detail`` sends the user back to the customer page (the detail-page
+    button); otherwise we return to the edit form.
     """
     customer = db.get(Customer, customer_id)
     if customer is None:
@@ -268,6 +271,8 @@ def fetch_logo_from_website(
         flash(request, "Logo fetched from the website.", "success")
     except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError) as exc:
         flash(request, f"Couldn't fetch a logo: {exc}", "error")
+    if return_to == "detail":
+        return RedirectResponse(url=f"/ui/customers/{customer_id}", status_code=303)
     return RedirectResponse(url=f"/ui/customers/{customer_id}/edit", status_code=303)
 
 
