@@ -1,10 +1,12 @@
 """Fetch a customer logo from their website's domain.
 
-Source chain: the Brandfetch Logo API (when ``POCT_BRANDFETCH_CLIENT_ID`` is
-configured) → Google's public favicon service. Both are requests to *known*
-third-party hosts that themselves fetch the customer's origin, so we never make a
-server-side request to a user-supplied URL — there is no SSRF surface here, and no
-private-network reachability to guard against.
+Source chain: the Logo.dev image API (when ``POCT_LOGODEV_TOKEN`` is configured) →
+Google's public favicon service. Both are requests to *known* third-party hosts
+that themselves fetch the customer's origin, so we never make a server-side request
+to a user-supplied URL — there is no SSRF surface here, and no private-network
+reachability to guard against. (Brandfetch's Logo API was the original provider but
+forbids server-side fetching; Logo.dev permits it, which our store-on-disk model
+needs.)
 
 The returned bytes are raster image data suitable for
 :func:`app.services.customer_logo.save`, which does the real validation (Pillow
@@ -33,7 +35,7 @@ class LogoFetchResult:
     """A fetched logo plus the full trail of what was tried to get it."""
 
     data: bytes
-    source: str  # "brandfetch:logo" | "brandfetch:icon" | "favicon"
+    source: str  # "logodev" | "favicon"
     attempts: list[str]  # ordered, human-readable outcome of every source tried
 
 
@@ -70,19 +72,15 @@ def domain_from_website(website: str | None) -> str | None:
     return host or None
 
 
-def fetch(website: str | None, *, referer: str | None = None) -> LogoFetchResult:
+def fetch(website: str | None) -> LogoFetchResult:
     """Locate a logo for ``website`` and return it with the full attempt trail.
 
-    Tries, in order: Brandfetch ``logo`` → Brandfetch ``icon`` (both only when a
-    client ID is configured) → the public favicon. Every source appends a line to
-    ``attempts`` recording its outcome — e.g. ``"brandfetch:logo → HTTP 403"`` or
-    ``"favicon → ok (9700 B)"`` — so callers can log exactly what happened, not
-    just which source won. Raises :class:`LogoFetchError` (carrying the same trail)
-    when the website is unusable or no source returns an image.
-
-    ``referer`` is sent as the ``Referer`` header on Brandfetch requests: the Logo
-    API is built for browser ``<img>`` embedding and refuses server-side requests
-    that carry no origin with HTTP 403. Pass this app's public base URL.
+    Tries, in order: Logo.dev (only when a token is configured) → the public
+    favicon. Every source appends a line to ``attempts`` recording its outcome —
+    e.g. ``"logodev → HTTP 404"`` or ``"favicon → ok (9700 B)"`` — so callers can
+    log exactly what happened, not just which source won. Raises
+    :class:`LogoFetchError` (carrying the same trail) when the website is unusable
+    or no source returns an image.
     """
     domain = domain_from_website(website)
     if not domain:
@@ -90,18 +88,13 @@ def fetch(website: str | None, *, referer: str | None = None) -> LogoFetchResult
 
     attempts: list[str] = []
     with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
-        client_id = system_config.brandfetch_client_id()
-        if client_id:
-            # Prefer the full wordmark ("logo"); fall back to the square mark
-            # ("icon") when a brand has no standalone logo. fallback=404 makes
-            # Brandfetch 404 on a genuine miss instead of returning a generic
-            # auto-generated letter avatar that we'd wrongly accept.
-            for kind in ("logo", "icon"):
-                data = _try_brandfetch(client, domain, client_id, kind, referer, attempts)
-                if data:
-                    return _result(data, f"brandfetch:{kind}", attempts, domain)
+        token = system_config.logodev_token()
+        if token:
+            data = _try_logodev(client, domain, token, attempts)
+            if data:
+                return _result(data, "logodev", attempts, domain)
         else:
-            attempts.append("brandfetch → skipped (no client ID configured)")
+            attempts.append("logodev → skipped (no token configured)")
         data = _try_google_favicon(client, domain, attempts)
         if data:
             return _result(data, "favicon", attempts, domain)
@@ -121,20 +114,18 @@ def _result(
     return LogoFetchResult(data=data, source=source, attempts=attempts)
 
 
-def _try_brandfetch(
-    client: httpx.Client, domain: str, client_id: str, kind: str,
-    referer: str | None, attempts: list[str],
+def _try_logodev(
+    client: httpx.Client, domain: str, token: str, attempts: list[str]
 ) -> bytes | None:
-    # Brandfetch Logo API: type ("logo"/"icon") and size are PATH segments, the
-    # client ID is the ?c= query. Sized to 512 (save() caps there anyway); the
-    # default WebP response decodes fine in Pillow. A Referer header is required —
-    # without it Brandfetch returns 403 (the API is built for browser embedding).
+    # Logo.dev image API: domain in the path, publishable token as ?token=.
+    # fallback=404 returns a real 404 on a miss instead of a generated monogram,
+    # so a genuine miss falls through to the favicon. PNG at 512 (save() caps
+    # there anyway). Logo.dev permits server-side download — no Referer needed.
     url = (
-        f"https://cdn.brandfetch.io/{domain}/w/512/h/512/{kind}"
-        f"?c={client_id}&fallback=404"
+        f"https://img.logo.dev/{domain}"
+        f"?token={token}&format=png&size=512&fallback=404"
     )
-    headers = {"Referer": referer} if referer else None
-    return _get_image(client, url, f"brandfetch:{kind}", attempts, headers=headers)
+    return _get_image(client, url, "logodev", attempts)
 
 
 def _try_google_favicon(
@@ -146,12 +137,11 @@ def _try_google_favicon(
 
 
 def _get_image(
-    client: httpx.Client, url: str, source: str, attempts: list[str],
-    headers: dict[str, str] | None = None,
+    client: httpx.Client, url: str, source: str, attempts: list[str]
 ) -> bytes | None:
     """GET ``url``; append the outcome to ``attempts`` and return bytes on success."""
     try:
-        resp = client.get(url, headers=headers)
+        resp = client.get(url)
     except httpx.HTTPError as exc:
         attempts.append(f"{source} → error ({exc.__class__.__name__})")
         return None

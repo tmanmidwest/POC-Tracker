@@ -54,9 +54,9 @@ def _default_external_ttl_days() -> int:
     return get_settings().external_user_ttl_days
 
 
-def _default_brandfetch_client_id() -> str | None:
-    """The Brandfetch client ID seed from env, used when the DB value is unset."""
-    return get_settings().brandfetch_client_id
+def _default_logodev_token() -> str | None:
+    """The Logo.dev token seed from env, used when the DB value is unset."""
+    return get_settings().logodev_token
 
 
 def get_config(db: Session) -> Any:
@@ -86,7 +86,7 @@ def _load() -> dict[str, Any]:
     external_ttl = _default_external_ttl_days()
     region_enforcement = False
     rbac_dynamic = False
-    brandfetch_client_id = _default_brandfetch_client_id()
+    logodev_token = _default_logodev_token()
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
@@ -98,8 +98,8 @@ def _load() -> dict[str, Any]:
             rbac_dynamic = row.rbac_dynamic_enabled
             # A non-empty DB value wins; NULL/empty falls back to the env seed so
             # existing rows (added before this column) still honor the env var.
-            if (row.brandfetch_client_id or "").strip():
-                brandfetch_client_id = row.brandfetch_client_id
+            if (row.logodev_token or "").strip():
+                logodev_token = row.logodev_token
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
@@ -111,7 +111,7 @@ def _load() -> dict[str, Any]:
         "external_user_ttl_days": external_ttl,
         "region_enforcement_enabled": region_enforcement,
         "rbac_dynamic_enabled": rbac_dynamic,
-        "brandfetch_client_id": brandfetch_client_id,
+        "logodev_token": logodev_token,
     }
 
 
@@ -190,20 +190,20 @@ def set_rbac_dynamic_enabled(db: Session, enabled: bool) -> None:
     invalidate()
 
 
-def brandfetch_client_id() -> str | None:
-    """Return the resolved Brandfetch Logo API client ID, or None (cached).
+def logodev_token() -> str | None:
+    """Return the resolved Logo.dev publishable token, or None (cached).
 
-    Resolution order: the UI-set DB value, else the POCT_BRANDFETCH_CLIENT_ID env
-    seed, else None (in which case logo fetching uses the keyless favicon source).
+    Resolution order: the UI-set DB value, else the POCT_LOGODEV_TOKEN env seed,
+    else None (in which case logo fetching uses the keyless favicon source).
     """
-    value = _get()["brandfetch_client_id"]
+    value = _get()["logodev_token"]
     value = (value or "").strip()
     return value or None
 
 
-def set_brandfetch_client_id(db: Session, value: str | None) -> None:
-    """Persist the Brandfetch client ID (blank clears it) and refresh the cache."""
+def set_logodev_token(db: Session, value: str | None) -> None:
+    """Persist the Logo.dev token (blank clears it) and refresh the cache."""
     row = get_config(db)
-    row.brandfetch_client_id = (value or "").strip() or None
+    row.logodev_token = (value or "").strip() or None
     db.commit()
     invalidate()

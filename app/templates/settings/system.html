@@ -68,15 +68,15 @@
     </div>
 
     <div class="form-row">
-      <label class="label" for="brandfetch_client_id">Brandfetch logo API client ID</label>
-      <input class="input" type="text" id="brandfetch_client_id" name="brandfetch_client_id"
-             value="{{ form.brandfetch_client_id }}" maxlength="255" autocomplete="off"
-             placeholder="e.g. 1id0abCDeFg…" />
+      <label class="label" for="logodev_token">Logo.dev token</label>
+      <input class="input" type="text" id="logodev_token" name="logodev_token"
+             value="{{ form.logodev_token }}" maxlength="255" autocomplete="off"
+             placeholder="pk_…" />
       <div class="form-hint">
-        Powers <strong>Fetch logo from website</strong> on a customer. With a client ID set, logos come from
-        <a href="https://brandfetch.com/developers/logo-api" target="_blank" rel="noopener">Brandfetch</a>
-        (free tier, high-quality brand logos). Leave blank to fall back to the site's favicon.
-        A build can seed this via <code>POCT_BRANDFETCH_CLIENT_ID</code>; a value entered here overrides it.
+        Powers <strong>Fetch logo from website</strong> on a customer. With a publishable token set, logos come from
+        <a href="https://www.logo.dev/" target="_blank" rel="noopener">Logo.dev</a>
+        (free tier, high-quality brand logos, server-side friendly). Leave blank to fall back to the site's favicon.
+        A build can seed this via <code>POCT_LOGODEV_TOKEN</code>; a value entered here overrides it.
       </div>
     </div>
 

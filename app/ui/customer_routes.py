@@ -9,7 +9,6 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.db import get_db
 from app.models import AppUser, Contact, ContactRole, Customer, Project
 from app.services import customer_logo, customer_logo_fetch
@@ -49,19 +48,8 @@ def _apply_logo(
     return None
 
 
-def _app_referer(request: Request) -> str:
-    """This app's public origin, sent as the Referer on Brandfetch requests.
-
-    Brandfetch's Logo API rejects origin-less server-side requests with 403, so we
-    present the app's own URL — the configured public base URL when set (correct
-    behind a proxy), else the incoming request's base URL. Mirrors oidc.py.
-    """
-    base = get_settings().public_base_url or str(request.base_url)
-    return base.rstrip("/") + "/"
-
-
 def _auto_fetch_logo(
-    customer_id: int, website: str | None, referer: str | None = None
+    customer_id: int, website: str | None
 ) -> customer_logo_fetch.LogoFetchResult | None:
     """Best-effort: fetch a logo from ``website`` and store it.
 
@@ -70,7 +58,7 @@ def _auto_fetch_logo(
     surrounding create flow.
     """
     try:
-        result = customer_logo_fetch.fetch(website, referer=referer)
+        result = customer_logo_fetch.fetch(website)
         customer_logo.save(customer_id, result.data)
         return result
     except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError):
@@ -155,7 +143,7 @@ def create_customer(
         flash(request, f"Logo not saved: {logo_err}", "error")
     # No manual upload but a website was given: best-effort auto-fetch a logo.
     elif not customer_logo.has_logo(customer.id) and customer.website:
-        result = _auto_fetch_logo(customer.id, customer.website, _app_referer(request))
+        result = _auto_fetch_logo(customer.id, customer.website)
         if result is not None:
             record_event(
                 category="customer", event_type="customer.logo_fetched",
@@ -292,7 +280,7 @@ def fetch_logo_from_website(
         db.commit()
     site = site or customer.website
     try:
-        result = customer_logo_fetch.fetch(site, referer=_app_referer(request))
+        result = customer_logo_fetch.fetch(site)
         customer_logo.save(customer_id, result.data)
         record_event(
             category="customer", event_type="customer.logo_fetched", actor_type="user",
@@ -305,7 +293,7 @@ def fetch_logo_from_website(
         flash(request, f"Logo fetched via {result.source}.", "success")
     except customer_logo_fetch.LogoFetchError as exc:
         # No source produced an image — log the full trail so Activity shows what
-        # was tried (e.g. Brandfetch 403 → favicon 404).
+        # was tried (e.g. logodev 404 → favicon 404).
         record_event(
             category="customer", event_type="customer.logo_fetch_failed",
             outcome="failure", actor_type="user", actor_label=user.username,

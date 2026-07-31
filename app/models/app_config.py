@@ -60,10 +60,11 @@ class AppConfig(Base, TimestampMixin):
     rbac_dynamic_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
-    # Brandfetch Logo API client ID for "Fetch logo from website". A publishable
-    # value (rides in public image URLs), so stored plain, not encrypted. NULL/empty
-    # falls back to POCT_BRANDFETCH_CLIENT_ID, then to the keyless favicon source.
-    brandfetch_client_id: Mapped[str | None] = mapped_column(
+    # Logo.dev publishable token (pk_…) for "Fetch logo from website". A
+    # publishable value (rides in public image URLs), so stored plain, not
+    # encrypted. NULL/empty falls back to POCT_LOGODEV_TOKEN, then to the keyless
+    # favicon source.
+    logodev_token: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
 

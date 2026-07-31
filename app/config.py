@@ -38,12 +38,12 @@ class Settings(BaseSettings):
     )
 
     # --- Customer logo auto-fetch ---
-    brandfetch_client_id: str | None = Field(
+    logodev_token: str | None = Field(
         default=None,
         description=(
-            "Brandfetch Logo API client ID. When set, 'Fetch from website' uses "
-            "Brandfetch for high-quality logos; when unset it falls back to the "
-            "public favicon service. Free tier: https://developers.brandfetch.com/."
+            "Logo.dev publishable token (pk_…). When set, 'Fetch from website' uses "
+            "Logo.dev for high-quality brand logos; when unset it falls back to the "
+            "public favicon service. Free key: https://www.logo.dev/."
         ),
     )
 
