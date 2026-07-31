@@ -1880,6 +1880,7 @@ def show_system(
             "external_user_ttl_days": config.external_user_ttl_days,
             "region_enforcement_enabled": config.region_enforcement_enabled,
             "rbac_dynamic_enabled": config.rbac_dynamic_enabled,
+            "brandfetch_client_id": config.brandfetch_client_id or "",
         },
     )
 
@@ -1892,6 +1893,7 @@ def update_system(
     tasks_enabled: str | None = Form(None),
     region_enforcement_enabled: str | None = Form(None),
     rbac_dynamic_enabled: str | None = Form(None),
+    brandfetch_client_id: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
@@ -1907,6 +1909,7 @@ def update_system(
                 "external_user_ttl_days": external_user_ttl_days,
                 "region_enforcement_enabled": bool(region_enforcement_enabled),
                 "rbac_dynamic_enabled": bool(rbac_dynamic_enabled),
+                "brandfetch_client_id": (brandfetch_client_id or "").strip(),
             },
             error=message,
         )
@@ -1973,6 +1976,22 @@ def update_system(
             target_type="app_config",
             message=f"{'Enabled' if rbac_now else 'Disabled'} dynamic RBAC (role builder)",
             detail={"rbac_dynamic_enabled": rbac_now},
+        )
+
+    brandfetch_was = (config.brandfetch_client_id or "").strip()
+    brandfetch_now = (brandfetch_client_id or "").strip()
+    if brandfetch_now != brandfetch_was:
+        system_config.set_brandfetch_client_id(db, brandfetch_now)
+        _settings_event(
+            request, user,
+            category="system",
+            event_type="system.settings.updated",
+            target_type="app_config",
+            message=(
+                "Set the Brandfetch logo API client ID"
+                if brandfetch_now else "Cleared the Brandfetch logo API client ID"
+            ),
+            detail={"brandfetch_client_id_set": bool(brandfetch_now)},
         )
 
     # Apply the new window immediately so lowering it takes effect now rather

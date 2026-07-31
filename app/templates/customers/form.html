@@ -32,6 +32,14 @@
         <div style="flex:1;">
           <input class="input" id="logo" name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
           <div class="form-hint">Shown on this customer's projects, portal, and reports. PNG, JPG, or WebP — max 5 MB.</div>
+          {% if customer %}
+          <div style="margin-top: var(--s-2);">
+            <button type="submit" class="btn btn--secondary" formaction="/ui/customers/{{ customer.id }}/fetch-logo" formnovalidate>Fetch from website</button>
+            <span class="form-hint" style="display:inline; margin-left: var(--s-2);">Pulls the logo from the Website above.</span>
+          </div>
+          {% else %}
+          <div class="form-hint" style="margin-top: var(--s-1);">Leave blank and we'll try to pull a logo from the Website automatically.</div>
+          {% endif %}
           {% if logo_uri %}
           <label class="text-xs" style="display:inline-flex; align-items:center; gap:6px; margin-top: var(--s-1);">
             <input type="checkbox" name="remove_logo" value="1" /> Remove current logo

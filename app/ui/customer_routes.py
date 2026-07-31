@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AppUser, Contact, ContactRole, Customer, Project
-from app.services import customer_logo
+from app.services import customer_logo, customer_logo_fetch
 from app.services.access import accessible_project_ids
 from app.services.audit import record_event
 from app.ui.dependencies import require_internal_ui
@@ -46,6 +46,22 @@ def _apply_logo(
         except customer_logo.LogoError as exc:
             return str(exc)
     return None
+
+
+def _auto_fetch_logo(customer_id: int, website: str | None) -> bool:
+    """Best-effort: fetch a logo from ``website`` and store it. Returns success.
+
+    Swallows every failure — a missing or unreachable logo must never block the
+    surrounding create/update flow.
+    """
+    try:
+        customer_logo.save(customer_id, customer_logo_fetch.fetch(website))
+        return True
+    except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError):
+        return False
+    except Exception:  # noqa: BLE001 — auto-fetch is strictly best-effort
+        log.warning("customer_logo_auto_fetch_failed", exc_info=True)
+        return False
 
 
 @router.get("/")
@@ -121,6 +137,10 @@ def create_customer(
     flash(request, f"Customer '{customer.name}' created.", "success")
     if logo_err:
         flash(request, f"Logo not saved: {logo_err}", "error")
+    # No manual upload but a website was given: best-effort auto-fetch a logo.
+    elif not customer_logo.has_logo(customer.id) and customer.website:
+        if _auto_fetch_logo(customer.id, customer.website):
+            flash(request, "Logo auto-fetched from the website.", "success")
     return RedirectResponse(url=f"/ui/customers/{customer.id}", status_code=303)
 
 
@@ -213,6 +233,42 @@ def update_customer(
     )
     flash(request, "Customer updated.", "success")
     return RedirectResponse(url=f"/ui/customers/{customer_id}", status_code=303)
+
+
+@router.post("/{customer_id}/fetch-logo")
+def fetch_logo_from_website(
+    customer_id: int,
+    request: Request,
+    website: str | None = Form(None),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_internal_ui),
+) -> Response:
+    """Fetch the customer's logo from their website and store it.
+
+    Uses the website submitted on the form (persisting it if it changed) so the
+    button works right after the user types a URL, without a separate save.
+    """
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+    site = _clean(website)
+    if site and site != customer.website:
+        customer.website = site
+        db.commit()
+    site = site or customer.website
+    try:
+        customer_logo.save(customer_id, customer_logo_fetch.fetch(site))
+        record_event(
+            category="customer", event_type="customer.logo_fetched", actor_type="user",
+            actor_label=user.username, actor_id=user.id, target_type="customer",
+            target_id=customer.id, target_label=customer.name,
+            message=f"Fetched logo for '{customer.name}' from {site}",
+            detail={"surface": "ui"}, request=request,
+        )
+        flash(request, "Logo fetched from the website.", "success")
+    except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError) as exc:
+        flash(request, f"Couldn't fetch a logo: {exc}", "error")
+    return RedirectResponse(url=f"/ui/customers/{customer_id}/edit", status_code=303)
 
 
 @router.post("/{customer_id}/delete")

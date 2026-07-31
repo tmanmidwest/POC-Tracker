@@ -11,7 +11,7 @@ can still set a starting default; the UI value then persists and overrides it.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Integer
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -59,6 +59,12 @@ class AppConfig(Base, TimestampMixin):
     # app.services.rbac and docs/rbac-role-builder-plan.md.
     rbac_dynamic_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
+    )
+    # Brandfetch Logo API client ID for "Fetch logo from website". A publishable
+    # value (rides in public image URLs), so stored plain, not encrypted. NULL/empty
+    # falls back to POCT_BRANDFETCH_CLIENT_ID, then to the keyless favicon source.
+    brandfetch_client_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
     )
 
     def __repr__(self) -> str:

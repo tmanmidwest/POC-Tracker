@@ -68,6 +68,19 @@
     </div>
 
     <div class="form-row">
+      <label class="label" for="brandfetch_client_id">Brandfetch logo API client ID</label>
+      <input class="input" type="text" id="brandfetch_client_id" name="brandfetch_client_id"
+             value="{{ form.brandfetch_client_id }}" maxlength="255" autocomplete="off"
+             placeholder="e.g. 1id0abCDeFg…" />
+      <div class="form-hint">
+        Powers <strong>Fetch logo from website</strong> on a customer. With a client ID set, logos come from
+        <a href="https://brandfetch.com/developers/logo-api" target="_blank" rel="noopener">Brandfetch</a>
+        (free tier, high-quality brand logos). Leave blank to fall back to the site's favicon.
+        A build can seed this via <code>POCT_BRANDFETCH_CLIENT_ID</code>; a value entered here overrides it.
+      </div>
+    </div>
+
+    <div class="form-row">
       <label class="label">Dynamic roles (RBAC)</label>
       <label class="checkbox-row" style="display:flex; gap: var(--s-2); align-items:center; padding: var(--s-2) 0;">
         <input type="checkbox" name="rbac_dynamic_enabled" value="1" {% if form.rbac_dynamic_enabled %}checked{% endif %} />

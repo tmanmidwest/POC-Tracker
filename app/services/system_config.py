@@ -54,6 +54,11 @@ def _default_external_ttl_days() -> int:
     return get_settings().external_user_ttl_days
 
 
+def _default_brandfetch_client_id() -> str | None:
+    """The Brandfetch client ID seed from env, used when the DB value is unset."""
+    return get_settings().brandfetch_client_id
+
+
 def get_config(db: Session) -> Any:
     """Return the singleton AppConfig row, creating it from env defaults if absent."""
     from app.models.app_config import APP_CONFIG_ID, AppConfig
@@ -81,6 +86,7 @@ def _load() -> dict[str, Any]:
     external_ttl = _default_external_ttl_days()
     region_enforcement = False
     rbac_dynamic = False
+    brandfetch_client_id = _default_brandfetch_client_id()
     db = get_session_factory()()
     try:
         row = db.get(AppConfig, APP_CONFIG_ID)
@@ -90,6 +96,10 @@ def _load() -> dict[str, Any]:
             external_ttl = row.external_user_ttl_days
             region_enforcement = row.region_enforcement_enabled
             rbac_dynamic = row.rbac_dynamic_enabled
+            # A non-empty DB value wins; NULL/empty falls back to the env seed so
+            # existing rows (added before this column) still honor the env var.
+            if (row.brandfetch_client_id or "").strip():
+                brandfetch_client_id = row.brandfetch_client_id
     except Exception:
         # Config is non-critical — never let a DB hiccup break a page or prune.
         pass
@@ -101,6 +111,7 @@ def _load() -> dict[str, Any]:
         "external_user_ttl_days": external_ttl,
         "region_enforcement_enabled": region_enforcement,
         "rbac_dynamic_enabled": rbac_dynamic,
+        "brandfetch_client_id": brandfetch_client_id,
     }
 
 
@@ -175,5 +186,24 @@ def set_rbac_dynamic_enabled(db: Session, enabled: bool) -> None:
     """Persist the dynamic-RBAC master switch and refresh the cache."""
     row = get_config(db)
     row.rbac_dynamic_enabled = enabled
+    db.commit()
+    invalidate()
+
+
+def brandfetch_client_id() -> str | None:
+    """Return the resolved Brandfetch Logo API client ID, or None (cached).
+
+    Resolution order: the UI-set DB value, else the POCT_BRANDFETCH_CLIENT_ID env
+    seed, else None (in which case logo fetching uses the keyless favicon source).
+    """
+    value = _get()["brandfetch_client_id"]
+    value = (value or "").strip()
+    return value or None
+
+
+def set_brandfetch_client_id(db: Session, value: str | None) -> None:
+    """Persist the Brandfetch client ID (blank clears it) and refresh the cache."""
+    row = get_config(db)
+    row.brandfetch_client_id = (value or "").strip() or None
     db.commit()
     invalidate()

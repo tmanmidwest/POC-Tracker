@@ -37,6 +37,16 @@ class Settings(BaseSettings):
         description="Directory where the SQLite DB and signing keys live.",
     )
 
+    # --- Customer logo auto-fetch ---
+    brandfetch_client_id: str | None = Field(
+        default=None,
+        description=(
+            "Brandfetch Logo API client ID. When set, 'Fetch from website' uses "
+            "Brandfetch for high-quality logos; when unset it falls back to the "
+            "public favicon service. Free tier: https://developers.brandfetch.com/."
+        ),
+    )
+
     # --- Database ---
     # Postgres is the only supported database. POCT_DATABASE_URL selects the
     # instance; when unset the app targets a local Postgres (the bundled
