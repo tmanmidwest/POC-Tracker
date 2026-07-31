@@ -70,7 +70,7 @@ def domain_from_website(website: str | None) -> str | None:
     return host or None
 
 
-def fetch(website: str | None) -> LogoFetchResult:
+def fetch(website: str | None, *, referer: str | None = None) -> LogoFetchResult:
     """Locate a logo for ``website`` and return it with the full attempt trail.
 
     Tries, in order: Brandfetch ``logo`` → Brandfetch ``icon`` (both only when a
@@ -79,6 +79,10 @@ def fetch(website: str | None) -> LogoFetchResult:
     ``"favicon → ok (9700 B)"`` — so callers can log exactly what happened, not
     just which source won. Raises :class:`LogoFetchError` (carrying the same trail)
     when the website is unusable or no source returns an image.
+
+    ``referer`` is sent as the ``Referer`` header on Brandfetch requests: the Logo
+    API is built for browser ``<img>`` embedding and refuses server-side requests
+    that carry no origin with HTTP 403. Pass this app's public base URL.
     """
     domain = domain_from_website(website)
     if not domain:
@@ -93,7 +97,7 @@ def fetch(website: str | None) -> LogoFetchResult:
             # Brandfetch 404 on a genuine miss instead of returning a generic
             # auto-generated letter avatar that we'd wrongly accept.
             for kind in ("logo", "icon"):
-                data = _try_brandfetch(client, domain, client_id, kind, attempts)
+                data = _try_brandfetch(client, domain, client_id, kind, referer, attempts)
                 if data:
                     return _result(data, f"brandfetch:{kind}", attempts, domain)
         else:
@@ -118,16 +122,19 @@ def _result(
 
 
 def _try_brandfetch(
-    client: httpx.Client, domain: str, client_id: str, kind: str, attempts: list[str]
+    client: httpx.Client, domain: str, client_id: str, kind: str,
+    referer: str | None, attempts: list[str],
 ) -> bytes | None:
     # Brandfetch Logo API: type ("logo"/"icon") and size are PATH segments, the
     # client ID is the ?c= query. Sized to 512 (save() caps there anyway); the
-    # default WebP response decodes fine in Pillow.
+    # default WebP response decodes fine in Pillow. A Referer header is required —
+    # without it Brandfetch returns 403 (the API is built for browser embedding).
     url = (
         f"https://cdn.brandfetch.io/{domain}/w/512/h/512/{kind}"
         f"?c={client_id}&fallback=404"
     )
-    return _get_image(client, url, f"brandfetch:{kind}", attempts)
+    headers = {"Referer": referer} if referer else None
+    return _get_image(client, url, f"brandfetch:{kind}", attempts, headers=headers)
 
 
 def _try_google_favicon(
@@ -139,11 +146,12 @@ def _try_google_favicon(
 
 
 def _get_image(
-    client: httpx.Client, url: str, source: str, attempts: list[str]
+    client: httpx.Client, url: str, source: str, attempts: list[str],
+    headers: dict[str, str] | None = None,
 ) -> bytes | None:
     """GET ``url``; append the outcome to ``attempts`` and return bytes on success."""
     try:
-        resp = client.get(url)
+        resp = client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         attempts.append(f"{source} → error ({exc.__class__.__name__})")
         return None
