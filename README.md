@@ -31,7 +31,11 @@ an MCP server so other tools and AI assistants can read and report on the data.
   categorized use cases → review → add).
 - **API keys** and **OAuth client-credentials** for machine-to-machine access to the REST API.
 - **Customers & contacts** — contacts carry a role picked from a master list (Champion,
-  Technical Stakeholder, …).
+  Technical Stakeholder, …). Each customer can have a **logo** (shown on its projects, the
+  external portal, and reports): upload one, or click **Fetch logo from website** to pull it
+  automatically. With a [Logo.dev](https://www.logo.dev/) token configured (**Settings →
+  System**) you get real brand logos; without one it falls back to the site's favicon. Every
+  fetch records in the Activity log exactly which source was used and what was tried.
 - **Projects** — status (from a global list), start/end dates, an assigned Sales Engineer
   (an app user), and an Account Executive (tracked by reference; AEs don't log in).
 - **Use cases** — pull from a master **library** when building a project, add the customer's
@@ -180,6 +184,7 @@ All settings are environment variables prefixed `POCT_` (see `app/config.py`):
 | `POCT_INITIAL_ADMIN_USERNAME` / `POCT_INITIAL_ADMIN_PASSWORD` | `robbytheadmin` / … | Seeded admin |
 | `POCT_PUBLIC_BASE_URL` | — | External URL for OIDC redirect URIs behind a proxy |
 | `POCT_AUDIT_RETENTION_DAYS` | `30` | Activity-log retention (0 = keep forever) |
+| `POCT_LOGODEV_TOKEN` | — | [Logo.dev](https://www.logo.dev/) publishable token (`pk_…`) for auto-fetching customer logos; falls back to the site favicon when unset. Seeds the **Settings → System** field, which overrides it |
 | `POCT_BACKUP_RETENTION_COUNT` | `2` | How many generated backup archives to keep on disk |
 | `POCT_HOST_PORT` | `8010` | Host port mapping for the **app** in docker-compose |
 | `POCT_MCP_HOST_PORT` | `8011` | Host port mapping for the **MCP server** in docker-compose |

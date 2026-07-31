@@ -73,10 +73,12 @@
              value="{{ form.logodev_token }}" maxlength="255" autocomplete="off"
              placeholder="pk_…" />
       <div class="form-hint">
-        Powers <strong>Fetch logo from website</strong> on a customer. With a publishable token set, logos come from
-        <a href="https://www.logo.dev/" target="_blank" rel="noopener">Logo.dev</a>
-        (free tier, high-quality brand logos, server-side friendly). Leave blank to fall back to the site's favicon.
-        A build can seed this via <code>POCT_LOGODEV_TOKEN</code>; a value entered here overrides it.
+        Powers <strong>Fetch logo from website</strong> on customers. Paste a free publishable token
+        (<code>pk_…</code>) from <a href="https://www.logo.dev/" target="_blank" rel="noopener">logo.dev</a>
+        to pull real brand logos by domain; leave blank to fall back to the site's favicon.
+        Each fetch is recorded in the <a href="/ui/activity">Activity</a> log with the source it used
+        (<code>logodev</code> or <code>favicon</code>) and the full trail of what was tried.
+        Can also be seeded from the environment via <code>POCT_LOGODEV_TOKEN</code> — a value entered here overrides it.
       </div>
     </div>
 

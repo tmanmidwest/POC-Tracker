@@ -32,7 +32,9 @@ google_tasks_config (singleton, id=1)
 
 ### Core tables
 
-- **customers** — `name` (unique), `website`, `notes`. Cascades to contacts.
+- **customers** — `name` (unique), `website`, `notes`. Cascades to contacts. A customer's
+  **logo** is *not* a column: it's a normalized PNG on disk at `<data_dir>/customer_logos/<id>.png`
+  (uploaded, or auto-fetched from the website via Logo.dev → favicon), inlined where shown.
 - **contacts** — `customer_id`, `name`, `email`, `phone`, `role_id` → contact_roles.
 - **projects** — `customer_id`, `name` (optional; falls back to customer name),
   `status_id`, `start_date`, `end_date`, `sales_engineer_id` → app_users,
@@ -171,5 +173,6 @@ live data cannot be deleted either (deactivate it instead).
 external users, a unique `email` used as their login id plus `company`), `api_keys`,
 `oauth_clients`, `auth_providers` (with `default_user_tier` — the tier given to users it
 provisions), `user_identities`, `app_branding`, `app_config` (includes
-`region_enforcement_enabled` and `rbac_dynamic_enabled`), `audit_events`, and the dynamic-RBAC
+`region_enforcement_enabled`, `rbac_dynamic_enabled`, and `logodev_token` — the Logo.dev
+token for customer-logo auto-fetch), `audit_events`, and the dynamic-RBAC
 tables `capabilities` / `roles` / `role_capabilities` / `user_roles` (see **Access control**).

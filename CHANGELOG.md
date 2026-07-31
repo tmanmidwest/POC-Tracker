@@ -5,6 +5,18 @@ All notable changes to Questlog are recorded here. The format follows
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 [docs/RELEASING.md](docs/RELEASING.md) for how releases are cut.
 
+## [Unreleased]
+
+### Added
+
+- **Customer logos.** Each customer can now have a logo, shown on its projects, the
+  external portal, and reports. Upload an image, or use **Fetch logo from website** (on the
+  customer's detail and edit pages) to pull one automatically — auto-attempted on create too
+  when a website is set. With a **Logo.dev** publishable token configured in **Settings →
+  System** (or the `POCT_LOGODEV_TOKEN` env var) you get real brand logos; without one it
+  falls back to the site's favicon. Each fetch writes an Activity event recording which
+  source produced the logo and the full trail of what was tried.
+
 ## [1.2.1] — 2026-07-24
 
 ### Fixed
