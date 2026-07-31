@@ -57,7 +57,12 @@ dev = [
     "mypy>=1.13.0",
 ]
 mcp = [
-    "mcp>=1.2.0",
+    # Cap below 2.0: mcp 2.0 restructured the package and removed
+    # `mcp.server.fastmcp` (which app/mcp_server.py imports), so an unpinned
+    # `>=1.2.0` resolves to 2.0 on clean builds (e.g. Fargate) and crashes
+    # `poct-mcp` at startup with ModuleNotFoundError. Stay on the 1.x line until
+    # the server is migrated to the 2.x API.
+    "mcp>=1.2.0,<2",
 ]
 
 [project.urls]
