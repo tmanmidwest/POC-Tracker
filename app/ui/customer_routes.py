@@ -48,20 +48,24 @@ def _apply_logo(
     return None
 
 
-def _auto_fetch_logo(customer_id: int, website: str | None) -> bool:
-    """Best-effort: fetch a logo from ``website`` and store it. Returns success.
+def _auto_fetch_logo(
+    customer_id: int, website: str | None
+) -> customer_logo_fetch.LogoFetchResult | None:
+    """Best-effort: fetch a logo from ``website`` and store it.
 
-    Swallows every failure — a missing or unreachable logo must never block the
-    surrounding create/update flow.
+    Returns the :class:`LogoFetchResult` (with source + attempt trail) on success,
+    or None on any failure — a missing or unreachable logo must never block the
+    surrounding create flow.
     """
     try:
-        customer_logo.save(customer_id, customer_logo_fetch.fetch(website))
-        return True
+        result = customer_logo_fetch.fetch(website)
+        customer_logo.save(customer_id, result.data)
+        return result
     except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError):
-        return False
+        return None
     except Exception:  # noqa: BLE001 — auto-fetch is strictly best-effort
         log.warning("customer_logo_auto_fetch_failed", exc_info=True)
-        return False
+        return None
 
 
 @router.get("/")
@@ -139,8 +143,24 @@ def create_customer(
         flash(request, f"Logo not saved: {logo_err}", "error")
     # No manual upload but a website was given: best-effort auto-fetch a logo.
     elif not customer_logo.has_logo(customer.id) and customer.website:
-        if _auto_fetch_logo(customer.id, customer.website):
-            flash(request, "Logo auto-fetched from the website.", "success")
+        result = _auto_fetch_logo(customer.id, customer.website)
+        if result is not None:
+            record_event(
+                category="customer", event_type="customer.logo_fetched",
+                actor_type="user", actor_label=user.username, actor_id=user.id,
+                target_type="customer", target_id=customer.id,
+                target_label=customer.name,
+                message=(
+                    f"Auto-fetched logo for '{customer.name}' from "
+                    f"{customer.website} via {result.source}"
+                ),
+                detail={
+                    "surface": "ui", "automatic": True,
+                    "source": result.source, "attempts": result.attempts,
+                },
+                request=request,
+            )
+            flash(request, f"Logo auto-fetched via {result.source}.", "success")
     return RedirectResponse(url=f"/ui/customers/{customer.id}", status_code=303)
 
 
@@ -260,16 +280,39 @@ def fetch_logo_from_website(
         db.commit()
     site = site or customer.website
     try:
-        customer_logo.save(customer_id, customer_logo_fetch.fetch(site))
+        result = customer_logo_fetch.fetch(site)
+        customer_logo.save(customer_id, result.data)
         record_event(
             category="customer", event_type="customer.logo_fetched", actor_type="user",
             actor_label=user.username, actor_id=user.id, target_type="customer",
             target_id=customer.id, target_label=customer.name,
-            message=f"Fetched logo for '{customer.name}' from {site}",
-            detail={"surface": "ui"}, request=request,
+            message=f"Fetched logo for '{customer.name}' from {site} via {result.source}",
+            detail={"surface": "ui", "source": result.source, "attempts": result.attempts},
+            request=request,
         )
-        flash(request, "Logo fetched from the website.", "success")
-    except (customer_logo_fetch.LogoFetchError, customer_logo.LogoError) as exc:
+        flash(request, f"Logo fetched via {result.source}.", "success")
+    except customer_logo_fetch.LogoFetchError as exc:
+        # No source produced an image — log the full trail so Activity shows what
+        # was tried (e.g. Brandfetch 403 → favicon 404).
+        record_event(
+            category="customer", event_type="customer.logo_fetch_failed",
+            outcome="failure", actor_type="user", actor_label=user.username,
+            actor_id=user.id, target_type="customer", target_id=customer.id,
+            target_label=customer.name,
+            message=f"No logo found for '{customer.name}' from {site or '(no website)'}",
+            detail={"surface": "ui", "attempts": exc.attempts}, request=request,
+        )
+        flash(request, f"Couldn't fetch a logo: {exc}", "error")
+    except customer_logo.LogoError as exc:
+        # A source returned bytes but they weren't a usable image.
+        record_event(
+            category="customer", event_type="customer.logo_fetch_failed",
+            outcome="failure", actor_type="user", actor_label=user.username,
+            actor_id=user.id, target_type="customer", target_id=customer.id,
+            target_label=customer.name,
+            message=f"Fetched image rejected for '{customer.name}' from {site}",
+            detail={"surface": "ui", "error": str(exc)}, request=request,
+        )
         flash(request, f"Couldn't fetch a logo: {exc}", "error")
     if return_to == "detail":
         return RedirectResponse(url=f"/ui/customers/{customer_id}", status_code=303)

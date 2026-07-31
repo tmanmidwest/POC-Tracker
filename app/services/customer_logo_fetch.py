@@ -15,6 +15,7 @@ image and hands the bytes over.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
@@ -27,8 +28,25 @@ TIMEOUT = 8.0  # seconds per source; the whole chain stays well under a page tim
 _MIN_BYTES = 100  # anything smaller is a blank/1px placeholder — treat as a miss
 
 
+@dataclass
+class LogoFetchResult:
+    """A fetched logo plus the full trail of what was tried to get it."""
+
+    data: bytes
+    source: str  # "brandfetch:logo" | "brandfetch:icon" | "favicon"
+    attempts: list[str]  # ordered, human-readable outcome of every source tried
+
+
 class LogoFetchError(Exception):
-    """Raised when no source yields a usable logo image."""
+    """Raised when no source yields a usable logo image.
+
+    Carries ``attempts`` — the same ordered trail as a successful result — so the
+    caller can record exactly what was tried and why each source was rejected.
+    """
+
+    def __init__(self, message: str, attempts: list[str] | None = None) -> None:
+        super().__init__(message)
+        self.attempts: list[str] = attempts or []
 
 
 def domain_from_website(website: str | None) -> str | None:
@@ -52,67 +70,93 @@ def domain_from_website(website: str | None) -> str | None:
     return host or None
 
 
-def fetch(website: str | None) -> bytes:
-    """Return logo image bytes for ``website``, trying each source in turn.
+def fetch(website: str | None) -> LogoFetchResult:
+    """Locate a logo for ``website`` and return it with the full attempt trail.
 
-    Raises :class:`LogoFetchError` with a user-facing message when the website is
-    unusable or no source returns an image.
+    Tries, in order: Brandfetch ``logo`` → Brandfetch ``icon`` (both only when a
+    client ID is configured) → the public favicon. Every source appends a line to
+    ``attempts`` recording its outcome — e.g. ``"brandfetch:logo → HTTP 403"`` or
+    ``"favicon → ok (9700 B)"`` — so callers can log exactly what happened, not
+    just which source won. Raises :class:`LogoFetchError` (carrying the same trail)
+    when the website is unusable or no source returns an image.
     """
     domain = domain_from_website(website)
     if not domain:
         raise LogoFetchError("Enter a valid website first (e.g. https://acme.com).")
 
-    errors: list[str] = []
+    attempts: list[str] = []
     with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as client:
         client_id = system_config.brandfetch_client_id()
         if client_id:
-            data = _try_brandfetch(client, domain, client_id, errors)
-            if data:
-                return data
-        data = _try_google_favicon(client, domain, errors)
+            # Prefer the full wordmark ("logo"); fall back to the square mark
+            # ("icon") when a brand has no standalone logo. fallback=404 makes
+            # Brandfetch 404 on a genuine miss instead of returning a generic
+            # auto-generated letter avatar that we'd wrongly accept.
+            for kind in ("logo", "icon"):
+                data = _try_brandfetch(client, domain, client_id, kind, attempts)
+                if data:
+                    return _result(data, f"brandfetch:{kind}", attempts, domain)
+        else:
+            attempts.append("brandfetch → skipped (no client ID configured)")
+        data = _try_google_favicon(client, domain, attempts)
         if data:
-            return data
+            return _result(data, "favicon", attempts, domain)
 
-    detail = "; ".join(errors) if errors else "no logo found"
-    log.info("customer_logo_fetch_miss", extra={"domain": domain, "detail": detail})
-    raise LogoFetchError(f"Couldn't find a logo for {domain} ({detail}).")
+    log.info("customer_logo_fetch_miss", extra={"domain": domain, "attempts": attempts})
+    trail = "; ".join(attempts) if attempts else "no logo found"
+    raise LogoFetchError(f"Couldn't find a logo for {domain} ({trail}).", attempts)
+
+
+def _result(
+    data: bytes, source: str, attempts: list[str], domain: str
+) -> LogoFetchResult:
+    log.info(
+        "customer_logo_fetch_hit",
+        extra={"domain": domain, "source": source, "attempts": attempts},
+    )
+    return LogoFetchResult(data=data, source=source, attempts=attempts)
 
 
 def _try_brandfetch(
-    client: httpx.Client, domain: str, client_id: str, errors: list[str]
+    client: httpx.Client, domain: str, client_id: str, kind: str, attempts: list[str]
 ) -> bytes | None:
-    # Brandfetch returns the best available raster for the domain; sized down here
-    # so we transfer a small image (save() caps it at 512px anyway).
-    url = f"https://cdn.brandfetch.io/{domain}/w/512/h/512?c={client_id}"
-    return _get_image(client, url, "brandfetch", errors)
+    # Brandfetch Logo API: type ("logo"/"icon") and size are PATH segments, the
+    # client ID is the ?c= query. Sized to 512 (save() caps there anyway); the
+    # default WebP response decodes fine in Pillow.
+    url = (
+        f"https://cdn.brandfetch.io/{domain}/w/512/h/512/{kind}"
+        f"?c={client_id}&fallback=404"
+    )
+    return _get_image(client, url, f"brandfetch:{kind}", attempts)
 
 
 def _try_google_favicon(
-    client: httpx.Client, domain: str, errors: list[str]
+    client: httpx.Client, domain: str, attempts: list[str]
 ) -> bytes | None:
     # The icon shown on the site's browser tab — Google fetches and caches it.
     url = f"https://www.google.com/s2/favicons?domain={domain}&sz=128"
-    return _get_image(client, url, "favicon", errors)
+    return _get_image(client, url, "favicon", attempts)
 
 
 def _get_image(
-    client: httpx.Client, url: str, source: str, errors: list[str]
+    client: httpx.Client, url: str, source: str, attempts: list[str]
 ) -> bytes | None:
-    """GET ``url`` and return its bytes if it's a non-trivial image, else None."""
+    """GET ``url``; append the outcome to ``attempts`` and return bytes on success."""
     try:
         resp = client.get(url)
     except httpx.HTTPError as exc:
-        errors.append(f"{source}: {exc.__class__.__name__}")
+        attempts.append(f"{source} → error ({exc.__class__.__name__})")
         return None
     if resp.status_code != 200:
-        errors.append(f"{source}: HTTP {resp.status_code}")
+        attempts.append(f"{source} → HTTP {resp.status_code}")
         return None
-    if "image" not in resp.headers.get("content-type", ""):
-        errors.append(f"{source}: not an image")
+    ctype = resp.headers.get("content-type", "")
+    if "image" not in ctype:
+        attempts.append(f"{source} → not an image ({ctype or 'unknown'})")
         return None
     data = resp.content
     if len(data) < _MIN_BYTES:
-        errors.append(f"{source}: empty image")
+        attempts.append(f"{source} → empty image")
         return None
-    log.info("customer_logo_fetch_hit", extra={"source": source, "bytes": len(data)})
+    attempts.append(f"{source} → ok ({len(data)} B)")
     return data
