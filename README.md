@@ -196,22 +196,36 @@ All settings are environment variables prefixed `POCT_` (see `app/config.py`):
 
 Admins manage backups under **Settings → Backups**.
 
-**Create a backup.** Click **Create backup** to produce a single `.zip` containing a
-*consistent* SQLite snapshot, all note attachments and screenshots, and the instance's
-secret keys. Provide an optional **passphrase** to encrypt the archive (AES-256) — the
-passphrase is required to restore and is **never stored**, so keep it safe. Download the
-archive from the history table. The newest `POCT_BACKUP_RETENTION_COUNT` archives (default
-**2**) are kept on the data volume; older ones are pruned automatically.
+**Create a backup.** Click **Create backup** to produce a single `.zip` containing the
+**database** (a portable, per-table JSON dump — not a `pg_dump` blob, so it restores across
+environments and Postgres versions), all note attachments and screenshots, and the
+instance's secret keys. Provide an optional **passphrase** to encrypt the archive
+(AES-256) — the passphrase is required to restore and is **never stored**, so keep it safe.
+Download the archive from the history table. The newest `POCT_BACKUP_RETENTION_COUNT`
+archives (default **2**) are kept on the data volume; older ones are pruned automatically.
 
-> Archives contain secrets (password hashes, API keys, signing keys). They are written
-> `0600` on the data volume — store downloaded copies somewhere safe, and prefer the
-> passphrase option.
+This is a full, portable copy of an instance — for example, pull `questlog-tst` (RDS) down
+into a fresh local Docker Postgres for development. Managed snapshots (RDS automated backups
++ point-in-time recovery) remain the primary **production** disaster-recovery path.
+
+> Archives contain secrets (password hashes, API keys, signing keys) and all your data.
+> They are written `0600` on the data volume — store downloaded copies somewhere safe, and
+> prefer the passphrase option.
 
 **Restore.** Upload a backup `.zip` (with its passphrase, if encrypted) and type `RESTORE`
-to confirm. The upload is **verified immediately** (checksum, schema compatibility,
-passphrase) but applied on the **next app start** — restoring overwrites *all* current data
-(projects, files, users, keys). Before anything is overwritten, a `pre-restore-*.zip` safety
-snapshot of the current state is written to the backups directory automatically.
+to confirm. The upload is **verified immediately** (it's a valid archive, format version,
+passphrase) but applied on the **next app start**, in two phases: the files + keys are
+swapped in first, then — once migrations have brought the schema to head — the database is
+reloaded (truncate + reload in one transaction, sequences reset). Restoring **replaces all
+current data** (projects, files, users, keys) with the archive's contents. A
+`pre-restore-*.zip` safety snapshot of the current files + keys is written automatically
+first; note it covers files/keys, **not** the database.
+
+> **Same app version required.** The database load only runs on Postgres, and only if the
+> archive's schema revision matches the live one. If the two instances are on different
+> app versions the DB load is skipped (logged as `restore_db_skipped_revision_mismatch`)
+> and the target database is left unchanged — align the versions and restore again. Older
+> v2 archives (files + keys only) still restore; their database load is simply skipped.
 
 After staging a restore, restart the app to apply it:
 
