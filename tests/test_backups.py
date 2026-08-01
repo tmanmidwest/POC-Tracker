@@ -91,7 +91,14 @@ def test_create_backup_roundtrip(db_session: Session) -> None:
     manifest = backups.validate_archive(path, None)
     assert manifest["app_version"]
     assert manifest["schema_revision"]
+    assert manifest["includes_database"] is True
     assert set(manifest["counts"]) == {"projects", "notes", "attachments", "screenshots"}
+
+    # The archive carries the database payload (v3): a db manifest + per-table dumps.
+    with pyzipper.AESZipFile(str(path)) as z:
+        names = set(z.namelist())
+    assert "database/manifest.json" in names
+    assert any(n.startswith("database/tables/") for n in names)
 
 
 def test_encrypted_backup_requires_passphrase(db_session: Session) -> None:
@@ -162,9 +169,9 @@ def test_retention_keeps_only_latest(db_session: Session) -> None:
 
 
 def test_stage_and_apply_restore_reverts_files(db_session: Session) -> None:
-    """Applying a restore reverts the uploaded-files directory to the archive's
-    state and writes a pre-restore safety snapshot. (The database is restored
-    out-of-band via the managed DB, so it isn't part of this flow.)"""
+    """Applying a restore (phase 1) reverts the uploaded-files directory to the
+    archive's state and writes a pre-restore safety snapshot. The database load is
+    a separate phase covered by ``test_stage_and_apply_restore_loads_database``."""
     settings = get_settings()
     attachments = settings.data_dir / "note_attachments"
     attachments.mkdir(parents=True, exist_ok=True)
@@ -197,6 +204,63 @@ def test_stage_and_apply_restore_reverts_files(db_session: Session) -> None:
     # Files reverted to state A: original content back, later addition gone.
     assert sentinel.read_text() == "original"
     assert not (attachments / "extra.txt").exists()
+
+
+def test_stage_and_apply_restore_loads_database(db_session: Session) -> None:
+    """Phase 2 of restore reloads the database from the archive: rows present at
+    backup time come back, rows added afterwards are wiped (exact copy), and the
+    serial sequence is reset so new inserts don't collide."""
+    from app.models import Customer
+
+    # State A: a customer that exists at backup time.
+    kept = Customer(name="Acme-RESTORE-KEEP")
+    db_session.add(kept)
+    db_session.commit()
+    kept_id = kept.id
+
+    run = backups.create_backup(db_session, created_by="tester")
+    archive = backups.archive_path(run)
+    assert archive is not None
+
+    # Mutate the DB after the backup: add a row that must not survive the restore.
+    db_session.add(Customer(name="Ghost-SHOULD-VANISH"))
+    db_session.commit()
+
+    backups.stage_restore(archive, None)
+    settings = get_settings()
+    assert settings.restore_marker_path.exists()
+
+    db_session.close()
+    _rebuild_engine()
+
+    # Phase 1 (pre-migration): swaps files/keys and relocates the DB payload aside.
+    assert backups.apply_pending_restore() is True
+    assert settings.restore_db_marker_path.exists()
+
+    # Phase 2 (post-migration): loads the data.
+    assert backups.apply_pending_db_restore() is True
+    assert not settings.restore_db_marker_path.exists()
+    assert not settings.restore_db_staging_dir.exists()
+
+    # Verify the restored state on a fresh session.
+    _rebuild_engine()
+    from app.db import get_session_factory
+
+    with get_session_factory()() as check:
+        names = {c.name for c in check.query(Customer).all()}
+        assert "Acme-RESTORE-KEEP" in names
+        assert "Ghost-SHOULD-VANISH" not in names
+        # The original id is preserved…
+        assert check.get(Customer, kept_id) is not None
+        # …and the sequence was reset, so a new insert gets a fresh, unused id.
+        fresh = Customer(name="Post-Restore")
+        check.add(fresh)
+        check.commit()
+        assert fresh.id > kept_id
+
+
+def test_apply_db_restore_is_noop_without_marker(db_session: Session) -> None:
+    assert backups.apply_pending_db_restore() is False
 
 
 def test_apply_is_noop_without_marker(db_session: Session) -> None:

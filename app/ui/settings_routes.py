@@ -2682,8 +2682,9 @@ async def restore_backup(
     )
     flash(
         request,
-        "Restore staged and verified. Restart the app to apply it — a safety "
-        "backup of the current data will be taken automatically first.",
+        "Restore staged and verified. Restart the app to apply it — this replaces "
+        "the entire database and uploaded files with the backup's contents. A "
+        "safety backup of the current files is taken automatically first.",
         "success",
     )
     return RedirectResponse(url="/ui/settings/backups", status_code=303)

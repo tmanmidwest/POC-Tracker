@@ -6,16 +6,17 @@
 <div class="page-header">
   <div class="page-header__text">
     <h1 class="page-header__title">Backups</h1>
-    <p class="page-header__subtitle">Create a downloadable backup of the uploaded files and keys — and restore from one.</p>
+    <p class="page-header__subtitle">Create a downloadable backup of the database, uploaded files and keys — and restore from one.</p>
   </div>
 </div>
 
 <div class="card" style="margin-bottom: var(--s-5);">
   <div class="card__body">
     <p class="text-muted" style="margin:0;">
-      These archives contain your <strong>uploaded files and keys only</strong>. The
-      database is backed up by the managed database service (e.g. RDS automated
-      snapshots &amp; point-in-time recovery) — use that to restore data.
+      These archives contain your <strong>database, uploaded files and secret keys</strong> —
+      a full, portable copy of the instance you can restore into a fresh, empty one.
+      For production disaster recovery, the managed database service (e.g. RDS automated
+      snapshots &amp; point-in-time recovery) remains the primary path.
     </p>
   </div>
 </div>
@@ -32,8 +33,9 @@
       {% if pending_restore.manifest and pending_restore.manifest.created_at %}
         (backup from {{ pending_restore.manifest.created_at[:10] }}{% if pending_restore.manifest.app_version %}, app v{{ pending_restore.manifest.app_version }}{% endif %})
       {% endif %}.
-      It will be applied on the next app start — the current data is automatically
-      saved as a safety backup first. Until then, nothing has changed.
+      It will be applied on the next app start — <strong>this replaces the entire
+      database and uploaded files</strong> with the backup's contents. The current
+      files &amp; keys are saved as a safety backup first. Until then, nothing has changed.
     </p>
     <div style="display:flex; gap: var(--s-3);">
       <form method="post" action="/ui/settings/backups/restart" style="margin:0;"

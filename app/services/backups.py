@@ -1,51 +1,77 @@
 """Backup & restore service.
 
-Produces a single downloadable archive of the instance's **uploaded files** (note
-attachments + screenshots) and the persisted **secret-key** files, and restores
-from one. The database itself is **not** in the archive — Postgres is backed up
-out-of-band by the managed database (e.g. RDS automated snapshots + PITR).
+Produces a single downloadable archive of the instance's **database data**, its
+**uploaded files** (note attachments + screenshots) and the persisted
+**secret-key** files, and restores from one. A restored archive can seed a fresh,
+empty instance — e.g. pulling ``questlog-tst`` (RDS) down into a local Docker
+Postgres for development.
 
 Design notes:
 
+* **Database.** Every ORM table is dumped to portable JSON (see ``_dump_database``)
+  rather than a ``pg_dump`` binary blob, so it restores across environments and
+  Postgres versions without external tooling. Values that JSON can't represent
+  natively (datetime, Decimal, bytes, UUID) are type-tagged; ``JSON``/``JSONB``
+  columns pass through untouched. This is Postgres-oriented: restore truncates and
+  reloads within one transaction and resets serial sequences, mirroring
+  ``app/scripts/migrate_sqlite_to_postgres.py``. Managed snapshots (RDS + PITR)
+  remain the disaster-recovery path; this feature is for portable, whole-instance
+  copies.
 * **Encryption.** When a passphrase is given the archive is a WinZip-AES-256
   ``.zip`` (via ``pyzipper``) — openable by standard tools with the passphrase.
-  Without one it's a plain deflate zip. Archives contain secrets, so files are
-  written ``0600``.
-* **Restore applies on startup, not live.** Uploading an archive *stages* it
-  (validate → decrypt/extract to a pending dir → drop a marker). The files + keys
-  are swapped in once, early in the next startup (see ``apply_pending_restore``).
-  A safety snapshot of the current files/keys is taken first so a bad restore is
-  reversible. (Restoring database *data* is an RDS operation, not this.)
+  Without one it's a plain deflate zip. Archives contain secrets and data, so
+  files are written ``0600``.
+* **Restore applies on startup, in two phases.** Uploading an archive *stages* it
+  (validate → decrypt/extract to a pending dir → drop a marker). Early on the next
+  startup ``apply_pending_restore`` swaps the files + keys in and relocates the
+  database payload aside; then, *after* migrations bring the schema to head,
+  ``apply_pending_db_restore`` loads the data. A safety snapshot of the current
+  files/keys is taken first so a bad file restore is reversible.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import secrets
 import shutil
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 
 import pyzipper
-from sqlalchemy import func, text
+from sqlalchemy import func, select, text
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.sqltypes import JSON as SA_JSON
 
+# Importing the models package registers every table on Base.metadata.
+import app.models  # noqa: F401
 from app.config import get_settings
+from app.db import Base, get_engine
 from app.models import NoteAttachment, Project, ProjectNote, Screenshot
 from app.models.backup_run import STATUS_FAILED, STATUS_SUCCESS, BackupRun
 
 log = logging.getLogger(__name__)
 
-# Bump if the archive layout changes incompatibly. Archives hold uploaded files +
-# secret keys only (the database is backed up by the managed DB, not here).
-FORMAT_VERSION = 2
+# Bump if the archive layout changes incompatibly. v3 adds the database payload;
+# v2 archives (files + keys only) still restore — their DB load is simply skipped.
+FORMAT_VERSION = 3
 
 # Archive member layout.
 _MANIFEST = "manifest.json"
 _KEYS_PREFIX = "keys/"
 _ATTACH_PREFIX = "files/note_attachments/"
 _SHOTS_PREFIX = "files/screenshots/"
+_DB_PREFIX = "database/"
+_DB_MANIFEST = "database/manifest.json"
+_DB_TABLES_PREFIX = "database/tables/"
+
+# Not an ORM model (created by raw SQL in migration 0012); truncated with the
+# rest and repopulated by its per-row triggers as rows are inserted on restore.
+_SEARCH_INDEX = "search_index"
 
 
 class BackupError(Exception):
@@ -105,6 +131,155 @@ def _add_tree(z: pyzipper.AESZipFile, root: Path, arc_prefix: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Database dump / load (portable, type-tagged JSON)
+# ---------------------------------------------------------------------------
+#
+# Values are stored as JSON. Types JSON can't represent natively are wrapped as
+# ``{"__t": <tag>, "v": <payload>}``; ``JSON``/``JSONB`` columns pass through
+# untouched (decode is driven by the column type, so a tagged-looking dict inside
+# a JSON column is never misread). Symmetric encode/decode keeps a round-trip
+# lossless across Postgres versions and environments.
+
+
+def _is_json_col(column) -> bool:
+    """True for ``JSON``/``JSONB`` columns, whose values are opaque JSON."""
+    return isinstance(column.type, SA_JSON)
+
+
+def _encode_value(value: object) -> object:
+    """Make one scalar column value JSON-safe (see module note above)."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, datetime):  # subclass of date — check first
+        return {"__t": "dt", "v": value.isoformat()}
+    if isinstance(value, date):
+        return {"__t": "d", "v": value.isoformat()}
+    if isinstance(value, time):
+        return {"__t": "tm", "v": value.isoformat()}
+    if isinstance(value, Decimal):
+        return {"__t": "dec", "v": str(value)}
+    if isinstance(value, uuid.UUID):
+        return {"__t": "uuid", "v": str(value)}
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {"__t": "b64", "v": base64.b64encode(bytes(value)).decode("ascii")}
+    return value  # lists (ARRAY), etc. — already JSON-serialisable
+
+
+def _decode_value(value: object) -> object:
+    """Inverse of :func:`_encode_value` for a non-JSON column value."""
+    if isinstance(value, dict) and "__t" in value:
+        tag, payload = value["__t"], value["v"]
+        if tag == "dt":
+            return datetime.fromisoformat(payload)
+        if tag == "d":
+            return date.fromisoformat(payload)
+        if tag == "tm":
+            return time.fromisoformat(payload)
+        if tag == "dec":
+            return Decimal(payload)
+        if tag == "uuid":
+            return uuid.UUID(payload)
+        if tag == "b64":
+            return base64.b64decode(payload)
+    return value
+
+
+def _db_tables() -> list:
+    """Every ORM table in FK-dependency order (parents first)."""
+    return list(Base.metadata.sorted_tables)
+
+
+def _dump_database(z: pyzipper.AESZipFile, db: Session) -> dict[str, int]:
+    """Write every ORM table to the archive as type-tagged JSON. Returns row
+    counts per table (informational, also stored in the DB manifest)."""
+    counts: dict[str, int] = {}
+    bind = db.get_bind()
+    for table in _db_tables():
+        json_cols = {c.name for c in table.columns if _is_json_col(c)}
+        rows = []
+        for m in db.execute(select(table)).mappings():
+            rows.append(
+                {
+                    k: (v if k in json_cols else _encode_value(v))
+                    for k, v in m.items()
+                }
+            )
+        counts[table.name] = len(rows)
+        z.writestr(
+            f"{_DB_TABLES_PREFIX}{table.name}.json",
+            json.dumps(rows, separators=(",", ":")),
+        )
+
+    manifest = {
+        "schema_revision": _live_db_revision(db),
+        "backend": make_url(str(bind.engine.url)).get_backend_name(),
+        "tables": [t.name for t in _db_tables()],
+        "counts": counts,
+    }
+    z.writestr(_DB_MANIFEST, json.dumps(manifest, indent=2))
+    return counts
+
+
+def _reset_sequence(conn, table) -> None:
+    """Reset a Postgres serial sequence to the table's current max id."""
+    pk_cols = list(table.primary_key.columns)
+    if len(pk_cols) != 1:
+        return  # composite PKs aren't serial
+    col = pk_cols[0].name
+    seq = conn.execute(
+        text("SELECT pg_get_serial_sequence(:t, :c)"),
+        {"t": table.name, "c": col},
+    ).scalar()
+    if not seq:
+        return  # no sequence (fixed-id singleton, string PK, etc.)
+    conn.execute(
+        text(
+            f'SELECT setval(:seq, COALESCE((SELECT MAX("{col}") FROM "{table.name}"), 1), '
+            f'(SELECT MAX("{col}") FROM "{table.name}") IS NOT NULL)'
+        ),
+        {"seq": seq},
+    )
+
+
+def _load_database(engine: Engine, db_staging: Path) -> dict[str, int]:
+    """Truncate every table and reload it from a staged database dump, in one
+    transaction; then reset serial sequences. Postgres-specific. Returns counts."""
+    tables = _db_tables()
+    tables_dir = db_staging / "tables"
+    counts: dict[str, int] = {}
+
+    with engine.begin() as conn:
+        # Clear everything (incl. seeded rows and the search index) so the load is
+        # an exact copy. CASCADE handles FK order; the search-index triggers
+        # repopulate as rows are inserted below.
+        all_names = ", ".join(f'"{t.name}"' for t in tables) + f', "{_SEARCH_INDEX}"'
+        conn.execute(text(f"TRUNCATE {all_names} RESTART IDENTITY CASCADE"))
+
+        for table in tables:
+            member = tables_dir / f"{table.name}.json"
+            if not member.exists():
+                counts[table.name] = 0
+                continue
+            raw_rows = json.loads(member.read_text())
+            json_cols = {c.name for c in table.columns if _is_json_col(c)}
+            rows = [
+                {
+                    k: (v if k in json_cols else _decode_value(v))
+                    for k, v in row.items()
+                }
+                for row in raw_rows
+            ]
+            if rows:
+                conn.execute(table.insert(), rows)
+            counts[table.name] = len(rows)
+
+        for table in tables:
+            _reset_sequence(conn, table)
+
+    return counts
+
+
+# ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
 
@@ -132,6 +307,7 @@ def create_backup(
             "created_by": created_by,
             "encrypted": bool(passphrase),
             "includes_secret_keys": True,
+            "includes_database": True,
             "counts": _data_counts(db),
         }
 
@@ -142,6 +318,7 @@ def create_backup(
                     z.write(str(key_path), f"{_KEYS_PREFIX}{key_path.name}")
             _add_tree(z, settings.data_dir / "note_attachments", _ATTACH_PREFIX)
             _add_tree(z, settings.data_dir / "screenshots", _SHOTS_PREFIX)
+            _dump_database(z, db)
 
         archive_path.chmod(0o600)  # contains secrets
         size = archive_path.stat().st_size
@@ -223,8 +400,8 @@ def validate_archive(path: Path, passphrase: str | None) -> dict:
     """Open and verify a backup archive, returning its manifest.
 
     Raises :class:`BackupError` with a user-facing message on any problem. Older
-    archives that also carried a database member are accepted — that member is
-    simply ignored on restore (the database is an RDS concern now).
+    (v2) archives without a database member are accepted — they restore files +
+    keys only, and the database load step is simply skipped.
     """
     try:
         with pyzipper.AESZipFile(str(path)) as z:
@@ -292,10 +469,16 @@ def pending_restore_info() -> dict | None:
 def cancel_pending_restore() -> bool:
     """Discard a staged restore without applying it. Returns True if one existed."""
     settings = get_settings()
-    existed = settings.restore_marker_path.exists()
+    existed = (
+        settings.restore_marker_path.exists()
+        or settings.restore_db_marker_path.exists()
+    )
     settings.restore_marker_path.unlink(missing_ok=True)
+    settings.restore_db_marker_path.unlink(missing_ok=True)
     if settings.restore_staging_dir.exists():
         shutil.rmtree(settings.restore_staging_dir)
+    if settings.restore_db_staging_dir.exists():
+        shutil.rmtree(settings.restore_db_staging_dir)
     return existed
 
 
@@ -305,12 +488,14 @@ def cancel_pending_restore() -> bool:
 
 
 def apply_pending_restore() -> bool:
-    """If a restore is staged, swap the files + keys into place. Call early at
-    startup. Returns True if a restore was applied.
+    """Phase 1 of restore: swap the files + keys into place. Call early at
+    startup, BEFORE migrations. Returns True if a file restore was applied.
 
     Takes a best-effort safety snapshot of the current files/keys first, then
     replaces the secret keys and uploaded-file directories from the staged copy.
-    Any database member in an older archive is ignored (the DB is an RDS concern).
+    A database payload (v3 archives) is relocated to its own pending area and a
+    marker dropped so :func:`apply_pending_db_restore` can load it *after*
+    migrations bring the schema up to head. v2 archives have no such payload.
     """
     settings = get_settings()
     if not settings.restore_marker_path.exists():
@@ -338,10 +523,80 @@ def apply_pending_restore() -> bool:
     _replace_dir(staging / _ATTACH_PREFIX.rstrip("/"), data_dir / "note_attachments")
     _replace_dir(staging / _SHOTS_PREFIX.rstrip("/"), data_dir / "screenshots")
 
+    # Relocate any database payload so it survives this staging cleanup and can be
+    # loaded once the schema exists (post-migration).
+    staged_db = staging / _DB_PREFIX.rstrip("/")
+    if (staged_db / "manifest.json").exists():
+        db_pending = settings.restore_db_staging_dir
+        if db_pending.exists():
+            shutil.rmtree(db_pending)
+        shutil.move(str(staged_db), str(db_pending))
+        settings.restore_db_marker_path.write_text(
+            json.dumps({"staged_at": _now().isoformat()}, indent=2)
+        )
+        log.info("restore_db_payload_staged")
+
     shutil.rmtree(staging, ignore_errors=True)
     settings.restore_marker_path.unlink(missing_ok=True)
     log.info("restore_applied")
     return True
+
+
+def apply_pending_db_restore() -> bool:
+    """Phase 2 of restore: load a staged database payload. Call at startup AFTER
+    migrations have brought the schema to head. Returns True if data was loaded.
+
+    Postgres-only (truncate + reload + sequence reset). If the archive's schema
+    revision doesn't match the live one, the load is skipped (and the payload
+    discarded) so the app still boots rather than crash-looping — realign the two
+    instances on the same app version and restore again.
+    """
+    settings = get_settings()
+    if not settings.restore_db_marker_path.exists():
+        return False
+
+    db_staging = settings.restore_db_staging_dir
+
+    def _cleanup() -> None:
+        shutil.rmtree(db_staging, ignore_errors=True)
+        settings.restore_db_marker_path.unlink(missing_ok=True)
+
+    try:
+        engine = get_engine()
+        if make_url(str(engine.url)).get_backend_name() != "postgresql":
+            log.error(
+                "restore_db_skipped_not_postgres",
+                extra={"backend": make_url(str(engine.url)).get_backend_name()},
+            )
+            _cleanup()
+            return False
+
+        db_manifest = json.loads((db_staging / "manifest.json").read_text())
+        archive_rev = db_manifest.get("schema_revision")
+        with engine.connect() as c:
+            live_rev = c.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            ).scalar()
+        if archive_rev != live_rev:
+            log.error(
+                "restore_db_skipped_revision_mismatch",
+                extra={"archive_revision": archive_rev, "live_revision": live_rev},
+            )
+            _cleanup()
+            return False
+
+        log.info("restore_db_loading")
+        counts = _load_database(engine, db_staging)
+        total = sum(counts.values())
+        _cleanup()
+        log.info("restore_db_loaded", extra={"rows": total, "tables": len(counts)})
+        return True
+    except Exception:
+        # Discard the payload so a persistent failure can't wedge every startup;
+        # the original archive still lives on the operator's machine to retry.
+        log.exception("restore_db_failed")
+        _cleanup()
+        return False
 
 
 def _replace_dir(staged: Path, target: Path) -> None:

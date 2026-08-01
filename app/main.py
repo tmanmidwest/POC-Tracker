@@ -136,9 +136,19 @@ async def lifespan(_app: FastAPI) -> Any:
     with advisory_lock(LOCK_MIGRATIONS):
         run_migrations()
 
+    # Phase 2 of a staged restore: load the database payload now that the schema is
+    # at head. When a full instance is restored the archive is authoritative, so
+    # skip seeding (which would otherwise re-add lookups/sample rows on top).
+    from app.services.backups import apply_pending_db_restore
+
+    db_restored = apply_pending_db_restore()
+    if db_restored:
+        log.info("startup_db_restore_applied")
+
     SessionLocal = get_session_factory()
     with SessionLocal() as db:
-        seed_database(db, settings)
+        if not db_restored:
+            seed_database(db, settings)
         # Rebuild the inbound MCP gateway-token file from the DB so the DB-less MCP
         # container verifies against current state, and drop the retired single-token
         # file if an older deploy left one behind.

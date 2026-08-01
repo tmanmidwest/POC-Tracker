@@ -241,6 +241,18 @@ class Settings(BaseSettings):
         return self.data_dir / "RESTORE_PENDING.json"
 
     @property
+    def restore_db_staging_dir(self) -> Path:
+        """Directory holding a staged database payload, relocated out of the file
+        restore staging so it survives the pre-migration file swap and can be
+        loaded after migrations bring the schema up to head."""
+        return self.data_dir / "restore_db_pending"
+
+    @property
+    def restore_db_marker_path(self) -> Path:
+        """Marker signalling a staged database load to apply after migrations."""
+        return self.data_dir / "RESTORE_DB_PENDING.json"
+
+    @property
     def secret_key_paths(self) -> list[Path]:
         """The persisted secret-key files included in a backup so a restored
         instance can still decrypt provider secrets and validate sessions."""
