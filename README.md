@@ -267,6 +267,11 @@ an admin turns on "Enforce region boundaries" in Settings → System** — other
 user sees every project (the historical behavior). Before enabling it, assign users their
 regions and run the one-click **backfill** to region-tag existing projects.
 
+The **Settings → Users** list shows each internal user's **assigned region(s)** as a column, and
+its toolbar lets you **search** by name/email and **filter** by role, status, or region — handy as
+the team grows. **Click any column header to sort** (click again to reverse). A **Columns** menu
+chooses which columns to show; the choice is remembered per browser.
+
 **Dynamic roles (optional).** The four roles above are the default. For finer control you can
 build **custom roles** from a catalog of per-action **capabilities** (e.g. edit projects, view
 internal notes, manage settings) under **Settings → Roles**, and assign one or more roles to a

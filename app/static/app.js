@@ -126,6 +126,62 @@ function setupTableFilters() {
 
 setupTableFilters();
 
+// Click-to-sort on table headers. Sortable <th> carry [data-sort-col]; a click sorts
+// the tbody rows by that column, toggling asc/desc, and a second click on a new column
+// starts fresh ascending. Sort values come from each row cell's [data-sort] (falling
+// back to its text); empty values always sort last. Dates use ISO strings so a plain
+// string compare orders them correctly. Filtered-out rows still reorder but stay hidden.
+function setupTableSort(table) {
+  const headers = Array.from(table.querySelectorAll('thead th[data-sort-col]'));
+  if (!headers.length) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  let curIdx = null;
+  let dir = 1; // 1 = ascending, -1 = descending
+
+  function cellValue(row, idx) {
+    const cell = row.children[idx];
+    if (!cell) return '';
+    const raw = cell.dataset.sort != null ? cell.dataset.sort : cell.textContent;
+    return raw.trim().toLowerCase();
+  }
+
+  function sortByIndex(idx, th) {
+    dir = curIdx === idx ? -dir : 1;
+    curIdx = idx;
+
+    const rows = Array.from(tbody.querySelectorAll('tr[data-search]'));
+    rows.sort((a, b) => {
+      const va = cellValue(a, idx);
+      const vb = cellValue(b, idx);
+      if (va === vb) return 0;
+      if (va === '') return 1; // empties last, regardless of direction
+      if (vb === '') return -1;
+      return va > vb ? dir : -dir;
+    });
+    rows.forEach((r) => tbody.appendChild(r));
+    const empty = tbody.querySelector('.table-filter-empty');
+    if (empty) tbody.appendChild(empty); // keep the no-results row at the bottom
+
+    headers.forEach((h) => h.removeAttribute('data-sort-dir'));
+    th.setAttribute('data-sort-dir', dir === 1 ? 'asc' : 'desc');
+  }
+
+  headers.forEach((th) => {
+    const idx = Array.from(th.parentNode.children).indexOf(th);
+    th.addEventListener('click', () => sortByIndex(idx, th));
+    th.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        sortByIndex(idx, th);
+      }
+    });
+  });
+}
+
+document.querySelectorAll('table').forEach(setupTableSort);
+
 // Drag-to-reorder list. Container has [data-reorder] and [data-reorder-input]
 // (the id of a hidden input); each row has [data-reorder-item] and [data-id].
 // On drop, the hidden input is set to the comma-separated order of data-id.

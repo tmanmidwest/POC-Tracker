@@ -56,14 +56,14 @@
 <table class="table" id="internal-users-table">
   <thead>
     <tr>
-      <th>Username</th>
-      <th data-col="email">Email</th>
-      <th data-col="identity">Identity source</th>
-      <th data-col="role">Role</th>
-      <th data-col="region">Region</th>
-      <th data-col="status">Status</th>
-      <th data-col="created">Created</th>
-      <th data-col="lastlogin">Last login</th>
+      <th class="th-sort" data-sort-col="username" tabindex="0" role="button" aria-label="Sort by username">Username</th>
+      <th class="th-sort" data-col="email" data-sort-col="email" tabindex="0" role="button" aria-label="Sort by email">Email</th>
+      <th class="th-sort" data-col="identity" data-sort-col="identity" tabindex="0" role="button" aria-label="Sort by identity source">Identity source</th>
+      <th class="th-sort" data-col="role" data-sort-col="role" tabindex="0" role="button" aria-label="Sort by role">Role</th>
+      <th class="th-sort" data-col="region" data-sort-col="region" tabindex="0" role="button" aria-label="Sort by region">Region</th>
+      <th class="th-sort" data-col="status" data-sort-col="status" tabindex="0" role="button" aria-label="Sort by status">Status</th>
+      <th class="th-sort" data-col="created" data-sort-col="created" tabindex="0" role="button" aria-label="Sort by created date">Created</th>
+      <th class="th-sort" data-col="lastlogin" data-sort-col="lastlogin" tabindex="0" role="button" aria-label="Sort by last login">Last login</th>
       <th style="text-align:right;">Actions</th>
     </tr>
   </thead>
@@ -74,14 +74,14 @@
         data-status="{% if u.is_active %}active{% else %}disabled{% endif %}"
         data-region="{{ (regs or []) | join('||') }}"
         data-search="{{ u.display_name or '' }} {{ u.username }} {{ u.email or '' }}">
-      <td>
+      <td data-sort="{{ (u.display_name or u.username) | lower }}">
         {% if u.display_name %}<strong>{{ u.display_name }}</strong><br><span class="text-muted text-xs mono">{{ u.username }}</span>
         {% else %}{{ u.username }}{% endif %}
         {% if u.is_seeded %}<span class="badge badge--neutral text-xs">Seeded</span>{% endif %}
       </td>
-      <td class="text-muted text-xs" data-col="email">{{ u.email or "—" }}</td>
-      <td data-col="identity"><span class="badge badge--neutral">{{ identity_sources.get(u.id, "Local") }}</span></td>
-      <td data-col="role">
+      <td class="text-muted text-xs" data-col="email" data-sort="{{ (u.email or '') | lower }}">{{ u.email or "—" }}</td>
+      <td data-col="identity" data-sort="{{ identity_sources.get(u.id, 'Local') | lower }}"><span class="badge badge--neutral">{{ identity_sources.get(u.id, "Local") }}</span></td>
+      <td data-col="role" data-sort="{{ u.role }}">
         {% if u.is_seeded or u.id == current_user.id %}
           {% if u.role == "admin" %}<span class="badge badge--warning">Admin</span>
           {% elif u.role == "manager" %}<span class="badge badge--success">Manager</span>
@@ -96,7 +96,7 @@
           </form>
         {% endif %}
       </td>
-      <td data-col="region">
+      <td data-col="region" data-sort="{{ (regs[0] | lower) if regs else '' }}">
         {% if regs %}
           {% for r in regs %}<span class="badge badge--neutral text-xs">{{ r }}</span>{% if not loop.last %} {% endif %}{% endfor %}
         {% elif u.role == "admin" %}
@@ -105,13 +105,13 @@
           <span class="text-muted text-xs">—</span>
         {% endif %}
       </td>
-      <td data-col="status">
+      <td data-col="status" data-sort="{% if u.is_active %}active{% else %}disabled{% endif %}">
         {% if u.is_active %}<span class="badge badge--success">Active</span>
         {% else %}<span class="badge badge--neutral">Disabled</span>{% endif %}
         {% if u.is_locked %}<span class="badge badge--warning" title="Locked after too many failed sign-in attempts">Locked</span>{% endif %}
       </td>
-      <td class="mono text-muted" data-col="created">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
-      <td class="mono text-muted" data-col="lastlogin">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
+      <td class="mono text-muted" data-col="created" data-sort="{{ u.created_at.strftime('%Y-%m-%d') }}">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="mono text-muted" data-col="lastlogin" data-sort="{{ u.last_login_at.strftime('%Y-%m-%dT%H:%M') if u.last_login_at else '' }}">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
       <td class="table__actions">
         <a href="/ui/settings/admin-users/{{ u.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
         <a href="/ui/settings/admin-users/{{ u.id }}/password" class="btn btn--ghost btn--sm">Change Password</a>

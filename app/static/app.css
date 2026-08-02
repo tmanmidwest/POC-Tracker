@@ -1342,6 +1342,34 @@ a.uc-name:hover { color: var(--accent-text); text-decoration: underline; }
   padding-bottom: 6px;
 }
 
+/* Sortable table headers */
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.th-sort:hover {
+  color: var(--text);
+}
+
+.th-sort::after {
+  content: "\2195"; /* ↕ idle */
+  margin-left: 4px;
+  opacity: 0.35;
+  font-size: 0.85em;
+}
+
+.th-sort[data-sort-dir="asc"]::after {
+  content: "\2191"; /* ↑ */
+  opacity: 0.9;
+}
+
+.th-sort[data-sort-dir="desc"]::after {
+  content: "\2193"; /* ↓ */
+  opacity: 0.9;
+}
+
 /* Column selector dropdown */
 .col-picker {
   position: relative;
