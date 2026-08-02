@@ -134,7 +134,14 @@ def list_admins(
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
 ) -> Response:
-    from app.models import AuthProvider, ProjectGrant, UserIdentity, UserInvite
+    from app.models import (
+        AuthProvider,
+        ProjectGrant,
+        Region,
+        UserIdentity,
+        UserInvite,
+        UserRegion,
+    )
 
     users = db.query(AppUser).order_by(AppUser.username).all()
     internal_users = [u for u in users if not u.is_external]
@@ -162,6 +169,27 @@ def list_admins(
             identity_sources[u.id] = "Local"
         else:
             identity_sources[u.id] = "—"
+
+    # Assigned regions per internal user, one bulk join (no N+1), plus the full
+    # list of active region names to populate the region filter dropdown.
+    regions_by_user: dict[int, list[str]] = {}
+    if internal_ids:
+        region_rows = (
+            db.query(UserRegion.user_id, Region.name)
+            .join(Region, UserRegion.region_id == Region.id)
+            .filter(UserRegion.user_id.in_(internal_ids))
+            .order_by(Region.sort_order, Region.name)
+            .all()
+        )
+        for uid, region_name in region_rows:
+            regions_by_user.setdefault(uid, []).append(region_name)
+    all_regions = [
+        r.name
+        for r in db.query(Region)
+        .filter(Region.is_active.is_(True))
+        .order_by(Region.sort_order, Region.name)
+        .all()
+    ]
 
     # External users shown in a distinct box with their company, sign-in status,
     # and which projects they can view.
@@ -210,6 +238,8 @@ def list_admins(
         active_subsection="admin_users",
         internal_users=internal_users,
         identity_sources=identity_sources,
+        regions_by_user=regions_by_user,
+        all_regions=all_regions,
         external_users=external_users,
     )
 

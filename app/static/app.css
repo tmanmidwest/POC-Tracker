@@ -1318,6 +1318,30 @@ a.uc-name:hover { color: var(--accent-text); text-decoration: underline; }
   margin-top: var(--s-2);
 }
 
+/* Table toolbar: filters on the left, column picker on the right */
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
+}
+
+.table-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.table-filters .input,
+.table-filters .select {
+  width: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 /* Column selector dropdown */
 .col-picker {
   position: relative;

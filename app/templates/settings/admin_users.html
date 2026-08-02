@@ -15,32 +15,73 @@
 </div>
 
 <h3 class="card__title" style="margin-bottom: var(--s-3);">Internal users</h3>
+
+<div class="table-toolbar">
+  <div class="table-filters">
+    <input type="search" class="input" placeholder="Search name or email…"
+           data-filter-search="internal-users-table" aria-label="Search internal users">
+    <select class="select" data-filter-target="internal-users-table" data-filter-col="role" aria-label="Filter by role">
+      <option value="">All roles</option>
+      <option value="admin">Admin</option>
+      <option value="manager">Manager</option>
+      <option value="standard">SE</option>
+    </select>
+    <select class="select" data-filter-target="internal-users-table" data-filter-col="status" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="disabled">Disabled</option>
+    </select>
+    <select class="select" data-filter-target="internal-users-table" data-filter-col="region" aria-label="Filter by region">
+      <option value="">All regions</option>
+      {% for r in all_regions %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+    </select>
+    <button type="button" class="btn btn--ghost btn--sm" data-filter-clear="internal-users-table">Clear</button>
+  </div>
+  <div class="col-picker" data-storage-key="poct.cols.internal-users">
+    <button type="button" class="btn btn--ghost col-picker__trigger">Columns ▾</button>
+    <div class="col-picker__menu">
+      <label class="col-picker__option"><input type="checkbox" data-col="email" checked> Email</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="identity" checked> Identity source</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="role" checked> Role</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="region" checked> Region</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="status" checked> Status</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="created" checked> Created</label>
+      <label class="col-picker__option"><input type="checkbox" data-col="lastlogin" checked> Last login</label>
+    </div>
+  </div>
+</div>
+
 <div class="card card--flush" style="margin-bottom: var(--s-6);">
 <div class="table-wrap">
-<table class="table">
+<table class="table" id="internal-users-table">
   <thead>
     <tr>
       <th>Username</th>
-      <th>Email</th>
-      <th>Identity source</th>
-      <th>Role</th>
-      <th>Status</th>
-      <th>Created</th>
-      <th>Last login</th>
+      <th data-col="email">Email</th>
+      <th data-col="identity">Identity source</th>
+      <th data-col="role">Role</th>
+      <th data-col="region">Region</th>
+      <th data-col="status">Status</th>
+      <th data-col="created">Created</th>
+      <th data-col="lastlogin">Last login</th>
       <th style="text-align:right;">Actions</th>
     </tr>
   </thead>
   <tbody>
     {% for u in internal_users %}
-    <tr>
+    {% set regs = regions_by_user.get(u.id) %}
+    <tr data-role="{{ u.role }}"
+        data-status="{% if u.is_active %}active{% else %}disabled{% endif %}"
+        data-region="{{ (regs or []) | join('||') }}"
+        data-search="{{ u.display_name or '' }} {{ u.username }} {{ u.email or '' }}">
       <td>
         {% if u.display_name %}<strong>{{ u.display_name }}</strong><br><span class="text-muted text-xs mono">{{ u.username }}</span>
         {% else %}{{ u.username }}{% endif %}
         {% if u.is_seeded %}<span class="badge badge--neutral text-xs">Seeded</span>{% endif %}
       </td>
-      <td class="text-muted text-xs">{{ u.email or "—" }}</td>
-      <td><span class="badge badge--neutral">{{ identity_sources.get(u.id, "Local") }}</span></td>
-      <td>
+      <td class="text-muted text-xs" data-col="email">{{ u.email or "—" }}</td>
+      <td data-col="identity"><span class="badge badge--neutral">{{ identity_sources.get(u.id, "Local") }}</span></td>
+      <td data-col="role">
         {% if u.is_seeded or u.id == current_user.id %}
           {% if u.role == "admin" %}<span class="badge badge--warning">Admin</span>
           {% elif u.role == "manager" %}<span class="badge badge--success">Manager</span>
@@ -55,13 +96,22 @@
           </form>
         {% endif %}
       </td>
-      <td>
+      <td data-col="region">
+        {% if regs %}
+          {% for r in regs %}<span class="badge badge--neutral text-xs">{{ r }}</span>{% if not loop.last %} {% endif %}{% endfor %}
+        {% elif u.role == "admin" %}
+          <span class="text-muted text-xs">All</span>
+        {% else %}
+          <span class="text-muted text-xs">—</span>
+        {% endif %}
+      </td>
+      <td data-col="status">
         {% if u.is_active %}<span class="badge badge--success">Active</span>
         {% else %}<span class="badge badge--neutral">Disabled</span>{% endif %}
         {% if u.is_locked %}<span class="badge badge--warning" title="Locked after too many failed sign-in attempts">Locked</span>{% endif %}
       </td>
-      <td class="mono text-muted">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
-      <td class="mono text-muted">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
+      <td class="mono text-muted" data-col="created">{{ u.created_at.strftime("%Y-%m-%d") }}</td>
+      <td class="mono text-muted" data-col="lastlogin">{{ u.last_login_at.strftime("%Y-%m-%d %H:%M") if u.last_login_at else "—" }}</td>
       <td class="table__actions">
         <a href="/ui/settings/admin-users/{{ u.id }}/edit" class="btn btn--ghost btn--sm">Edit</a>
         <a href="/ui/settings/admin-users/{{ u.id }}/password" class="btn btn--ghost btn--sm">Change Password</a>
@@ -79,6 +129,9 @@
       </td>
     </tr>
     {% endfor %}
+    <tr class="table-filter-empty" hidden>
+      <td colspan="9" class="text-muted text-xs" style="text-align:center; padding: var(--s-4);">No users match your filters.</td>
+    </tr>
   </tbody>
 </table>
 </div>

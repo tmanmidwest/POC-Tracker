@@ -64,6 +64,68 @@ function applyColumnVisibility(colName, visible) {
 
 document.querySelectorAll('.col-picker').forEach(setupColumnPicker);
 
+// Client-side table filtering. A search box carries [data-filter-search="<tableId>"];
+// each dropdown carries [data-filter-target="<tableId>"][data-filter-col="<attr>"] and
+// matches against the row's data-<attr>. Region rows may list several values joined by
+// "||"; a match means the selected value is one of them. Rows without a data-search
+// attribute (e.g. the empty-state row) are ignored.
+function applyTableFilters(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const search = document.querySelector(`[data-filter-search="${tableId}"]`);
+  const term = (search ? search.value : '').trim().toLowerCase();
+  const selects = document.querySelectorAll(
+    `[data-filter-target="${tableId}"][data-filter-col]`
+  );
+  const active = [];
+  selects.forEach((s) => { if (s.value) active.push([s.dataset.filterCol, s.value]); });
+
+  let visible = 0;
+  table.querySelectorAll('tbody tr[data-search]').forEach((row) => {
+    let show = true;
+    if (term && !(row.dataset.search || '').toLowerCase().includes(term)) show = false;
+    if (show) {
+      for (const [col, val] of active) {
+        const parts = (row.dataset[col] || '').split('||').map((p) => p.trim());
+        if (!parts.includes(val)) { show = false; break; }
+      }
+    }
+    row.style.display = show ? '' : 'none';
+    if (show) visible += 1;
+  });
+
+  const empty = table.querySelector('.table-filter-empty');
+  if (empty) empty.hidden = visible !== 0;
+}
+
+function setupTableFilters() {
+  const tableIds = new Set();
+  document.querySelectorAll('[data-filter-search], [data-filter-target]').forEach((el) => {
+    tableIds.add(el.dataset.filterSearch || el.dataset.filterTarget);
+  });
+  tableIds.forEach((tableId) => {
+    if (!tableId) return;
+    const search = document.querySelector(`[data-filter-search="${tableId}"]`);
+    if (search) search.addEventListener('input', () => applyTableFilters(tableId));
+    document
+      .querySelectorAll(`[data-filter-target="${tableId}"][data-filter-col]`)
+      .forEach((s) => s.addEventListener('change', () => applyTableFilters(tableId)));
+    const clear = document.querySelector(`[data-filter-clear="${tableId}"]`);
+    if (clear) {
+      clear.addEventListener('click', () => {
+        if (search) search.value = '';
+        document
+          .querySelectorAll(`[data-filter-target="${tableId}"][data-filter-col]`)
+          .forEach((s) => { s.value = ''; });
+        applyTableFilters(tableId);
+      });
+    }
+    applyTableFilters(tableId);
+  });
+}
+
+setupTableFilters();
+
 // Drag-to-reorder list. Container has [data-reorder] and [data-reorder-input]
 // (the id of a hidden input); each row has [data-reorder-item] and [data-id].
 // On drop, the hidden input is set to the comma-separated order of data-id.
