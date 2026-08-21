@@ -47,6 +47,7 @@ Sales Engineers *are* app users since they edit POCs.
 | Add ad-hoc customer use cases | `project_use_cases.source = "custom"` |
 | Reference number for listing/sorting (1.1, 3.4) | `project_use_cases.reference_number` (per-project, sorted numerically by segment) |
 | Status per use case | `project_use_cases.status_id` → `use_case_statuses` |
+| Filter the use-case list by status (POC prep) | Client-side status-chip filter atop the Use cases tab; multi-select, persisted per project in the browser (localStorage) |
 | Comments per use case | `project_use_cases.comments` |
 | Screenshot upload(s) once completed | `screenshots` (files on the data volume, multiple per use case) |
 

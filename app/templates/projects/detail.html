@@ -352,6 +352,24 @@
 </p>
 {% endif %}
 
+{# ---- Status filter chips: legend + click-to-filter for POC prep ---- #}
+{% if use_case_groups %}
+<div class="uc-status-filter" id="uc-status-filter" role="group" aria-label="Filter use cases by status" data-uc-project="{{ project.id }}">
+  {% for s in uc_statuses %}
+  {% set cnt = uc_status_counts.get(s.id, 0) %}
+  <button type="button"
+          class="uc-chip badge badge--dot {{ uc_status_badges.get(s.id, 'badge--neutral') }}"
+          data-uc-chip="{{ s.id }}" aria-pressed="true"
+          {% if cnt == 0 %}disabled aria-disabled="true"{% endif %}
+          title="{{ s.name }}: {{ cnt }} use case{{ '' if cnt == 1 else 's' }} — click to toggle">
+    {{ s.name }} <span class="uc-chip__count">{{ cnt }}</span>
+  </button>
+  {% endfor %}
+  <button type="button" class="uc-chip-clear" id="uc-status-clear" hidden>✕ Clear</button>
+  <span class="uc-status-filter__summary" id="uc-status-summary" aria-live="polite"></span>
+</div>
+{% endif %}
+
 <div class="ucmodal" id="m-uc-view" hidden>
  <div class="ucmodal__box">
   <div class="ucmodal__head"><span class="ucmodal__title">Use-case view</span>
@@ -523,7 +541,7 @@
 
 {% for group in use_case_groups %}
 {% set gidx = loop.index %}
-<div class="card card--flush" style="margin-bottom: var(--s-4);">
+<div class="card card--flush" style="margin-bottom: var(--s-4);" data-uc-group="{{ gidx }}">
   <div class="card__header" style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-3);">
     <h3 class="card__title">{{ group.category }}</h3>
     {% if can_edit %}
@@ -547,7 +565,7 @@
     </tr></thead>
     <tbody>
       {% for uc in group.use_cases %}
-      <tr>
+      <tr data-uc-status="{{ uc.status_id or '' }}">
         {% if can_edit %}<td><input type="checkbox" class="uc-select" data-group="{{ gidx }}" value="{{ uc.id }}" /></td>{% endif %}
         {% if 'ref' in uc_fields %}<td class="mono">{{ uc.reference_number or "—" }}</td>{% endif %}
         <td>

@@ -7,6 +7,7 @@ import json
 import logging
 import random
 import re
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from itertools import groupby
 
@@ -306,6 +307,26 @@ def _filter_use_cases(
         sid = int(status_filter)
         return [uc for uc in use_cases if uc.status_id == sid]
     return use_cases
+
+
+def _status_badge(status: UseCaseStatus) -> str:
+    """Pick an existing badge--* color class for a use-case status, so the status
+    filter chips read as a colored legend. Statuses are user-editable, so this
+    keys off the authoritative is_complete_status flag plus name heuristics and
+    falls back to neutral for anything unrecognized."""
+    name = (status.name or "").lower()
+    if status.is_complete_status:
+        return "badge--success"
+    if any(w in name for w in ("block", "fail", "reject", "at risk", "hold")):
+        return "badge--danger"
+    if any(w in name for w in (
+        "pending", "not started", "backlog", "to do", "todo", "new",
+        "n/a", "not applicable", "skip", "defer",
+    )):
+        return "badge--neutral"
+    if any(w in name for w in ("progress", "active", "testing", "running", "review")):
+        return "badge--info"
+    return "badge--neutral"
 
 
 def _load_project(db: Session, project_id: int) -> Project:
@@ -1081,6 +1102,12 @@ def detail(
     uc_view = _load_uc_view(db, user)
     visible = _filter_use_cases(list(project.use_cases), str(uc_view["status_filter"]))
 
+    # Status-chip legend/filter atop the Use cases tab. Counts reflect the rows
+    # actually rendered (i.e. the saved status filter above), so the chips never
+    # contradict the list. Badge classes give each status its color.
+    uc_status_counts = dict(Counter(uc.status_id for uc in visible if uc.status_id))
+    uc_status_badges = {s.id: _status_badge(s) for s in uc_statuses}
+
     # "Share" panel — only for users who can grant on this project (admin or the
     # project's SE). Loads current grantees + the external users available to add.
     can_share = can_grant_project(db, user, project)
@@ -1133,6 +1160,7 @@ def detail(
         use_case_groups=_group_use_cases(visible, _category_order_map(project)),
         notes=visible_project_notes(project, user),
         library_picker=library_picker, uc_statuses=uc_statuses, feature_types=feature_types,
+        uc_status_counts=uc_status_counts, uc_status_badges=uc_status_badges,
         progress={"total": total, "done": done, "pct": round(done / total * 100) if total else 0},
         today=date.today().isoformat(),
         sf_default_start=(date.today() - timedelta(days=7)).isoformat(),

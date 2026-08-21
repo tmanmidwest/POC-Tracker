@@ -849,6 +849,62 @@ a.topbar__user-name:hover { text-decoration: underline; }
 }
 
 /* =====================================================
+ * Use-case status filter chips (project detail)
+ * ===================================================== */
+
+.uc-status-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: calc(-1 * var(--s-1)) 0 var(--s-4);
+}
+
+.uc-chip {
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  transition: opacity 0.12s ease, filter 0.12s ease;
+}
+
+.uc-chip.is-off {
+  opacity: 0.4;
+  filter: grayscale(0.65);
+}
+
+.uc-chip[disabled] {
+  cursor: default;
+  opacity: 0.4;
+  filter: grayscale(0.55);
+}
+
+.uc-chip__count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 2px;
+}
+
+.uc-chip-clear {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.uc-chip-clear:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.uc-status-filter__summary {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* =====================================================
  * Tabs / pills
  * ===================================================== */
 

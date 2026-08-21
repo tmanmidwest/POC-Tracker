@@ -41,7 +41,9 @@ an MCP server so other tools and AI assistants can read and report on the data.
 - **Use cases** — pull from a master **library** when building a project, add the customer's
   own **ad-hoc** ones, per-project reference numbers, status, comments, and **screenshot uploads**.
   Library entries are copied in as **snapshots**, so editing the library never changes a POC
-  that's already in flight. **Bulk-edit** selected use cases (status, feature type, completed
+  that's already in flight. **Filter the list by status** with one-click chips at the top of the
+  Use cases tab (multi-select, remembered per project) to focus on what's left as you prep for a
+  POC. **Bulk-edit** selected use cases (status, feature type, completed
   date, delete), and **export/import** them as an Excel/CSV spreadsheet — export, edit offline,
   and re-import (the `Id` column updates rows in place); a downloadable template (with dropdowns)
   makes importing from scratch easy.
@@ -553,6 +555,7 @@ ruff check app tests
 
 ## Documentation
 
+- [CHANGELOG.md](CHANGELOG.md) — notable changes per release (Keep a Changelog + SemVer)
 - [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) — requirements and the design decisions behind them
 - [docs/SCHEMA.md](docs/SCHEMA.md) — the data model
 - [docs/API.md](docs/API.md) — REST API overview

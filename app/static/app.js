@@ -182,6 +182,92 @@ function setupTableSort(table) {
 
 document.querySelectorAll('table').forEach(setupTableSort);
 
+// Use-case status filter chips (project detail page). Multi-select toggle: each
+// chip [data-uc-chip="<statusId>"] starts active; clicking toggles whether rows
+// carrying that status (tr[data-uc-status]) show across every category table.
+// Category cards ([data-uc-group]) with no visible rows are hidden. Rows with no
+// status are always shown. "Clear" resets every chip to active. Inline status
+// changes reload the page, so counts stay server-authoritative.
+function setupUseCaseStatusFilter() {
+  const bar = document.getElementById('uc-status-filter');
+  if (!bar) return;
+  const chips = Array.from(bar.querySelectorAll('[data-uc-chip]'));
+  if (!chips.length) return;
+  const clearBtn = document.getElementById('uc-status-clear');
+  const summary = document.getElementById('uc-status-summary');
+  const cards = Array.from(document.querySelectorAll('[data-uc-group]'));
+
+  // Persist the toggled-off statuses per project so the filter survives reloads
+  // (an inline status change reloads the whole page). Cleared filters remove the
+  // key so a fresh visit starts with everything shown.
+  const storeKey = `uc-status-filter:${bar.dataset.ucProject || ''}`;
+  function loadOff() {
+    try {
+      const raw = window.localStorage.getItem(storeKey);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch (e) { return new Set(); }
+  }
+  function saveOff() {
+    const off = chips.filter((c) => c.classList.contains('is-off')).map((c) => c.dataset.ucChip);
+    try {
+      if (off.length) window.localStorage.setItem(storeKey, JSON.stringify(off));
+      else window.localStorage.removeItem(storeKey);
+    } catch (e) { /* storage unavailable — filter just won't persist */ }
+  }
+
+  function apply() {
+    const active = new Set();
+    chips.forEach((c) => { if (!c.classList.contains('is-off')) active.add(c.dataset.ucChip); });
+    const anyOff = chips.some((c) => c.classList.contains('is-off'));
+
+    let shown = 0;
+    let total = 0;
+    cards.forEach((card) => {
+      let cardVisible = 0;
+      card.querySelectorAll('tr[data-uc-status]').forEach((row) => {
+        total += 1;
+        const st = row.dataset.ucStatus;
+        const show = st === '' || active.has(st);
+        row.style.display = show ? '' : 'none';
+        if (show) { shown += 1; cardVisible += 1; }
+      });
+      card.style.display = cardVisible === 0 ? 'none' : '';
+    });
+
+    if (clearBtn) clearBtn.hidden = !anyOff;
+    if (summary) summary.textContent = anyOff ? `Showing ${shown} of ${total}` : '';
+  }
+
+  chips.forEach((chip) => {
+    if (chip.disabled) return;
+    chip.addEventListener('click', () => {
+      chip.classList.toggle('is-off');
+      chip.setAttribute('aria-pressed', chip.classList.contains('is-off') ? 'false' : 'true');
+      saveOff();
+      apply();
+    });
+  });
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      chips.forEach((c) => { c.classList.remove('is-off'); c.setAttribute('aria-pressed', 'true'); });
+      saveOff();
+      apply();
+    });
+  }
+
+  // Restore the saved selection before the first paint of the filter.
+  const savedOff = loadOff();
+  chips.forEach((c) => {
+    if (savedOff.has(c.dataset.ucChip)) {
+      c.classList.add('is-off');
+      c.setAttribute('aria-pressed', 'false');
+    }
+  });
+  apply();
+}
+
+setupUseCaseStatusFilter();
+
 // Drag-to-reorder list. Container has [data-reorder] and [data-reorder-input]
 // (the id of a hidden input); each row has [data-reorder-item] and [data-id].
 // On drop, the hidden input is set to the comma-separated order of data-id.
