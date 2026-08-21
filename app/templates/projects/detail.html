@@ -957,63 +957,68 @@
 {% if tasks_on %}
 {# ===== Tasks panel ===== #}
 <div class="tab-panel" id="tab-tasks" role="tabpanel">
-<div class="card" style="margin-bottom: var(--s-5);">
-  <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
-    <h3 class="card__title">Tasks{% if project_tasks %} <span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}</h3>
+<div class="page-header">
+  <div class="page-header__text"><h2 class="page-header__title" style="font-size:1.25rem;">Tasks{% if project_tasks %} <span class="badge badge--neutral">{{ project_tasks|length }}</span>{% endif %}</h2></div>
+  <div class="page-header__actions">
     {% if current_user.is_internal %}<a href="/ui/tasks/new?project_id={{ project.id }}&return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--primary btn--sm">+ Add task</a>{% endif %}
   </div>
-  <div class="card__body">
-    {% if current_user.is_internal %}
-    <p class="text-muted text-xs" style="margin-top:0;">Tasks assigned to this project are visible to its external viewers unless marked <strong>Internal only</strong>.</p>
-    {% endif %}
-    {% if not project_tasks %}
-    <p class="text-muted text-xs">No tasks assigned to this project yet.</p>
-    {% else %}
-    <div class="table-wrap">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Priority</th>
-          <th>Due</th>
-          <th style="width:180px;">Status</th>
-          {% if current_user.is_admin %}<th>Owner</th>{% endif %}
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for task in project_tasks %}
-        <tr>
-          <td><strong>{{ task.title }}</strong></td>
-          <td>
-            {% if task.priority %}
-            <span class="badge" style="{% if task.priority.color %}background:{{ task.priority.color }}1a; color:{{ task.priority.color }}; border-color:{{ task.priority.color }}66;{% endif %}">{{ task.priority.name }}</span>
-            {% else %}<span class="text-muted">—</span>{% endif %}
-          </td>
-          <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
-          <td>
-            {% if current_user.is_internal %}
-            <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;">
-              <select class="select" name="status_id" onchange="this.form.submit()">
-                {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
-              </select>
-            </form>
-            {% else %}
-            <span class="badge badge--neutral">{{ task.status.name if task.status else "—" }}</span>
-            {% endif %}
-          </td>
-          {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
-          <td class="table__actions">
-            {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit?return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-    {% endif %}
+</div>
+{% if current_user.is_internal %}
+<p class="text-muted text-xs" style="margin: calc(-1 * var(--s-2)) 0 var(--s-3);">Tasks assigned to this project are visible to its external viewers unless marked <strong>Internal only</strong>.</p>
+{% endif %}
+{% if not task_groups %}
+<div class="empty-state"><p class="empty-state__body">No tasks assigned to this project yet.</p></div>
+{% endif %}
+{% for group in task_groups %}
+<div class="card card--flush" style="margin-bottom: var(--s-4);">
+  <div class="card__header">
+    <h3 class="card__title">{{ group.status.name if group.status else "—" }} <span class="badge badge--neutral">{{ group.tasks|length }}</span></h3>
+  </div>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Priority</th>
+        <th>Due</th>
+        <th style="width:180px;">Status</th>
+        {% if current_user.is_admin %}<th>Owner</th>{% endif %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in group.tasks %}
+      <tr>
+        <td><strong>{{ task.title }}</strong></td>
+        <td>
+          {% if task.priority %}
+          <span class="badge" style="{% if task.priority.color %}background:{{ task.priority.color }}1a; color:{{ task.priority.color }}; border-color:{{ task.priority.color }}66;{% endif %}">{{ task.priority.name }}</span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td class="mono text-muted">{{ task.due_date.isoformat() if task.due_date else "—" }}</td>
+        <td>
+          {% if current_user.is_internal %}
+          <form method="post" action="/ui/tasks/{{ task.id }}/status" style="margin:0;" data-keep-scroll>
+            <input type="hidden" name="return_to" value="/ui/projects/{{ project.id }}#tasks" />
+            <select class="select" name="status_id" onchange="this.form.submit()">
+              {% for s in task_statuses %}<option value="{{ s.id }}" {% if s.id == task.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+            </select>
+          </form>
+          {% else %}
+          <span class="badge badge--neutral">{{ task.status.name if task.status else "—" }}</span>
+          {% endif %}
+        </td>
+        {% if current_user.is_admin %}<td class="text-muted">{{ task.owner.display_label if task.owner else "—" }}</td>{% endif %}
+        <td class="table__actions">
+          {% if current_user.is_internal %}<a href="/ui/tasks/{{ task.id }}/edit?return_to={{ ('/ui/projects/' ~ project.id ~ '#tasks') | urlencode }}" class="btn btn--ghost btn--sm">Edit</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   </div>
 </div>
+{% endfor %}
 </div>
 {% endif %}
 

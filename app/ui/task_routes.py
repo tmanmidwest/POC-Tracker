@@ -37,6 +37,7 @@ from app.services.tasks import (
     base_task_query,
     can_view_all_tasks,
     get_owned_task,
+    group_tasks_by_project,
 )
 from app.ui.dependencies import require_ui_user
 from app.ui.flash import flash
@@ -183,7 +184,14 @@ def dashboard(
         q = _apply_sort(q, sort)
         tasks = q.all()
         total += len(tasks)
-        groups.append({"status": status, "tasks": tasks})
+        # Sub-group each status by project so tasks spanning several projects
+        # cluster together; the template only shows project sub-headers when a
+        # status actually spans more than one project.
+        groups.append({
+            "status": status,
+            "tasks": tasks,
+            "project_groups": group_tasks_by_project(tasks),
+        })
 
     # Google Tasks connection state (only when the admin has enabled the integration).
     google = {"ready": google_oauth.is_ready(db), "cred": None}
@@ -483,6 +491,7 @@ async def set_status(
     task_id: int,
     request: Request,
     status_id: int = Form(...),
+    return_to: str | None = Form(None),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_ui_user),
     _mod: None = Depends(require_tasks_module),
@@ -496,8 +505,10 @@ async def set_status(
     db.commit()
     _task_event(request, user, task, "status_changed", "Changed status of")
     google_tasks_sync.sync_after_change(db, task)
-    # Return to wherever the change was made (dashboard or a project page).
-    back = request.headers.get("referer") or "/ui/tasks"
+    # Return to wherever the change was made. The project Tasks tab passes an
+    # explicit return_to (incl. the #tasks fragment, which Referer never carries);
+    # otherwise fall back to the Referer, then the task dashboard.
+    back = _safe_back(return_to, request.headers.get("referer") or "/ui/tasks")
     return RedirectResponse(url=back, status_code=303)
 
 

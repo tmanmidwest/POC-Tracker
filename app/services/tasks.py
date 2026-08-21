@@ -56,6 +56,47 @@ def visible_project_tasks(db: Session, project: Project, user: AppUser) -> list[
     ).all()
 
 
+def group_tasks_by_status(tasks: list[Task]) -> list[dict]:
+    """Group an already-loaded task list by status for display.
+
+    Only statuses that have tasks appear. Groups are ordered so terminal
+    statuses (Done / Cancelled — ``is_terminal``) sink to the bottom, and
+    non-terminal statuses follow their ``sort_order``. Task order within each
+    group is preserved from the input list.
+    """
+    buckets: dict[int | None, dict] = {}
+    for t in tasks:
+        buckets.setdefault(t.status_id, {"status": t.status, "tasks": []})
+        buckets[t.status_id]["tasks"].append(t)
+    return sorted(
+        buckets.values(),
+        key=lambda g: (
+            bool(g["status"] and g["status"].is_terminal),
+            g["status"].sort_order if g["status"] else 9999,
+            g["status"].name if g["status"] else "",
+        ),
+    )
+
+
+def group_tasks_by_project(tasks: list[Task]) -> list[dict]:
+    """Group an already-loaded task list by project for display.
+
+    Groups are ordered by project display name; project-less tasks come last.
+    Task order within each group is preserved from the input list.
+    """
+    buckets: dict[int | None, dict] = {}
+    for t in tasks:
+        buckets.setdefault(t.project_id, {"project": t.project, "tasks": []})
+        buckets[t.project_id]["tasks"].append(t)
+    return sorted(
+        buckets.values(),
+        key=lambda g: (
+            g["project"] is None,
+            (g["project"].display_name if g["project"] else "").lower(),
+        ),
+    )
+
+
 def tasks_for_report(
     db: Session, project: Project, user: AppUser, *, include_internal: bool
 ) -> list[Task]:

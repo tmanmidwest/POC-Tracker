@@ -904,6 +904,19 @@ a.topbar__user-name:hover { text-decoration: underline; }
   font-size: 12px;
 }
 
+/* Project sub-header rows inside a task status group (main tasks page). */
+.task-project-subhead td {
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+
+.task-project-subhead td a {
+  color: var(--text);
+}
+
 /* =====================================================
  * Tabs / pills
  * ===================================================== */

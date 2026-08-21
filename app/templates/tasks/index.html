@@ -78,7 +78,16 @@
       </tr>
     </thead>
     <tbody>
-      {% for task in group.tasks %}
+      {% for pg in group.project_groups %}
+      {% if group.project_groups | length > 1 %}
+      <tr class="task-project-subhead">
+        <td colspan="99">
+          {% if pg.project %}<a href="/ui/projects/{{ pg.project.id }}">{{ pg.project.display_name }}</a>{% else %}<span class="text-muted">No project</span>{% endif %}
+          <span class="badge badge--neutral">{{ pg.tasks | length }}</span>
+        </td>
+      </tr>
+      {% endif %}
+      {% for task in pg.tasks %}
       <tr onclick="window.location='/ui/tasks/{{ task.id }}/edit'" style="cursor:pointer;{% if task.is_archived %}opacity:0.55;{% endif %}">
         <td>
           <strong>{{ task.title }}</strong>
@@ -103,6 +112,7 @@
           {% endif %}
         </td>
       </tr>
+      {% endfor %}
       {% endfor %}
     </tbody>
   </table>

@@ -60,7 +60,7 @@ from app.services import note_attachments as note_store
 from app.services import portal as portal_service
 from app.services import screenshots as screenshot_store
 from app.services import system_config
-from app.services.tasks import visible_project_tasks
+from app.services.tasks import group_tasks_by_status, visible_project_tasks
 from app.services.access import (
     allowed_region_ids,
     can_edit_project,
@@ -1141,10 +1141,12 @@ def detail(
     # external viewers see the project's non-internal-only tasks (any owner),
     # read-only. Gated by the task-module toggle.
     project_tasks: list[Task] = []
+    task_groups: list[dict] = []
     task_statuses: list[TaskStatus] = []
     tasks_on = system_config.tasks_enabled()
     if tasks_on:
         project_tasks = visible_project_tasks(db, project, user)
+        task_groups = group_tasks_by_status(project_tasks)
         if user.is_internal:
             # The inline status dropdown is internal-only; external view is read-only.
             task_statuses = (
@@ -1169,7 +1171,8 @@ def detail(
         can_share=can_share, grants=grants, grantable_users=grantable_users,
         share_link=share_link, portal_base_url=portal_base_url,
         ai_configured=default_provider(db) is not None,
-        tasks_on=tasks_on, project_tasks=project_tasks, task_statuses=task_statuses,
+        tasks_on=tasks_on, project_tasks=project_tasks, task_groups=task_groups,
+        task_statuses=task_statuses,
         milestones=list(project.milestones),
         milestone_progress=milestone_progress(project),
         milestone_off_track=is_off_track(project),
