@@ -545,7 +545,7 @@
   <div class="card__header" style="display:flex; justify-content:space-between; align-items:center; gap: var(--s-3);">
     <h3 class="card__title">{{ group.category }}</h3>
     {% if can_edit %}
-    <form method="post" action="/ui/projects/{{ project.id }}/category-order" style="margin:0; display:flex; align-items:center; gap: var(--s-2);" title="Set a number to order this category section. Blank = alphabetical.">
+    <form method="post" action="/ui/projects/{{ project.id }}/category-order" style="margin:0; display:flex; align-items:center; gap: var(--s-2);" title="Set a number to order this category section. Blank = alphabetical." data-keep-scroll>
       <input type="hidden" name="category" value="{{ group.category }}" />
       <label class="text-muted text-xs" for="cat-order-{{ gidx }}" style="white-space:nowrap;">Order #</label>
       <input class="input" id="cat-order-{{ gidx }}" name="sort_order" type="number" step="1" inputmode="numeric" value="{{ group.order if group.order is not none else '' }}" placeholder="—" style="width:64px; padding: var(--s-1) var(--s-2);" onchange="this.form.submit()" />
@@ -586,7 +586,7 @@
         {% if 'feature' in uc_fields %}<td>{% if uc.feature_type %}<span class="badge badge--neutral">{{ uc.feature_type.name }}</span>{% else %}—{% endif %}</td>{% endif %}
         <td>
           {% if can_edit %}
-          <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/status" style="margin:0;">
+          <form method="post" action="/ui/projects/use-cases/{{ uc.id }}/status" style="margin:0;" data-keep-scroll>
             <select class="select" name="status_id" onchange="this.form.submit()">
               {% for s in uc_statuses %}<option value="{{ s.id }}" {% if s.id == uc.status_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
             </select>

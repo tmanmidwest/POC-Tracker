@@ -488,3 +488,39 @@ document.addEventListener('click', (e) => {
   sel.removeAllRanges();
   sel.addRange(range);
 });
+
+// Keep scroll position across the full-page reload that inline auto-submit forms
+// trigger — e.g. changing a use case's status from the project page. Such forms
+// opt in with [data-keep-scroll]; we stash the scroll offset (keyed to the path)
+// just before the reload and restore it once on the next load, so the user stays
+// put instead of being thrown back to the top. Runs last so it restores after any
+// on-load layout shifts (e.g. the use-case status filter hiding rows).
+//
+// These forms auto-submit via `this.form.submit()`, and the .submit() *method*
+// does NOT fire a 'submit' event — so we also capture 'change' (which the select
+// fires first, before its inline onchange runs the submit). Capture phase keeps us
+// ahead of the inline handler. 'submit' is kept too for any plain-button forms.
+(function () {
+  const KEY = 'keep-scroll';
+  function save(target) {
+    const form = target && target.closest ? target.closest('[data-keep-scroll]') : null;
+    if (!form) return;
+    try {
+      sessionStorage.setItem(KEY, JSON.stringify({ path: location.pathname, y: window.scrollY }));
+    } catch (err) { /* storage unavailable — position just won't be kept */ }
+  }
+  document.addEventListener('change', (e) => save(e.target), true);
+  document.addEventListener('submit', (e) => save(e.target), true);
+
+  try {
+    const raw = sessionStorage.getItem(KEY);
+    if (raw) {
+      sessionStorage.removeItem(KEY);
+      const saved = JSON.parse(raw);
+      if (saved && saved.path === location.pathname && typeof saved.y === 'number') {
+        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+        window.scrollTo(0, saved.y);
+      }
+    }
+  } catch (err) { /* ignore malformed/absent state */ }
+})();
