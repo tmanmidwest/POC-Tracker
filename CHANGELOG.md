@@ -7,6 +7,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). See
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-08-21
+
+A backward-compatible release focused on the Tasks experience and a more honest
+"stalled" signal on the dashboard.
+
+### Added
+
+- **Project Tasks tab grouped by status.** A project's tasks are now grouped into
+  per-status sections (with counts) instead of one flat list, ordered so terminal
+  statuses like **Done** always sort last.
+- **Tasks page sub-grouped by project.** On the main Tasks page, each status group
+  now sub-groups its tasks by project — with project sub-headers shown only when a
+  status actually spans more than one project (single-project statuses stay flat,
+  project-less tasks last).
+
+### Changed
+
+- **Dashboard "stalled / no update" now reflects real activity.** The signal reads
+  `Project.updated_at`, which previously only moved when the project record itself
+  was edited — so logging notes or progressing use cases/tasks left an active POC
+  looking stalled. A project's `updated_at` is now bumped whenever a **note, use
+  case, task, or milestone** changes, so the dashboard, the project-list "Stalled"
+  filter, and the project chip all track genuine activity. Deliberately back-dated
+  timestamps (demo data, restores) are preserved.
+
+### Fixed
+
+- **Changing a task's status from a project's Tasks tab returns you there.** It
+  previously bounced to the main Tasks page (the status form carried no return
+  target, and the `Referer` never includes the `#tasks` fragment). The form now
+  passes an explicit `return_to`, landing you back on the project's Tasks tab at
+  the same scroll position.
+
 ## [1.5.0] — 2026-08-21
 
 A backward-compatible feature release covering everything merged since 1.4.0:
@@ -160,6 +193,7 @@ Initial stable release — the app is marked stable/released at this version.
 Established GitHub-native documentation, automated Docker image publishing to
 GHCR, and general cleanup.
 
+[1.6.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.6.0
 [1.5.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.5.0
 [1.4.0]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.4.0
 [1.3.1]: https://github.com/tmanmidwest/POC-Tracker/releases/tag/v1.3.1

@@ -61,6 +61,11 @@ from app.models.user_invite import UserInvite
 from app.models.user_region import UserRegion
 from app.models.user_role import UserRole
 
+# Registers the before_flush listener that bumps Project.updated_at on child
+# activity (notes/use cases/tasks/milestones). Imported last so every model
+# class it references is defined. See app.services.insights.is_stalled.
+from app.models import _activity_touch  # noqa: E402,F401
+
 __all__ = [
     "AIProvider",
     "ApiKey",
