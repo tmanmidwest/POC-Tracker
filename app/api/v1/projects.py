@@ -325,12 +325,25 @@ def update_use_case(
 ) -> ProjectUseCase:
     uc = _get_use_case(db, use_case_id)
     data = body.model_dump(exclude_unset=True)
-    if data.get("status_id") and db.get(UseCaseStatus, data["status_id"]) is None:
-        raise HTTPException(status_code=422, detail="Unknown use-case status.")
+    new_status: UseCaseStatus | None = None
+    if data.get("status_id"):
+        new_status = db.get(UseCaseStatus, data["status_id"])
+        if new_status is None:
+            raise HTTPException(status_code=422, detail="Unknown use-case status.")
     if data.get("feature_type_id") and db.get(FeatureType, data["feature_type_id"]) is None:
         raise HTTPException(status_code=422, detail="Unknown feature type.")
     for field, value in data.items():
         setattr(uc, field, value)
+    # Auto-stamp the completion date when moving to a complete status, unless the
+    # caller set completed_on explicitly in this request or a date already exists.
+    # Mirrors the UI bulk-status behaviour so API/MCP callers stay consistent.
+    if (
+        new_status is not None
+        and new_status.is_complete_status
+        and "completed_on" not in data
+        and uc.completed_on is None
+    ):
+        uc.completed_on = date.today()
     db.commit()
     db.refresh(uc)
     record_event(

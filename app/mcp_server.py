@@ -373,6 +373,7 @@ def _uc_payload(
         "description": item.get("description"),
         "success_validation": item.get("success_validation"),
         "comments": item.get("comments"),
+        "completed_on": item.get("completed_on"),
     }
     ft = item.get("feature_type_id", item.get("feature_type"))
     body["feature_type_id"] = _resolve(ft, feature_map, "feature type")
@@ -435,14 +436,17 @@ def add_custom_use_case(
     feature_type: Any = None,
     status: Any = None,
     comments: str | None = None,
+    completed_on: str | None = None,
 ) -> dict:
     """Add a single ad-hoc (custom) use case to a project. `feature_type` and
-    `status` accept a name or id. Returns the created use case."""
+    `status` accept a name or id. `completed_on` is an ISO date ("YYYY-MM-DD").
+    Returns the created use case."""
     payload = _uc_payload(
         {
             "name": name, "category": category, "reference_number": reference_number,
             "description": description, "success_validation": success_validation,
             "feature_type": feature_type, "status": status, "comments": comments,
+            "completed_on": completed_on,
         },
         _name_map("/use-case-statuses/"),
         _name_map("/feature-types/"),
@@ -470,9 +474,13 @@ def update_use_case(
     feature_type: Any = None,
     status: Any = None,
     comments: str | None = None,
+    completed_on: str | None = None,
 ) -> dict:
     """Update fields on an existing project use case. Only provided fields change.
-    `feature_type` and `status` accept a name or id. Returns the updated use case."""
+    `feature_type` and `status` accept a name or id. `completed_on` is an ISO date
+    ("YYYY-MM-DD"); when omitted, setting `status` to a complete status (e.g.
+    "Completed") auto-stamps today's date if none is set yet. Returns the updated
+    use case."""
     body: dict[str, Any] = {}
     if name is not None:
         body["name"] = name
@@ -486,6 +494,8 @@ def update_use_case(
         body["success_validation"] = success_validation
     if comments is not None:
         body["comments"] = comments
+    if completed_on is not None:
+        body["completed_on"] = completed_on
     if feature_type is not None:
         body["feature_type_id"] = _resolve(
             feature_type, _name_map("/feature-types/"), "feature type"
@@ -499,7 +509,9 @@ def update_use_case(
 
 @mcp.tool()
 def set_use_case_status(use_case_id: int, status: Any) -> dict:
-    """Set a use case's status (by name, e.g. "Completed", or id). Returns it."""
+    """Set a use case's status (by name, e.g. "Completed", or id). Setting a
+    complete status auto-stamps the completed-on date with today if none is set.
+    Returns the updated use case."""
     status_id = _resolve(status, _name_map("/use-case-statuses/"), "use-case status")
     return _patch(f"/projects/use-cases/{use_case_id}", {"status_id": status_id})
 
