@@ -54,6 +54,11 @@ def test_create_edit_delete_role_flow(admin_session):
     finally:
         db.close()
 
+    # Edit form renders with the role's current capabilities pre-checked.
+    resp = admin_session.get(f"/ui/settings/roles/{role_id}/edit")
+    assert resp.status_code == 200
+    assert 'value="report.generate"' in resp.text
+
     # Edit — change capabilities
     resp = admin_session.post(
         f"/ui/settings/roles/{role_id}/edit",

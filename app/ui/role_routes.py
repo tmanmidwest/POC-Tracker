@@ -125,7 +125,7 @@ def edit_role_form(
     user: AppUser = Depends(require_role_manage),
 ) -> Response:
     role = _get_role(db, role_id)
-    selected = {rc.capability_key for rc in role.capabilities}
+    selected = {cap.key for cap in role.capabilities}
     return render(
         request,
         "settings/role_form.html",
