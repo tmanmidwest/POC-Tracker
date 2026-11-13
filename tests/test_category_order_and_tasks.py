@@ -101,6 +101,18 @@ def test_group_use_cases_within_category_sort_by_ref() -> None:
     assert refs == ["1.2", "1.10", "2.1"]
 
 
+def test_group_use_cases_mixed_missing_and_present_refs() -> None:
+    # Regression: a custom use case (no ref) in the same category as library
+    # ones used to raise TypeError while sorting and 500 the project page.
+    groups = _group_use_cases(
+        [_uc("Discovery", None), _uc("Discovery", "NHI-01"), _uc("Discovery", "6.1"),
+         _uc("Discovery", "")]
+    )
+    refs = [uc.reference_number for uc in groups[0]["use_cases"]]
+    assert refs[:2] == ["6.1", "NHI-01"]
+    assert set(refs[2:]) == {None, ""}
+
+
 # --- category-order endpoint ---------------------------------------------
 
 

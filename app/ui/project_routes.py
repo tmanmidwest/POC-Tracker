@@ -201,9 +201,15 @@ def _native_media_type(filename: str, content_type: str | None) -> str:
 
 
 def _ref_sort_key(ref: str | None) -> tuple:
-    """Sort '1.2' before '1.10' before '2.1'; non-numeric refs sort last."""
-    if not ref:
-        return (9_999,)
+    """Sort '1.2' before '1.10' before '2.1'; missing refs sort last.
+
+    Every key is a tuple of ``(kind, value)`` pairs so keys always compare
+    pairwise: a bare int sentinel for missing refs would raise ``TypeError``
+    when sorted against a real ref in the same category (e.g. a custom use
+    case with no ref next to a library one), which 500'd the project page.
+    """
+    if not ref or not ref.strip():
+        return ((2, ""),)
     parts = []
     for chunk in ref.replace("-", ".").split("."):
         chunk = chunk.strip()
